@@ -74,13 +74,13 @@ ALTER TABLE public.inventarios ENABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS TEXT AS $$
   SELECT rol FROM public.usuarios WHERE id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER;
+$$ LANGUAGE sql SECURITY DEFINER SET row_security = off;
 
 -- Obtener el id de la inmobiliaria del usuario logueado
 CREATE OR REPLACE FUNCTION public.get_my_inmobiliaria()
 RETURNS UUID AS $$
   SELECT inmobiliaria_id FROM public.usuarios WHERE id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER;
+$$ LANGUAGE sql SECURITY DEFINER SET row_security = off;
 
 
 -- =====================================================================
