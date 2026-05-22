@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -39,9 +40,10 @@ export async function signupInmobiliaria(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const supabaseAdmin = createAdminClient();
 
-  // 1. Insertar la inmobiliaria
-  const { data: inmob, error: inmobError } = await supabase
+  // 1. Insertar la inmobiliaria usando admin para evitar problemas de RLS antes de que el usuario tenga sesión
+  const { data: inmob, error: inmobError } = await supabaseAdmin
     .from('inmobiliarias')
     .insert({ nombre: nombreInmobiliaria, nit })
     .select('id')
@@ -56,7 +58,7 @@ export async function signupInmobiliaria(prevState: any, formData: FormData) {
     };
   }
 
-  // 2. Registrar el usuario en Supabase Auth
+  // 2. Registrar el usuario en Supabase Auth (usando el cliente estándar para iniciar la sesión web)
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password,
@@ -64,7 +66,7 @@ export async function signupInmobiliaria(prevState: any, formData: FormData) {
 
   if (authError) {
     // Si falla el registro, intentamos borrar la inmobiliaria creada para no dejar datos huérfanos
-    await supabase.from('inmobiliarias').delete().eq('id', inmob.id);
+    await supabaseAdmin.from('inmobiliarias').delete().eq('id', inmob.id);
     return { success: false, error: `Error en registro: ${authError.message}` };
   }
 
@@ -73,8 +75,8 @@ export async function signupInmobiliaria(prevState: any, formData: FormData) {
     return { success: false, error: 'No se pudo crear la cuenta de usuario.' };
   }
 
-  // 3. Crear el perfil de usuario administrador
-  const { error: profileError } = await supabase.from('usuarios').insert({
+  // 3. Crear el perfil de usuario administrador usando admin
+  const { error: profileError } = await supabaseAdmin.from('usuarios').insert({
     id: user.id,
     inmobiliaria_id: inmob.id,
     nombre_completo: nombreCompleto,
@@ -84,8 +86,8 @@ export async function signupInmobiliaria(prevState: any, formData: FormData) {
 
   if (profileError) {
     // En caso de error al crear el perfil, borramos el usuario y la inmobiliaria
-    await supabase.auth.admin.deleteUser(user.id);
-    await supabase.from('inmobiliarias').delete().eq('id', inmob.id);
+    await supabaseAdmin.auth.admin.deleteUser(user.id);
+    await supabaseAdmin.from('inmobiliarias').delete().eq('id', inmob.id);
     return { success: false, error: `Error al crear perfil administrativo: ${profileError.message}` };
   }
 
