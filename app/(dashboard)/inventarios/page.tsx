@@ -203,7 +203,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '2rem',
     fontWeight: '800',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     letterSpacing: '-0.02em',
     marginBottom: '0.25rem',
   },
@@ -238,8 +238,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: '44px',
     height: '44px',
     borderRadius: '12px',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    border: '1px solid rgba(0, 171, 216, 0.15)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -253,7 +253,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: '1.05rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   metaRow: {
     display: 'flex',

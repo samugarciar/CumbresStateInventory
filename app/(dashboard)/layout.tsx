@@ -80,7 +80,7 @@ export default async function DashboardLayout({
         <div style={styles.sidebarFooter}>
           <div style={styles.profileSection}>
             <div style={styles.avatar}>
-              <UserIcon size={18} color="#ffffff" />
+              <UserIcon size={18} color="var(--text-secondary)" />
             </div>
             <div style={styles.profileInfo}>
               <div style={styles.profileName} title={profile.nombre_completo}>
@@ -154,7 +154,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoText: {
     fontSize: '1.4rem',
     fontWeight: '800',
-    background: 'linear-gradient(135deg, #ffffff 40%, var(--primary) 100%)',
+    background: 'linear-gradient(135deg, var(--text-primary) 40%, var(--primary) 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     letterSpacing: '-0.02em',
@@ -163,7 +163,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
     fontWeight: '600',
     color: 'var(--text-secondary)',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: 'rgba(0, 171, 216, 0.03)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
     padding: '0.35rem 0.65rem',
@@ -221,7 +221,7 @@ const styles: Record<string, React.CSSProperties> = {
   profileName: {
     fontSize: '0.9rem',
     fontWeight: '600',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',

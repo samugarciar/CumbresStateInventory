@@ -40,10 +40,10 @@ export default function StateSelector({ inmuebleId, currentEstado }: StateSelect
             estado === 'reservado' ? 'var(--warning)' :
             estado === 'vendido' ? 'var(--danger)' : '#a78bfa',
           borderColor:
-            estado === 'disponible' ? 'rgba(16, 185, 129, 0.2)' :
+            estado === 'disponible' ? 'rgba(0, 171, 216, 0.2)' :
             estado === 'reservado' ? 'rgba(245, 158, 11, 0.2)' :
             estado === 'vendido' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(167, 139, 250, 0.2)',
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+          backgroundColor: '#ffffff',
         }}
       >
         <option value="disponible" style={{ color: 'var(--success)' }}>Disponible</option>

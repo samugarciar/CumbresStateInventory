@@ -724,8 +724,8 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
   tabBtnActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    border: '1px solid rgba(0, 171, 216, 0.2)',
     color: 'var(--primary)',
   },
   tabNumber: {
@@ -737,7 +737,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#ffffff',
+    color: 'var(--text-secondary)',
   },
   alert: {
     padding: '1rem',
@@ -756,7 +756,7 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: {
     fontSize: '1.1rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     marginBottom: '1.5rem',
     borderBottom: '1px solid var(--border-color)',
     paddingBottom: '0.5rem',
@@ -777,9 +777,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
     fontWeight: '600',
     borderRadius: '6px',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
     color: 'var(--primary)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
+    border: '1px solid rgba(0, 171, 216, 0.2)',
     cursor: 'pointer',
   },
   row: {
@@ -818,7 +818,7 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
   },
   tr: {
-    borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+    borderBottom: '1px solid var(--border-color)',
   },
   td: {
     padding: '0.65rem 0.5rem',

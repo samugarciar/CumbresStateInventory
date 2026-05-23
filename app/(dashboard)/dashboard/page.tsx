@@ -117,7 +117,7 @@ export default async function DashboardPage() {
       {/* Grid de KPIs */}
       <section style={styles.statsGrid}>
         <div className="glass-card" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+          <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(0, 171, 216, 0.1)' }}>
             <Building2 size={24} color="var(--primary)" />
           </div>
           <div style={styles.statInfo}>
@@ -269,7 +269,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '2rem',
     fontWeight: '800',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     letterSpacing: '-0.02em',
     marginBottom: '0.25rem',
   },
@@ -281,8 +281,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    border: '1px solid rgba(0, 171, 216, 0.2)',
     padding: '0.5rem 1rem',
     borderRadius: '50px',
     fontSize: '0.85rem',
@@ -321,7 +321,7 @@ const styles: Record<string, React.CSSProperties> = {
   statValue: {
     fontSize: '1.75rem',
     fontWeight: '800',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   contentGrid: {
     display: 'grid',
@@ -341,7 +341,7 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: {
     fontSize: '1.25rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     letterSpacing: '-0.01em',
   },
   sectionHeaderFlex: {
@@ -378,7 +378,7 @@ const styles: Record<string, React.CSSProperties> = {
   actionTitle: {
     fontSize: '1rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   actionDesc: {
     fontSize: '0.85rem',
@@ -405,7 +405,7 @@ const styles: Record<string, React.CSSProperties> = {
   recentCardTitle: {
     fontSize: '0.95rem',
     fontWeight: '600',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',

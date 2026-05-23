@@ -110,7 +110,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '2rem',
     fontWeight: '800',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     letterSpacing: '-0.02em',
     marginBottom: '0.25rem',
   },
@@ -138,8 +138,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.5rem',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    border: '1px solid rgba(0, 171, 216, 0.15)',
     padding: '0.4rem 0.85rem',
     borderRadius: '50px',
     fontSize: '0.85rem',
@@ -161,8 +161,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: '40px',
     height: '40px',
     borderRadius: '10px',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    border: '1px solid rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    border: '1px solid rgba(0, 171, 216, 0.15)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -177,7 +177,7 @@ const styles: Record<string, React.CSSProperties> = {
   name: {
     fontSize: '1rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   metaRow: {
     display: 'flex',
@@ -223,7 +223,7 @@ const styles: Record<string, React.CSSProperties> = {
   formTitle: {
     fontSize: '1.25rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   formSubtitle: {
     fontSize: '0.85rem',

@@ -100,7 +100,7 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
         <header style={styles.header}>
           <div style={styles.headerLeft}>
             <div style={styles.logoRow}>
-              <Home size={34} color="#059669" />
+              <Home size={34} color="#00abd8" />
               <div style={styles.logoTextContainer}>
                 <span style={styles.logoTitle}>Cumbres</span>
                 <span style={styles.logoSubtitle}>INMOBILIARIA</span>
@@ -336,7 +336,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoTitle: {
     fontSize: '22px',
     fontWeight: '800',
-    color: '#059669',
+    color: '#00abd8',
     letterSpacing: '-1px',
     lineHeight: '1',
   },

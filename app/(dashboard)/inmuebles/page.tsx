@@ -266,7 +266,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '2rem',
     fontWeight: '800',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     letterSpacing: '-0.02em',
     marginBottom: '0.25rem',
   },
@@ -291,7 +291,7 @@ const styles: Record<string, React.CSSProperties> = {
   filtersTitle: {
     fontSize: '0.9rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
   },
@@ -362,7 +362,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: '1.15rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -402,7 +402,7 @@ const styles: Record<string, React.CSSProperties> = {
   metaPrice: {
     fontSize: '0.9rem',
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'var(--text-primary)',
   },
   cardFooter: {
     display: 'flex',
