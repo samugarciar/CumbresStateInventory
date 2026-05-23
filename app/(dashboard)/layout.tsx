@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { logout } from '@/app/actions/auth';
+import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { 
@@ -21,6 +22,14 @@ export default async function DashboardLayout({
   const user = await getCurrentUser();
 
   if (!user || !user.profile) {
+    // Si el usuario tiene sesión de Auth pero no tiene perfil en la tabla de usuarios (estado inconsistente o RLS fallando),
+    // cerramos la sesión de forma activa para evitar bucles infinitos de redirección con el middleware.
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Error al cerrar sesión en redirección defensiva:', e);
+    }
     redirect('/login');
   }
 
