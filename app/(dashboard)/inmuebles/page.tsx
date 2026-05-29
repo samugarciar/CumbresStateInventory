@@ -429,6 +429,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '2rem',
+    minWidth: 0,
+    overflow: 'hidden',
+    width: '100%',
   },
   kpiRow: {
     display: 'flex',
@@ -613,6 +616,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '1.5rem',
     height: '100%',
     minHeight: '340px',
+    minWidth: 0,
+    overflow: 'hidden',
   },
   cardHeader: {
     display: 'flex',
@@ -683,6 +688,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '1.5rem',
     borderTop: '1px solid var(--border-color)',
     paddingTop: '1rem',
+    minWidth: 0,
   },
   cardFooterRow: {
     display: 'flex',

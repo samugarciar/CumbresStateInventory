@@ -301,7 +301,9 @@ body {
 
 .main-responsive {
   margin-left: var(--sidebar-width);
-  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  width: calc(100% - var(--sidebar-width));
+  min-width: 0; /* Desactiva min-width: auto para que no se desborde con contenido ancho */
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (max-width: 767px) {
@@ -327,6 +329,7 @@ body {
 
   .main-responsive {
     margin-left: 0 !important;
+    width: 100% !important;
     padding-top: 60px !important; /* Altura del Mobile Top Header */
   }
 
@@ -356,6 +359,14 @@ body {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1.5rem;
+  overflow: hidden; /* Impide que tarjetas hijas se desborden lateralmente */
+  min-width: 0; /* Desactiva min-width: auto implícito del grid */
+  width: 100%;
+}
+
+.inmuebles-grid > * {
+  min-width: 0; /* Cada hijo también renuncia a min-width: auto para truncar contenido largo */
+  overflow: hidden;
 }
 
 @media (min-width: 640px) {

@@ -288,7 +288,7 @@ export default function DashboardLayoutClient({
 
 const styles: Record<string, React.CSSProperties> = {
   layoutContainer: {
-    display: 'flex',
+    display: 'block', /* Remueve el contexto flexbox innecesario */
     minHeight: '100dvh',
     backgroundColor: 'var(--bg-main)',
   },
@@ -433,10 +433,10 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
   mainContent: {
-    flex: 1,
     minHeight: '100dvh',
     backgroundColor: 'var(--bg-main)',
-    transition: 'margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+    minWidth: 0, /* Previene desbordamiento heredado de WebKit en Safari */
+    transition: 'margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   containerInner: {
     padding: '2.5rem',
