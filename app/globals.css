@@ -52,12 +52,15 @@
   font-family: var(--font-sans);
 }
 
-html, body {
-  min-height: 100vh;
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh; /* Utiliza altura dinámica para evitar recortes por barra de navegación de iOS */
   background-color: var(--bg-main);
   color: var(--text-primary);
-  overflow-x: hidden;
-  scroll-behavior: smooth;
+  overflow-x: clip; /* Evita que Safari congele el viewport al ocultar desbordamientos horizontales */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -458,6 +461,7 @@ html, body {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; /* Permite scroll vertical nativo del viewport en Safari */
   padding: 1rem 0;
   display: flex;
   justify-content: center;
@@ -474,6 +478,7 @@ html, body {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; /* Permite scroll vertical nativo del viewport en Safari */
   margin-bottom: 1rem;
   border-radius: 8px;
   border: 1px solid var(--border-color);
@@ -483,6 +488,72 @@ html, body {
 @media (max-width: 767px) {
   .table-responsive-wrapper table {
     min-width: 650px !important; /* Fuerza el ancho ergonómico en móviles */
+  }
+}
+
+/* --- OPTIMIZACIONES ULTRA MÓVIL (PANTALLAS < 360px y < 480px) --- */
+
+/* 1. Relleno del contenedor principal */
+@media (max-width: 359px) {
+  .main-responsive > div {
+    padding: 0.6rem !important;
+  }
+}
+
+/* 2. Tarjetas de formulario responsivas (sustituye relleno inline de sectionCard) */
+.form-section-card {
+  padding: 2rem !important;
+}
+
+@media (max-width: 767px) {
+  .form-section-card {
+    padding: 1.25rem !important;
+  }
+}
+
+@media (max-width: 359px) {
+  .form-section-card {
+    padding: 0.75rem !important;
+  }
+}
+
+/* 3. Ocultar el Badge de Inmobiliaria en el Header Móvil en dispositivos extra angostos */
+@media (max-width: 359px) {
+  .mobile-inmobiliaria-badge {
+    display: none !important;
+  }
+}
+
+/* 4. Optimización de la Tabla de Inspección y anchos mínimos */
+@media (max-width: 767px) {
+  .table-responsive-wrapper table {
+    min-width: 450px !important; /* Optimizado para evitar scroll excesivo */
+  }
+}
+
+@media (max-width: 359px) {
+  .table-responsive-wrapper th, 
+  .table-responsive-wrapper td {
+    padding: 0.4rem 0.2rem !important;
+    font-size: 0.75rem !important;
+  }
+  .table-responsive-wrapper input[type="text"] {
+    font-size: 0.75rem !important;
+    padding: 0.3rem 0.4rem !important;
+  }
+}
+
+/* 5. Optimización del stepper móvil */
+@media (max-width: 480px) {
+  .mobile-progress-container {
+    position: static !important;
+    box-shadow: none !important;
+    margin-bottom: 0.75rem !important;
+  }
+  
+  /* Ocultar botones de navegación redundantes en el stepper */
+  .mobile-quick-nav-stepper {
+    display: none !important;
   }
 }
 

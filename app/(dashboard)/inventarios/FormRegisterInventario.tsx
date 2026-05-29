@@ -229,6 +229,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             padding-right: 0.5rem !important;
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
+            touch-action: pan-y !important; /* Asegura la propagación vertical en celulares */
             border-radius: 0 !important;
             border-left: none !important;
             border-right: none !important;
@@ -300,7 +301,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
       </nav>
 
       {/* Barra de Progreso adaptativa (Stepper - MÓVIL) */}
-      <div className="mobile-only glass-card" style={styles.mobileProgressContainer}>
+      <div className="mobile-only glass-card mobile-progress-container" style={styles.mobileProgressContainer}>
         <div style={styles.mobileProgressHeader}>
           <span style={styles.mobileStepText}>
             Paso {currentTabStep.number} de {tabSteps.length}
@@ -317,7 +318,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             }} 
           />
         </div>
-        <div style={styles.mobileQuickNav}>
+        <div style={styles.mobileQuickNav} className="mobile-quick-nav-stepper">
           <button
             type="button"
             disabled={activeTab === 'datos'}
@@ -352,7 +353,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
           ===================================================================== */}
       {activeTab === 'datos' && (
         <div style={styles.tabContent} className="animate-fade-in">
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>1. Selección de Inmueble</h3>
             
             <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
@@ -398,7 +399,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             </div>
           </section>
 
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>2. Fechas & Ficha</h3>
             <div style={styles.row} className="responsive-row">
               <div className="form-group" style={{ flex: 1 }}>
@@ -432,7 +433,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             </div>
           </section>
 
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>3. Información de las Partes</h3>
             <div style={styles.row} className="responsive-row">
               {/* Inquilino */}
@@ -497,7 +498,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             </div>
           </section>
 
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>4. Control de Llaves (Cantidades)</h3>
             <div style={styles.grid4} className="responsive-grid4">
               <div className="form-group">
@@ -547,7 +548,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
           ===================================================================== */}
       {activeTab === 'comunes' && (
         <div style={styles.tabContent} className="animate-fade-in">
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>Exteriores (Fachadas)</h3>
             <div style={styles.row} className="responsive-row">
               <div className="form-group" style={{ flex: 1 }}>
@@ -632,7 +633,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
           ===================================================================== */}
       {activeTab === 'confirmar' && (
         <div style={styles.tabContent} className="animate-fade-in">
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>Observaciones Generales</h3>
             <div className="form-group">
               <label className="form-label">Escribe aquí las observaciones o compromisos del acta de entrega</label>
@@ -646,7 +647,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             </div>
           </section>
 
-          <section className="glass-card" style={styles.sectionCard}>
+          <section className="glass-card form-section-card">
             <h3 style={styles.sectionTitle}>Firmas e Identificaciones</h3>
             <div style={styles.row} className="responsive-row">
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -746,7 +747,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
     const seccionData = secciones[seccionKey];
 
     return (
-      <section className="glass-card" style={styles.sectionCard} key={seccionKey}>
+      <section className="glass-card form-section-card" key={seccionKey}>
         <div style={styles.sectionHeaderRow} className="section-header-mobile">
           <h3 style={styles.sectionTitleNested}>{label}</h3>
           <button 

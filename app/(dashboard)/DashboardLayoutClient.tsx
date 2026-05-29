@@ -95,7 +95,7 @@ export default function DashboardLayoutClient({
         </div>
         <div style={styles.mobileRightSection}>
           {inmobiliaria && (
-            <span style={styles.mobileInmobiliariaBadge}>
+            <span className="mobile-inmobiliaria-badge" style={styles.mobileInmobiliariaBadge}>
               {inmobiliaria.nombre}
             </span>
           )}
@@ -289,7 +289,7 @@ export default function DashboardLayoutClient({
 const styles: Record<string, React.CSSProperties> = {
   layoutContainer: {
     display: 'flex',
-    minHeight: '100vh',
+    minHeight: '100dvh',
     backgroundColor: 'var(--bg-main)',
   },
   sidebar: {
@@ -434,7 +434,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   mainContent: {
     flex: 1,
-    minHeight: '100vh',
+    minHeight: '100dvh',
     backgroundColor: 'var(--bg-main)',
     transition: 'margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
   },
