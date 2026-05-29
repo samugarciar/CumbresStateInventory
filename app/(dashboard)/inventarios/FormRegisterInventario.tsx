@@ -222,28 +222,40 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             grid-template-columns: 1fr !important;
             gap: 0.85rem !important;
           }
-          .responsive-table-wrapper {
+          .table-responsive-wrapper {
             margin-left: -1rem !important;
             margin-right: -1rem !important;
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
+            border-radius: 0 !important;
+            border-left: none !important;
+            border-right: none !important;
           }
-          .responsive-table-wrapper table {
-            min-width: 480px !important;
+          .table-responsive-wrapper table {
+            min-width: 600px !important;
           }
-          .responsive-table-wrapper th, 
-          .responsive-table-wrapper td {
+          .table-responsive-wrapper th, 
+          .table-responsive-wrapper td {
             padding: 0.5rem 0.35rem !important;
             font-size: 0.8rem !important;
           }
-          .responsive-table-wrapper input[type="text"] {
+          .table-responsive-wrapper input[type="text"] {
             font-size: 0.8rem !important;
             padding: 0.35rem 0.5rem !important;
           }
           .responsive-radio-group {
             gap: 0.6rem !important;
+          }
+          .section-header-mobile {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 0.75rem !important;
+          }
+          .section-header-mobile button {
+            width: 100% !important;
+            text-align: center !important;
           }
         }
       `}</style>
@@ -735,14 +747,15 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
 
     return (
       <section className="glass-card" style={styles.sectionCard} key={seccionKey}>
-        <div style={styles.sectionHeaderRow}>
-          <h3 style={styles.sectionTitle}>{label}</h3>
+        <div style={styles.sectionHeaderRow} className="section-header-mobile">
+          <h3 style={styles.sectionTitleNested}>{label}</h3>
           <button 
             type="button" 
             onClick={() => marcarTodosComoBueno(seccionKey)}
             style={styles.quickSelectBtn}
           >
-            Marcar todo "Bueno (B)"
+            <span className="desktop-only">Marcar todo "Bueno (B)"</span>
+            <span className="mobile-only">Marcar todo como Bueno (B)</span>
           </button>
         </div>
 
@@ -763,7 +776,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
                     <td style={styles.tdItemName}>{item}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <div style={styles.radioGroup} className="responsive-radio-group">
-                        <label style={{ ...styles.radioLabel, color: 'var(--success)' }}>
+                        <label style={{ ...styles.radioLabel, color: '#10b981' }}>
                           <input 
                             type="radio" 
                             name={`${seccionKey}-${item}`} 
@@ -904,6 +917,14 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  sectionTitleNested: {
+    fontSize: '1.1rem',
+    fontWeight: '700',
+    color: 'var(--text-primary)',
+    margin: 0,
+    padding: 0,
+    border: 'none',
+  },
   sectionHeaderRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -985,6 +1006,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   radioInput: {
     cursor: 'pointer',
+    transform: 'scale(1.3)',
+    marginRight: '4px',
   },
   itemObsInput: {
     padding: '0.4rem 0.75rem',
@@ -1016,8 +1039,11 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-color)',
     padding: '1rem',
     borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
+    boxShadow: '0 4px 12px rgba(0, 171, 216, 0.08)',
     marginBottom: '0.5rem',
+    position: 'sticky',
+    top: '60px',
+    zIndex: 70,
   },
   mobileProgressHeader: {
     display: 'flex',
