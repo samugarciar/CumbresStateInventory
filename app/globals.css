@@ -199,6 +199,16 @@ html, body {
   animation: fadeIn 0.4s ease forwards;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
 /* Typography Utilities */
 .text-gradient {
   background: linear-gradient(135deg, #ffffff 30%, var(--primary) 100%);
@@ -220,3 +230,227 @@ html, body {
 .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
 .badge-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
 .badge-info { background: rgba(59, 130, 246, 0.1); color: var(--info); border: 1px solid rgba(59, 130, 246, 0.2); }
+
+/* --- FUNCIONALIDADES DE FILTRO Y RESPONSIVO --- */
+
+/* Utility visibility classes */
+.mobile-only {
+  display: none !important;
+}
+
+.desktop-only {
+  display: block !important;
+}
+
+@media (max-width: 767px) {
+  .mobile-only {
+    display: flex !important;
+  }
+  
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+/* Mobile top header style */
+.mobile-top-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  z-index: 80;
+}
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-normal), visibility var(--transition-normal);
+}
+
+.sidebar-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Responsive Sidebar & Animations */
+.sidebar-responsive {
+  transition: transform var(--transition-normal), width var(--transition-normal), left var(--transition-normal) !important;
+}
+
+.main-responsive {
+  margin-left: var(--sidebar-width);
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 767px) {
+  .sidebar-responsive {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 280px !important;
+    z-index: 100 !important;
+    transform: translateX(-100%);
+    box-shadow: 0 0 24px rgba(15, 23, 42, 0.15) !important;
+  }
+  
+  .sidebar-responsive.open {
+    transform: translateX(0) !important;
+  }
+  
+  /* El botón de contraer del sidebar no se necesita en celular */
+  .sidebar-responsive .sidebar-toggle-btn {
+    display: none !important;
+  }
+
+  .main-responsive {
+    margin-left: 0 !important;
+    padding-top: 60px !important; /* Altura del Mobile Top Header */
+  }
+
+  /* Ajuste de padding del contenedor interno en móvil */
+  .main-responsive > div {
+    padding: 1.25rem !important;
+  }
+}
+
+/* --- RESPONSIVE WORKPLAN FASES 2 & 3 --- */
+
+/* Dashboard layout additions */
+.dashboard-content-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2.5rem;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-content-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Catalog property grid: 1 col in mobile, 2 in tablet, 3 in desktop */
+.inmuebles-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .inmuebles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .inmuebles-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Responsive Header and HeaderButtons */
+.responsive-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.responsive-header-buttons {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 767px) {
+  .responsive-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.25rem;
+  }
+
+  .responsive-header-buttons {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .responsive-header-buttons > a,
+  .responsive-header-buttons > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Filters Panel responsive layout */
+.filters-form-responsive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.filter-group-responsive {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 180px;
+}
+
+.filters-buttons-responsive {
+  display: flex;
+  gap: 0.5rem;
+  align-self: flex-end;
+  height: 38px;
+}
+
+@media (max-width: 767px) {
+  .filters-form-responsive {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .filter-group-responsive {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .filters-buttons-responsive {
+    align-self: stretch;
+    height: auto;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .filters-buttons-responsive > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+
+
+

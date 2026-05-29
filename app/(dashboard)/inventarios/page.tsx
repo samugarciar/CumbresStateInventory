@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import FormRegisterInventario from './FormRegisterInventario';
+import InventarioActions from './InventarioActions';
 import { 
   ClipboardList, 
   Plus, 
@@ -40,8 +41,9 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
     // Obtener los inmuebles elegibles
     let queryInm = supabase
       .from('inmuebles')
-      .select('id, titulo, direccion')
-      .eq('inmobiliaria_id', profile.inmobiliaria_id);
+      .select('id, titulo, direccion, arrendasoft_id, estado')
+      .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .neq('estado', 'inactivo');
 
     if (!isAdmin) {
       queryInm = queryInm.eq('asesor_id', profile.id);
@@ -78,6 +80,9 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
       titulo,
       created_at,
       creado_por,
+      items,
+      arrendasoft_contrato_id,
+      contrato_id_propuesto,
       usuarios (nombre_completo),
       inmuebles!inner (
         id,
@@ -91,10 +96,20 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
   if (isAdmin) {
     queryInvs = queryInvs.eq('inmuebles.inmobiliaria_id', profile.inmobiliaria_id);
   } else {
-    queryInvs = queryInvs.eq('inmuebles.asesor_id', profile.id);
+    queryInvs = queryInvs.or(`creado_por.eq.${profile.id},inmuebles.asesor_id.eq.${profile.id}`);
   }
 
   const { data: inventarios } = await queryInvs.order('created_at', { ascending: false });
+
+  // 3. Consultar tareas pendientes asociadas a los inventarios
+  const { data: tareasPendientes } = await supabase
+    .from('tareas')
+    .select('entidad_id')
+    .eq('entidad_tipo', 'inventario')
+    .eq('estado', 'pendiente')
+    .in('entidad_id', (inventarios || []).map(inv => inv.id));
+
+  const inventariosConTareas = new Set(tareasPendientes?.map(t => t.entidad_id) || []);
 
   return (
     <div style={styles.container} className="animate-fade-in">
@@ -127,6 +142,9 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
           inventarios.map((inv) => {
             const inmueble = Array.isArray(inv.inmuebles) ? inv.inmuebles[0] : (inv.inmuebles as any);
             const usuario = Array.isArray(inv.usuarios) ? inv.usuarios[0] : (inv.usuarios as any);
+            const isFirmado = !!inv.items?.biometria?.inquilino?.firma_url;
+            const hasPendingTasks = inventariosConTareas.has(inv.id);
+
             return (
               <div key={inv.id} className="glass-card animate-fade-in" style={styles.card}>
                 <div style={styles.cardMain}>
@@ -134,7 +152,18 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
                     <ClipboardList size={22} color="var(--primary)" />
                   </div>
                   <div style={styles.info}>
-                    <h3 style={styles.cardTitle}>{inv.titulo}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
+                      <h3 style={styles.cardTitle}>{inv.titulo}</h3>
+                      {isFirmado ? (
+                        <span className="badge badge-success" style={{ fontSize: '0.75rem', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.25)', padding: '0.2rem 0.5rem', fontWeight: 700 }}>
+                          Firmado
+                        </span>
+                      ) : (
+                        <span className="badge" style={{ fontSize: '0.75rem', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.25)', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                          Pendiente Firma
+                        </span>
+                      )}
+                    </div>
                     
                     <div style={styles.metaRow}>
                       <span style={styles.metaItem}>
@@ -154,6 +183,14 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
                 </div>
 
                 <div style={styles.actions}>
+                  <InventarioActions 
+                    inventarioId={inv.id}
+                    hasPendingTasks={hasPendingTasks}
+                    arrendasoftContratoId={inv.arrendasoft_contrato_id}
+                    contratoIdPropuesto={inv.contrato_id_propuesto}
+                    items={inv.items}
+                    asesorNombre={profile.nombre_completo}
+                  />
                   <Link 
                     href={`/inventarios/print/${inv.id}`} 
                     target="_blank" 

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 interface FormRegisterInventarioProps {
-  inmuebles: Array<{ id: string; titulo: string; direccion: string }>;
+  inmuebles: Array<{ id: string; titulo: string; direccion: string; arrendasoft_id?: number | null; estado?: string }>;
   defaultInmuebleId: string;
 }
 
@@ -41,6 +41,25 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
   
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const [filterEstado, setFilterEstado] = useState<'disponible' | 'arrendado'>('disponible');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredInmuebles = inmuebles.filter(inm => {
+    // Si viene el estado, aplicamos el filtro por los botones de radio
+    if (inm.estado && inm.estado !== filterEstado) return false;
+    
+    // Filtro por texto
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      const codeStr = (inm.arrendasoft_id || '').toString();
+      const title = (inm.titulo || '').toLowerCase();
+      const addr = (inm.direccion || '').toLowerCase();
+      
+      return title.includes(search) || addr.includes(search) || codeStr.includes(search);
+    }
+    return true;
+  });
 
   // Estados jerárquicos del inventario
   const [datosGenerales, setDatosGenerales] = useState({
@@ -160,7 +179,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
     };
 
     const targetInmueble = inmuebles.find(i => i.id === inmuebleId);
-    const titulo = `Inventario de Entrega - ${targetInmueble?.titulo || 'Inmueble'}`;
+    const titulo = `Inventario de Entrega - ${targetInmueble?.direccion || targetInmueble?.titulo || 'Inmueble'}`;
 
     startTransition(async () => {
       const result = await registrarInventario(inmuebleId, titulo, payload);
@@ -176,10 +195,61 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
     });
   };
 
+  const tabSteps = [
+    { id: 'datos', label: 'Datos & Llaves', number: 1 },
+    { id: 'comunes', label: 'Zonas Comunes', number: 2 },
+    { id: 'alcobas', label: 'Alcobas & Baños', number: 3 },
+    { id: 'cocina', label: 'Cocina & Ropas', number: 4 },
+    { id: 'confirmar', label: 'Firmas & Guardar', number: 5 }
+  ] as const;
+
+  const currentTabStep = tabSteps.find(t => t.id === activeTab) || tabSteps[0];
+  const progressPercent = (currentTabStep.number / tabSteps.length) * 100;
+
   return (
     <div style={styles.formLayout}>
-      {/* Selector de Pestañas (Stepper) */}
-      <nav className="glass-card" style={styles.tabNav}>
+      <style>{`
+        @media (max-width: 767px) {
+          .responsive-row {
+            flex-direction: column !important;
+            gap: 1rem !important;
+          }
+          .responsive-row > div {
+            flex: 1 1 100% !important;
+            width: 100% !important;
+          }
+          .responsive-grid4 {
+            grid-template-columns: 1fr !important;
+            gap: 0.85rem !important;
+          }
+          .responsive-table-wrapper {
+            margin-left: -1rem !important;
+            margin-right: -1rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          .responsive-table-wrapper table {
+            min-width: 480px !important;
+          }
+          .responsive-table-wrapper th, 
+          .responsive-table-wrapper td {
+            padding: 0.5rem 0.35rem !important;
+            font-size: 0.8rem !important;
+          }
+          .responsive-table-wrapper input[type="text"] {
+            font-size: 0.8rem !important;
+            padding: 0.35rem 0.5rem !important;
+          }
+          .responsive-radio-group {
+            gap: 0.6rem !important;
+          }
+        }
+      `}</style>
+
+      {/* Selector de Pestañas (Stepper - ESCRITORIO) */}
+      <nav className="glass-card desktop-only" style={styles.tabNav}>
         <button 
           onClick={() => setActiveTab('datos')} 
           style={{ ...styles.tabBtn, ...(activeTab === 'datos' ? styles.tabBtnActive : {}) }}
@@ -217,6 +287,50 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
         </button>
       </nav>
 
+      {/* Barra de Progreso adaptativa (Stepper - MÓVIL) */}
+      <div className="mobile-only glass-card" style={styles.mobileProgressContainer}>
+        <div style={styles.mobileProgressHeader}>
+          <span style={styles.mobileStepText}>
+            Paso {currentTabStep.number} de {tabSteps.length}
+          </span>
+          <span style={styles.mobileStepLabel}>
+            {currentTabStep.label}
+          </span>
+        </div>
+        <div style={styles.mobileProgressBarBg}>
+          <div 
+            style={{ 
+              ...styles.mobileProgressBarFill, 
+              width: `${progressPercent}%` 
+            }} 
+          />
+        </div>
+        <div style={styles.mobileQuickNav}>
+          <button
+            type="button"
+            disabled={activeTab === 'datos'}
+            onClick={handlePrevTab}
+            style={{
+              ...styles.mobileQuickNavBtn,
+              ...(activeTab === 'datos' ? styles.mobileQuickNavBtnDisabled : {})
+            }}
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            disabled={activeTab === 'confirmar'}
+            onClick={handleNextTab}
+            style={{
+              ...styles.mobileQuickNavBtn,
+              ...(activeTab === 'confirmar' ? styles.mobileQuickNavBtnDisabled : {})
+            }}
+          >
+            Siguiente
+          </button>
+        </div>
+      </div>
+
       {/* Contenedor de Alertas */}
       {error && <div className="badge badge-danger animate-fade-in" style={styles.alert}>{error}</div>}
       {success && <div className="badge badge-success animate-fade-in" style={styles.alert}>{success}</div>}
@@ -228,6 +342,32 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
         <div style={styles.tabContent} className="animate-fade-in">
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>1. Selección de Inmueble</h3>
+            
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
+              <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Mostrar:</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.9rem', cursor: 'pointer' }}>
+                  <input type="radio" name="estado_filter" value="disponible" checked={filterEstado === 'disponible'} onChange={() => setFilterEstado('disponible')} />
+                  Disponibles
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.9rem', cursor: 'pointer' }}>
+                  <input type="radio" name="estado_filter" value="arrendado" checked={filterEstado === 'arrendado'} onChange={() => setFilterEstado('arrendado')} />
+                  Arrendados
+                </label>
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <input 
+                type="text" 
+                placeholder="Buscar por código Arrendasoft, título o dirección..." 
+                className="form-control"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.95rem' }}
+              />
+            </div>
+
             <div className="form-group">
               <label className="form-label">Inmueble Relacionado *</label>
               <select 
@@ -237,9 +377,9 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
                 style={{ width: '100%' }}
               >
                 <option value="">Selecciona el inmueble a inspeccionar...</option>
-                {inmuebles.map(inm => (
+                {filteredInmuebles.map(inm => (
                   <option key={inm.id} value={inm.id}>
-                    {inm.titulo} - ({inm.direccion})
+                    {inm.arrendasoft_id ? `[${inm.arrendasoft_id}] ` : ''}{inm.titulo} - ({inm.direccion})
                   </option>
                 ))}
               </select>
@@ -248,7 +388,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
 
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>2. Fechas & Ficha</h3>
-            <div style={styles.row}>
+            <div style={styles.row} className="responsive-row">
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">Ficha No.</label>
                 <input 
@@ -282,7 +422,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
 
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>3. Información de las Partes</h3>
-            <div style={styles.row}>
+            <div style={styles.row} className="responsive-row">
               {/* Inquilino */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <h4 style={styles.subSubTitle}>Inquilino (Arrendatario)</h4>
@@ -347,7 +487,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
 
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>4. Control de Llaves (Cantidades)</h3>
-            <div style={styles.grid4}>
+            <div style={styles.grid4} className="responsive-grid4">
               <div className="form-group">
                 <label className="form-label">Puerta Principal</label>
                 <input 
@@ -397,7 +537,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
         <div style={styles.tabContent} className="animate-fade-in">
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>Exteriores (Fachadas)</h3>
-            <div style={styles.row}>
+            <div style={styles.row} className="responsive-row">
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">¿Antejardín?</label>
                 <select 
@@ -420,7 +560,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
                 />
               </div>
             </div>
-            <div style={styles.row}>
+            <div style={styles.row} className="responsive-row">
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label">Rejas Cantidad</label>
                 <input 
@@ -496,7 +636,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
 
           <section className="glass-card" style={styles.sectionCard}>
             <h3 style={styles.sectionTitle}>Firmas e Identificaciones</h3>
-            <div style={styles.row}>
+            <div style={styles.row} className="responsive-row">
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <h4 style={styles.subSubTitle}>Por Arrendamientos Cumbres</h4>
                 <div className="form-group">
@@ -606,7 +746,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
           </button>
         </div>
 
-        <div style={styles.tableWrapper}>
+        <div style={styles.tableWrapper} className="responsive-table-wrapper">
           <table style={styles.table}>
             <thead>
               <tr style={styles.tableHeaderRow}>
@@ -622,7 +762,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
                   <tr key={item} style={styles.tr}>
                     <td style={styles.tdItemName}>{item}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <div style={styles.radioGroup}>
+                      <div style={styles.radioGroup} className="responsive-radio-group">
                         <label style={{ ...styles.radioLabel, color: 'var(--success)' }}>
                           <input 
                             type="radio" 
@@ -868,4 +1008,70 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: '380px',
     padding: '0.9rem',
   },
+  mobileProgressContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.6rem',
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-color)',
+    padding: '1rem',
+    borderRadius: '12px',
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
+    marginBottom: '0.5rem',
+  },
+  mobileProgressHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mobileStepText: {
+    fontSize: '0.78rem',
+    fontWeight: '700',
+    color: 'var(--primary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+  mobileStepLabel: {
+    fontSize: '0.88rem',
+    fontWeight: '700',
+    color: 'var(--text-primary)',
+  },
+  mobileProgressBarBg: {
+    width: '100%',
+    height: '6px',
+    backgroundColor: 'var(--bg-surface-elevated)',
+    borderRadius: '10px',
+    overflow: 'hidden',
+  },
+  mobileProgressBarFill: {
+    height: '100%',
+    backgroundColor: 'var(--primary)',
+    borderRadius: '10px',
+    transition: 'width var(--transition-normal)',
+  },
+  mobileQuickNav: {
+    display: 'flex',
+    gap: '0.75rem',
+    marginTop: '0.4rem',
+  },
+  mobileQuickNavBtn: {
+    flex: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.25rem',
+    padding: '0.5rem',
+    fontSize: '0.8rem',
+    fontWeight: '700',
+    borderRadius: '8px',
+    backgroundColor: 'var(--bg-surface-elevated)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    transition: 'all var(--transition-fast)',
+  },
+  mobileQuickNavBtnDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  }
 };

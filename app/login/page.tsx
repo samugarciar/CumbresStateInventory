@@ -36,8 +36,7 @@ export default function LoginPage() {
       <div className="glass-container animate-fade-in" style={styles.card}>
         <div style={styles.header}>
           <div style={styles.logoContainer}>
-            <Home size={32} color="var(--primary)" />
-            <span style={styles.logoText}>Cumbres</span>
+            <img src="/logo.png" alt="Cumbres Inmobiliaria" style={{ height: '48px', width: 'auto', maxWidth: '100%' }} />
           </div>
           <h1 style={styles.title}>Iniciar Sesión</h1>
           <p style={styles.subtitle}>Ingresa tus credenciales para acceder a la plataforma</p>

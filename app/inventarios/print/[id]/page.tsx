@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import { Printer, ArrowLeft, Home, Building2, Phone, Mail } from 'lucide-react';
 import Link from 'next/link';
+import PrintButton from './PrintButton';
 
 interface PrintInventarioPageProps {
   params: Promise<{
@@ -47,6 +48,50 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
   const ext = items?.exteriores || {};
   const observacionesGenerales = items?.observaciones_generales || '';
   const firmas = items?.firmas || {};
+  const biometria = items?.biometria || null;
+
+  // Helper para generar URLs firmadas (Signed URLs) seguras y resilientes desde el Storage
+  const getSignedUrl = async (publicUrl: string) => {
+    if (!publicUrl) return '';
+    if (!publicUrl.includes('/firmas_biometricas/')) return publicUrl;
+    
+    try {
+      const parts = publicUrl.split('/firmas_biometricas/');
+      if (parts.length < 2) return publicUrl;
+      const filePath = parts[1];
+      
+      // Creamos un link firmado por 1 semana (604800 segundos) para la visualización libre de RLS
+      const { data, error: signedErr } = await supabase.storage
+        .from('firmas_biometricas')
+        .createSignedUrl(filePath, 604800);
+        
+      if (signedErr) {
+        console.error('[Print Backend] Error al firmar archivo:', signedErr.message);
+        return publicUrl;
+      }
+      return data?.signedUrl || publicUrl;
+    } catch (e) {
+      console.error('[Print Backend] Excepción al firmar URL:', e);
+      return publicUrl;
+    }
+  };
+
+  // Resolver URLs firmadas en paralelo para evitar latencia
+  let firmaAsesor = '';
+  let selfieAsesor = '';
+  let cedulaAsesor = '';
+  let firmaInquilino = '';
+  let selfieInquilino = '';
+  let cedulaInquilino = '';
+
+  if (biometria) {
+    firmaAsesor = await getSignedUrl(biometria.asesor?.firma_url);
+    selfieAsesor = await getSignedUrl(biometria.asesor?.selfie_url);
+    cedulaAsesor = await getSignedUrl(biometria.asesor?.cedula_url);
+    firmaInquilino = await getSignedUrl(biometria.inquilino?.firma_url);
+    selfieInquilino = await getSignedUrl(biometria.inquilino?.selfie_url);
+    cedulaInquilino = await getSignedUrl(biometria.inquilino?.cedula_url);
+  }
 
   return (
     <div style={styles.container}>
@@ -83,14 +128,7 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
             <ArrowLeft size={16} />
             Volver a Inventarios
           </Link>
-          <button 
-            onClick={() => window.print()} 
-            className="btn btn-primary" 
-            style={styles.printBtn}
-          >
-            <Printer size={16} />
-            Imprimir Acta (PDF)
-          </button>
+          <PrintButton />
         </div>
       </div>
 
@@ -100,14 +138,10 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
         <header style={styles.header}>
           <div style={styles.headerLeft}>
             <div style={styles.logoRow}>
-              <Home size={34} color="#00abd8" />
-              <div style={styles.logoTextContainer}>
-                <span style={styles.logoTitle}>Cumbres</span>
-                <span style={styles.logoSubtitle}>INMOBILIARIA</span>
-              </div>
+              <img src="/logo.png" alt="Cumbres Inmobiliaria" style={{ height: '56px', width: 'auto', maxWidth: '100%' }} />
             </div>
             <div style={styles.headerContact}>
-              <span><Phone size={10} style={{ marginRight: 2 }} /> 230 84 90 - 320 533 82 50</span>
+              <span><Phone size={10} style={{ marginRight: 2 }} /> 320 533 82 50</span>
               <span>Calle 50 No. 71-50 Estadio</span>
               <span><Mail size={10} style={{ marginRight: 2 }} /> arrendamientos.cumbres@gmail.com</span>
             </div>
@@ -234,6 +268,68 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
           </section>
         )}
 
+        {/* Anexo de Validación Biométrica */}
+        {biometria && (
+          <section style={styles.tableSection}>
+            <h3 style={styles.tableSectionTitle}>VERIFICACIÓN DE FIRMA BIOMÉTRICA IN-APP</h3>
+            <div style={styles.biometriaGrid}>
+              {/* Asesor */}
+              <div style={styles.biometriaCard}>
+                <h4 style={{ fontWeight: 'bold', fontSize: '9px', marginBottom: '0.4rem', borderBottom: '1px solid #d1d5db', paddingBottom: '2px' }}>
+                  VALIDACIÓN BIOMÉTRICA: REPRESENTANTE CUMBRES
+                </h4>
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                  {selfieAsesor && (
+                    <div style={styles.biometriaMiniatureContainer}>
+                      <img src={selfieAsesor} alt="Selfie Asesor" style={styles.biometriaMiniatureImg} />
+                      <span style={styles.biometriaMiniatureLabel}>ROSTRO</span>
+                    </div>
+                  )}
+                  {cedulaAsesor && (
+                    <div style={styles.biometriaMiniatureContainerWide}>
+                      <img src={cedulaAsesor} alt="Cédula Asesor" style={styles.biometriaMiniatureImg} />
+                      <span style={styles.biometriaMiniatureLabel}>DOCUMENTO</span>
+                    </div>
+                  )}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '8px' }}>
+                    <div><strong>Nombre OCR:</strong> {biometria.asesor?.ocr_metadata?.nombre_completo || 'N/A'}</div>
+                    <div><strong>Identificación OCR:</strong> {biometria.asesor?.ocr_metadata?.numero_identidad || 'N/A'}</div>
+                    <div><strong>Fecha/Hora:</strong> {new Date(biometria.asesor?.firmado_at || inv.created_at).toLocaleString('es-CO')}</div>
+                    <div><strong>Cripto-Hash ID:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px' }}>AS-{inv.id.substring(0,8).toUpperCase()}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Inquilino */}
+              <div style={styles.biometriaCard}>
+                <h4 style={{ fontWeight: 'bold', fontSize: '9px', marginBottom: '0.4rem', borderBottom: '1px solid #d1d5db', paddingBottom: '2px' }}>
+                  VALIDACIÓN BIOMÉTRICA: ARRENDATARIO
+                </h4>
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                  {selfieInquilino && (
+                    <div style={styles.biometriaMiniatureContainer}>
+                      <img src={selfieInquilino} alt="Selfie Inquilino" style={styles.biometriaMiniatureImg} />
+                      <span style={styles.biometriaMiniatureLabel}>ROSTRO</span>
+                    </div>
+                  )}
+                  {cedulaInquilino && (
+                    <div style={styles.biometriaMiniatureContainerWide}>
+                      <img src={cedulaInquilino} alt="Cédula Inquilino" style={styles.biometriaMiniatureImg} />
+                      <span style={styles.biometriaMiniatureLabel}>DOCUMENTO</span>
+                    </div>
+                  )}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '8px' }}>
+                    <div><strong>Nombre OCR:</strong> {biometria.inquilino?.ocr_metadata?.nombre_completo || 'N/A'}</div>
+                    <div><strong>Identificación OCR:</strong> {biometria.inquilino?.ocr_metadata?.numero_identidad || 'N/A'}</div>
+                    <div><strong>Fecha/Hora:</strong> {new Date(biometria.inquilino?.firmado_at || inv.created_at).toLocaleString('es-CO')}</div>
+                    <div><strong>Cripto-Hash ID:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px' }}>IQ-{inv.id.substring(0,8).toUpperCase()}</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Declaraciones Legales */}
         <section style={styles.legalSection}>
           <p style={styles.legalText}>
@@ -244,6 +340,11 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
         {/* Firmas */}
         <footer style={styles.signaturesFooter}>
           <div style={styles.signatureBox}>
+            {firmaAsesor ? (
+              <img src={firmaAsesor} alt="Firma Asesor" style={{ height: '48px', maxWidth: '160px', objectFit: 'contain', marginBottom: '0.2rem' }} />
+            ) : (
+              <div style={{ height: '48px' }} />
+            )}
             <div style={styles.signatureLine} />
             <span style={styles.signatureName}>{firmas.arrendador?.nombre || 'Representante Cumbres'}</span>
             <span style={styles.signatureRole}>Por Arrendamientos Cumbres</span>
@@ -251,6 +352,11 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
           </div>
 
           <div style={styles.signatureBox}>
+            {firmaInquilino ? (
+              <img src={firmaInquilino} alt="Firma Inquilino" style={{ height: '48px', maxWidth: '160px', objectFit: 'contain', marginBottom: '0.2rem' }} />
+            ) : (
+              <div style={{ height: '48px' }} />
+            )}
             <div style={styles.signatureLine} />
             <span style={styles.signatureName}>{firmas.arrendatario?.nombre || 'Arrendatario'}</span>
             <span style={styles.signatureRole}>El Arrendatario</span>
@@ -509,4 +615,59 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '8px',
     color: '#4b5563',
   },
+  biometriaGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '1rem',
+    padding: '0.4rem 0',
+  },
+  biometriaCard: {
+    border: '1px solid #d1d5db',
+    borderRadius: '6px',
+    padding: '0.5rem 0.75rem',
+    backgroundColor: '#fafafa',
+  },
+  biometriaMiniatureContainer: {
+    position: 'relative',
+    width: '42px',
+    height: '42px',
+    borderRadius: '50%',
+    overflow: 'hidden',
+    border: '1.5px solid #00abd8',
+    backgroundColor: '#e5e7eb',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometriaMiniatureContainerWide: {
+    position: 'relative',
+    width: '62px',
+    height: '42px',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    border: '1.5px solid #8b5cf6',
+    backgroundColor: '#e5e7eb',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometriaMiniatureImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  biometriaMiniatureLabel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    color: '#ffffff',
+    fontSize: '4.5px',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    padding: '1px 0',
+  }
 };

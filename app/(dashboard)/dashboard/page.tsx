@@ -12,6 +12,7 @@ import {
   MapPin,
   Tag
 } from 'lucide-react';
+import AdminApprovalWidget from './AdminApprovalWidget';
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -83,19 +84,102 @@ export default async function DashboardPage() {
   if (isAdmin) {
     const { data } = await supabase
       .from('inmuebles')
-      .select('id, titulo, direccion, precio, tipo_transaccion, estado, usuarios(nombre_completo)')
+      .select('id, titulo, direccion, precio, tipo_transaccion, estado, arrendasoft_id, usuarios(nombre_completo)')
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
-      .order('created_at', { ascending: false })
+      .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
     inmueblesRecientes = data || [];
   } else {
     const { data } = await supabase
       .from('inmuebles')
-      .select('id, titulo, direccion, precio, tipo_transaccion, estado')
+      .select('id, titulo, direccion, precio, tipo_transaccion, estado, arrendasoft_id')
       .eq('asesor_id', profile.id)
-      .order('created_at', { ascending: false })
+      .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
     inmueblesRecientes = data || [];
+  }
+
+  // 3. Obtener Tareas de Captaciones en proceso (pendientes) asociadas al asesor comercial
+  let captacionesPendientes: any[] = [];
+  if (!isAdmin) {
+    const { data: tareasPendientesAsesor } = await supabase
+      .from('tareas')
+      .select('id, entidad_id, evento_titulo, titulo, estado')
+      .eq('usuario_id', profile.id)
+      .eq('entidad_tipo', 'captacion')
+      .eq('estado', 'pendiente');
+
+    // Agrupar las tareas por captación en memoria para mantener la estructura visual anterior
+    const captacionesPendientesMap: Record<string, {
+      id: string;
+      titulo_captacion: string;
+      precio?: number;
+      tareas: { id: string; titulo: string; estado: string; }[];
+    }> = {};
+
+    if (tareasPendientesAsesor) {
+      tareasPendientesAsesor.forEach(t => {
+        const entidadId = t.entidad_id || 'general';
+        if (!captacionesPendientesMap[entidadId]) {
+          captacionesPendientesMap[entidadId] = {
+            id: entidadId,
+            titulo_captacion: t.evento_titulo,
+            tareas: []
+          };
+        }
+        captacionesPendientesMap[entidadId].tareas.push({
+          id: t.id,
+          titulo: t.titulo,
+          estado: t.estado
+        });
+      });
+    }
+
+    captacionesPendientes = Object.values(captacionesPendientesMap);
+  }
+
+  // 4. Obtener Solicitudes de Asociación de Contratos para Admins
+  let solicitudesAprobacion: any[] = [];
+  if (isAdmin) {
+    const { data: tareasAsociacion } = await supabase
+      .from('tareas')
+      .select(`
+        id,
+        entidad_id,
+        evento_titulo,
+        created_at
+      `)
+      .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .eq('titulo', 'Aceptar asociacion inventario')
+      .eq('estado', 'pendiente');
+
+    if (tareasAsociacion && tareasAsociacion.length > 0) {
+      const inventarioIds = tareasAsociacion.map(t => t.entidad_id).filter(Boolean);
+      const { data: invs } = await supabase
+        .from('inventarios')
+        .select('id, contrato_id_propuesto, usuarios(nombre_completo)')
+        .in('id', inventarioIds as string[]);
+
+      const invsMap = new Map(invs?.map(i => {
+        const usuario = Array.isArray(i.usuarios) ? i.usuarios[0] : (i.usuarios as any);
+        return [i.id, { 
+          contrato_id_propuesto: i.contrato_id_propuesto, 
+          creado_por: usuario?.nombre_completo || 'Asesor' 
+        }];
+      }));
+
+      solicitudesAprobacion = tareasAsociacion.map(t => {
+        const invInfo = invsMap.get(t.entidad_id) || { contrato_id_propuesto: 'Desconocido', creado_por: 'Asesor' };
+        return {
+          tareaId: t.id,
+          inventarioId: t.entidad_id,
+          tituloInventario: t.evento_titulo,
+          contratoIdPropuesto: invInfo.contrato_id_propuesto,
+          creadoPorNombre: invInfo.creado_por,
+          fecha: t.created_at
+        };
+      });
+    }
   }
 
   return (
@@ -159,13 +243,17 @@ export default async function DashboardPage() {
         )}
       </section>
 
+      {isAdmin && solicitudesAprobacion.length > 0 && (
+        <AdminApprovalWidget solicitudes={solicitudesAprobacion} />
+      )}
+
       {/* Contenido Principal: Acciones y Recientes */}
-      <div style={styles.contentGrid}>
+      <div className="dashboard-content-grid">
         {/* Columna Izquierda: Accesos Rápidos */}
         <section style={styles.columnLeft}>
           <h2 style={styles.sectionTitle}>Accesos Rápidos</h2>
           <div style={styles.actionsGrid}>
-            <Link href="/inmuebles?action=new" style={styles.actionCard} className="glass-card">
+            <Link href="/inmuebles?action=captar" style={styles.actionCard} className="glass-card">
               <div style={styles.actionHeader}>
                 <Building2 size={20} color="var(--primary)" />
                 <Plus size={16} color="var(--primary)" />
@@ -209,7 +297,7 @@ export default async function DashboardPage() {
             {inmueblesRecientes.length === 0 ? (
               <div style={styles.emptyState}>
                 <p>Aún no hay inmuebles registrados.</p>
-                <Link href="/inmuebles?action=new" style={styles.emptyStateLink}>
+                <Link href="/inmuebles?action=captar" style={styles.emptyStateLink}>
                   Registrar mi primer inmueble
                 </Link>
               </div>
@@ -227,6 +315,11 @@ export default async function DashboardPage() {
                         <Tag size={12} />
                         ${Number(inm.precio).toLocaleString('es-CO')} COP ({inm.tipo_transaccion})
                       </span>
+                      {inm.arrendasoft_id && (
+                        <span style={{ ...styles.recentCardMetaItem, fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          ID: {inm.arrendasoft_id}
+                        </span>
+                      )}
                     </div>
                     {isAdmin && inm.usuarios && (
                       <span style={styles.recentCardAsesor}>
@@ -248,6 +341,42 @@ export default async function DashboardPage() {
               ))
             )}
           </div>
+
+          {/* Captaciones Pendientes de Procesamiento (Solo visible para Asesores comercial) */}
+          {!isAdmin && captacionesPendientes.length > 0 && (
+            <div style={{ marginTop: '2.5rem' }} className="animate-fade-in">
+              <h2 style={{ ...styles.sectionTitle, marginBottom: '1.25rem' }}>
+                Mis Captaciones en Proceso
+              </h2>
+              <div style={styles.recentList}>
+                {captacionesPendientes.map((capt) => (
+                  <div key={capt.id} className="glass-card" style={styles.pendingCaptCard}>
+                    <div style={styles.recentCardInfo}>
+                      <h4 style={styles.recentCardTitle}>{capt.titulo_captacion}</h4>
+                      <div style={styles.recentCardMeta}>
+                        <span style={styles.recentCardMetaItem}>
+                          <Tag size={12} />
+                          En espera de publicación
+                        </span>
+                        <div style={styles.pendingTasksBadgeContainer}>
+                          {capt.tareas.map((task: any) => (
+                            <span key={task.id} className="badge" style={styles.pendingTaskBadge}>
+                              Falta: {task.titulo === 'Subir a marketplace' ? 'Marketplace' : 'ERP'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="badge badge-warning" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
+                        En Proceso
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -291,7 +420,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: '1.5rem',
   },
   statCard: {
@@ -360,7 +489,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actionsGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: '1rem',
   },
   actionCard: {
@@ -394,6 +523,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '1rem',
     padding: '1.25rem',
   },
   recentCardInfo: {
@@ -444,5 +575,30 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     fontSize: '0.9rem',
     textDecoration: 'underline',
+  },
+  pendingCaptCard: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '1rem',
+    padding: '1.25rem',
+    borderLeft: '4px solid var(--warning)',
+  },
+  pendingTasksBadgeContainer: {
+    display: 'flex',
+    gap: '0.35rem',
+    marginTop: '0.4rem',
+    flexWrap: 'wrap',
+  },
+  pendingTaskBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    border: '1px solid rgba(245, 158, 11, 0.2)',
+    color: 'var(--warning)',
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    padding: '0.15rem 0.45rem',
+    borderRadius: '4px',
+    textTransform: 'uppercase',
   },
 };

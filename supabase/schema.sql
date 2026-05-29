@@ -46,7 +46,12 @@ CREATE TABLE public.inmuebles (
     precio NUMERIC NOT NULL CHECK (precio >= 0),
     tipo_transaccion TEXT NOT NULL CHECK (tipo_transaccion IN ('venta', 'arriendo')),
     tipo_inmueble TEXT NOT NULL CHECK (tipo_inmueble IN ('casa', 'apartamento', 'lote', 'local', 'bodega', 'otro')),
-    estado TEXT NOT NULL DEFAULT 'disponible' CHECK (estado IN ('disponible', 'reservado', 'vendido', 'arrendado')),
+    estado TEXT NOT NULL DEFAULT 'disponible' CHECK (estado IN ('disponible', 'arrendado', 'inactivo')),
+    arrendasoft_id BIGINT UNIQUE,
+    arrendasoft_contrato_id TEXT,
+    contrato_id_propuesto TEXT,
+    arrendasoft_contrato_info JSONB,
+    imagenes JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -60,6 +65,9 @@ CREATE TABLE public.inventarios (
     titulo TEXT NOT NULL,
     items JSONB NOT NULL, -- Almacena toda la estructura jerárquica del PDF (llaves, exteriores, salas, alcobas, firmas)
     creado_por UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'completado')),
+    arrendasoft_contrato_id TEXT,
+    contrato_id_propuesto TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -170,7 +178,8 @@ CREATE POLICY "Admins ven inventarios de su inmobiliaria; Asesores ven de sus in
             SELECT 1 FROM public.inmuebles i
             WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND (
                 public.get_my_role() = 'admin' OR
-                i.asesor_id = auth.uid()
+                i.asesor_id = auth.uid() OR
+                creado_por = auth.uid()
             )
         )
     );
@@ -206,3 +215,93 @@ CREATE POLICY "Asesores pueden crear y editar inventarios para sus inmuebles asi
             WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND i.asesor_id = auth.uid()
         )
     );
+
+-- =====================================================================
+-- 5. TABLA WEBHOOK LOGS (Trazabilidad de captaciones enviadas a n8n)
+-- =====================================================================
+CREATE TABLE public.webhook_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    usuario_id UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    titulo_captacion TEXT NOT NULL,
+    asesor_nombre TEXT NOT NULL,
+    precio NUMERIC NOT NULL,
+    estado TEXT NOT NULL DEFAULT 'enviando' CHECK (estado IN ('enviando', 'exito', 'fallido')),
+    error_detalles TEXT,
+    payload JSONB NOT NULL,
+    files_count INTEGER NOT NULL DEFAULT 0,
+    files_size_bytes BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Habilitar RLS en webhook_logs
+ALTER TABLE public.webhook_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins ven todos los logs de su inmobiliaria; Asesores ven los propios"
+    ON public.webhook_logs
+    FOR SELECT
+    USING (
+        inmobiliaria_id = public.get_my_inmobiliaria() AND (
+            public.get_my_role() = 'admin' OR 
+            usuario_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Los usuarios pueden insertar sus propios logs"
+    ON public.webhook_logs
+    FOR INSERT
+    WITH CHECK (
+        inmobiliaria_id = public.get_my_inmobiliaria() AND 
+        usuario_id = auth.uid()
+    );
+
+-- =====================================================================
+-- 6. TABLA TAREAS OPERATIVAS (Flujo administrativo polimórfico)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.tareas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    usuario_id UUID REFERENCES public.usuarios(id) ON DELETE SET NULL, -- Asesor creador del evento
+    entidad_tipo TEXT NOT NULL DEFAULT 'general' CHECK (entidad_tipo IN ('captacion', 'inventario', 'inmueble', 'general')),
+    entidad_id UUID, -- ID de referencia genérica
+    evento_origen TEXT, -- 'captacion_creada', 'inventario_creado', etc.
+    evento_titulo TEXT NOT NULL, -- Título descriptivo para agrupar (ej. "Apartamento Laureles")
+    titulo TEXT NOT NULL, -- "Subir a marketplace", "Subir a ERP", etc.
+    estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'completada')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    completada_at TIMESTAMP WITH TIME ZONE,
+    completada_por UUID REFERENCES public.usuarios(id) ON DELETE SET NULL
+);
+
+-- Habilitar RLS en tareas
+ALTER TABLE public.tareas ENABLE ROW LEVEL SECURITY;
+
+-- Políticas RLS para tareas
+CREATE POLICY "Usuarios ven tareas según rol y pertenencia"
+    ON public.tareas
+    FOR SELECT
+    USING (
+        inmobiliaria_id = public.get_my_inmobiliaria() AND (
+            public.get_my_role() = 'admin' OR 
+            usuario_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Usuarios pueden insertar tareas"
+    ON public.tareas
+    FOR INSERT
+    WITH CHECK (
+        inmobiliaria_id = public.get_my_inmobiliaria()
+    );
+
+CREATE POLICY "Solo admins pueden actualizar tareas de su inmobiliaria"
+    ON public.tareas
+    FOR UPDATE
+    USING (
+        inmobiliaria_id = public.get_my_inmobiliaria() AND
+        public.get_my_role() = 'admin'
+    );
+
+
+
+

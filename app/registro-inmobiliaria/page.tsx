@@ -35,8 +35,7 @@ export default function RegisterInmobiliariaPage() {
       <div className="glass-container animate-fade-in" style={styles.card}>
         <div style={styles.header}>
           <div style={styles.logoContainer}>
-            <Home size={32} color="var(--primary)" />
-            <span style={styles.logoText}>Cumbres</span>
+            <img src="/logo.png" alt="Cumbres Inmobiliaria" style={{ height: '48px', width: 'auto', maxWidth: '100%' }} />
           </div>
           <h1 style={styles.title}>Registrar Inmobiliaria</h1>
           <p style={styles.subtitle}>Crea una cuenta para tu inmobiliaria y su administrador principal</p>
