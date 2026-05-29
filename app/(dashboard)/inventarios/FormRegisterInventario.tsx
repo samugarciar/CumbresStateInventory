@@ -746,7 +746,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
           </button>
         </div>
 
-        <div style={styles.tableWrapper} className="responsive-table-wrapper">
+        <div style={styles.tableWrapper} className="table-responsive-wrapper">
           <table style={styles.table}>
             <thead>
               <tr style={styles.tableHeaderRow}>

@@ -133,7 +133,8 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
       </div>
 
       {/* Hoja de Impresión */}
-      <div className="sheet" style={styles.sheet}>
+      <div className="print-sheet-wrapper" style={styles.sheetWrapper}>
+        <div className="sheet" style={styles.sheet}>
         {/* Encabezado */}
         <header style={styles.header}>
           <div style={styles.headerLeft}>
@@ -364,11 +365,15 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
           </div>
         </footer>
       </div>
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  sheetWrapper: {
+    width: '100%',
+  },
   container: {
     minHeight: '100vh',
     backgroundColor: '#1f2937',

@@ -451,6 +451,42 @@ html, body {
   }
 }
 
+/* --- CONTENEDORES CON SCROLL HORIZONTAL SELECTIVO --- */
+
+/* Contenedor de la hoja de impresión para móviles */
+.print-sheet-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 0;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 880px) {
+  .print-sheet-wrapper {
+    justify-content: flex-start; /* Permite scroll desde la izquierda */
+  }
+}
+
+/* Contenedor responsivo de tablas internas */
+.table-responsive-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: #ffffff;
+}
+
+@media (max-width: 767px) {
+  .table-responsive-wrapper table {
+    min-width: 650px !important; /* Fuerza el ancho ergonómico en móviles */
+  }
+}
+
+
 
 
 
