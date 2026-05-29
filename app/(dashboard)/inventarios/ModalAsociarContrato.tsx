@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, FileText, Loader2 } from 'lucide-react';
 import { proponerAsociacionContrato } from '@/app/actions/inventarios';
 import { useRouter } from 'next/navigation';
@@ -36,7 +37,8 @@ export default function ModalAsociarContrato({ inventarioId, onClose }: ModalAso
     });
   };
 
-  return (
+  // Portal para escapar del containing block que crea backdrop-filter en .glass-card
+  return createPortal(
     <div style={styles.overlay}>
       <div className="glass-card animate-fade-in" style={styles.modal}>
         <div style={styles.header}>
@@ -100,7 +102,8 @@ export default function ModalAsociarContrato({ inventarioId, onClose }: ModalAso
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

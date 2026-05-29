@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ShieldCheck, UserCheck, Smartphone, RefreshCw, X, Loader2 } from 'lucide-react';
 import SignatureCanvas from './SignatureCanvas';
 import FaceCapture from './FaceCapture';
@@ -93,7 +94,10 @@ export default function BiometricSignatureWizard({
     }
   };
 
-  return (
+  // Renderizar el overlay mediante Portal para escapar del containing block
+  // que crea backdrop-filter en .glass-card (CSS spec: backdrop-filter establece
+  // un nuevo containing block para position: fixed descendientes)
+  return createPortal(
     <div style={styles.fullscreenOverlay} className="animate-fade-in">
       {/* Botón de cierre para cancelar el flujo */}
       {currentStep !== 'submitting' && currentStep !== 'success' && (
@@ -304,7 +308,8 @@ export default function BiometricSignatureWizard({
         )}
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

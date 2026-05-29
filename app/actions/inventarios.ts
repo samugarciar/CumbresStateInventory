@@ -168,7 +168,17 @@ export async function resolverAsociacionContrato(tareaId: string, inventarioId: 
       completada_por: user.id
     }).eq('id', tareaId);
 
-
+    // También marcar como completada la tarea original "Asociar contrato al inventario"
+    // que se creó al registrar el inventario (evento_origen: 'inventario_creado')
+    await supabase.from('tareas').update({
+      estado: 'completada',
+      completada_at: new Date().toISOString(),
+      completada_por: user.id
+    })
+      .eq('entidad_tipo', 'inventario')
+      .eq('entidad_id', inventarioId)
+      .eq('titulo', 'Asociar contrato al inventario')
+      .eq('estado', 'pendiente');
 
   } else {
     const { error: invErr } = await supabase
