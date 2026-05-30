@@ -296,7 +296,7 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
                     <div><strong>Nombre OCR:</strong> {biometria.asesor?.ocr_metadata?.nombre_completo || 'N/A'}</div>
                     <div><strong>Identificación OCR:</strong> {biometria.asesor?.ocr_metadata?.numero_identidad || 'N/A'}</div>
                     <div><strong>Fecha/Hora:</strong> {new Date(biometria.asesor?.firmado_at || inv.created_at).toLocaleString('es-CO')}</div>
-                    <div><strong>Cripto-Hash ID:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px' }}>AS-{inv.id.substring(0,8).toUpperCase()}</span></div>
+                    <div><strong>Hash SHA-256:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px', wordBreak: 'break-all' }}>{biometria.asesor?.hash_integridad ? `${biometria.asesor.hash_integridad.substring(0, 16)}...` : `AS-${inv.id.substring(0,8).toUpperCase()}`}</span></div>
                   </div>
                 </div>
               </div>
@@ -323,7 +323,7 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
                     <div><strong>Nombre OCR:</strong> {biometria.inquilino?.ocr_metadata?.nombre_completo || 'N/A'}</div>
                     <div><strong>Identificación OCR:</strong> {biometria.inquilino?.ocr_metadata?.numero_identidad || 'N/A'}</div>
                     <div><strong>Fecha/Hora:</strong> {new Date(biometria.inquilino?.firmado_at || inv.created_at).toLocaleString('es-CO')}</div>
-                    <div><strong>Cripto-Hash ID:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px' }}>IQ-{inv.id.substring(0,8).toUpperCase()}</span></div>
+                    <div><strong>Hash SHA-256:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px', wordBreak: 'break-all' }}>{biometria.inquilino?.hash_integridad ? `${biometria.inquilino.hash_integridad.substring(0, 16)}...` : `IQ-${inv.id.substring(0,8).toUpperCase()}`}</span></div>
                   </div>
                 </div>
               </div>

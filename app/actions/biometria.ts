@@ -1,8 +1,39 @@
 'use server';
 
+import { createHash } from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+
+/**
+ * Genera un hash SHA-256 de integridad a partir de la evidencia biométrica.
+ * El hash vincula criptográficamente: URLs de archivos, datos OCR, timestamp e inventario ID.
+ * Cualquier modificación posterior a estos datos producirá un hash diferente,
+ * haciendo detectable cualquier alteración.
+ */
+function generarHashIntegridad(params: {
+  firmaUrl: string;
+  selfieUrl: string;
+  cedulaUrl: string;
+  nombreOcr: string;
+  identidadOcr: string;
+  firmadoAt: string;
+  inventarioId: string;
+  rol: 'asesor' | 'inquilino';
+}): string {
+  const payload = [
+    params.rol,
+    params.inventarioId,
+    params.firmaUrl,
+    params.selfieUrl,
+    params.cedulaUrl,
+    params.nombreOcr,
+    params.identidadOcr,
+    params.firmadoAt
+  ].join('|');
+
+  return createHash('sha256').update(payload, 'utf8').digest('hex');
+}
 
 /**
  * Inicializa el bucket de storage 'firmas_biometricas' si no existe.
@@ -178,6 +209,35 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
 
     // 5. Consolidar la clave 'biometria' dentro de 'items' JSONB
     const itemsActuales = (inv.items as Record<string, any>) || {};
+
+    const firmadoAtAsesor = new Date().toISOString();
+    const firmadoAtInquilino = new Date().toISOString();
+
+    // Generar hashes SHA-256 de integridad para cada firmante
+    const hashAsesor = generarHashIntegridad({
+      firmaUrl: firmaAsesorUrl,
+      selfieUrl: selfieAsesorUrl,
+      cedulaUrl: cedulaAsesorUrl,
+      nombreOcr: payload.asesor.ocr_metadata.nombre_completo,
+      identidadOcr: payload.asesor.ocr_metadata.numero_identidad,
+      firmadoAt: firmadoAtAsesor,
+      inventarioId,
+      rol: 'asesor'
+    });
+
+    const hashInquilino = generarHashIntegridad({
+      firmaUrl: firmaInquilinoUrl,
+      selfieUrl: selfieInquilinoUrl,
+      cedulaUrl: cedulaInquilinoUrl,
+      nombreOcr: payload.inquilino.ocr_metadata.nombre_completo,
+      identidadOcr: payload.inquilino.ocr_metadata.numero_identidad,
+      firmadoAt: firmadoAtInquilino,
+      inventarioId,
+      rol: 'inquilino'
+    });
+
+    console.log(`[Biometría Backend] Hash SHA-256 Asesor: ${hashAsesor.substring(0, 16)}...`);
+    console.log(`[Biometría Backend] Hash SHA-256 Inquilino: ${hashInquilino.substring(0, 16)}...`);
     
     const biometria = {
       asesor: {
@@ -188,7 +248,8 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
           numero_identidad: payload.asesor.ocr_metadata.numero_identidad,
           nombre_completo: payload.asesor.ocr_metadata.nombre_completo
         },
-        firmado_at: new Date().toISOString()
+        firmado_at: firmadoAtAsesor,
+        hash_integridad: hashAsesor
       },
       inquilino: {
         firma_url: firmaInquilinoUrl,
@@ -198,7 +259,8 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
           numero_identidad: payload.inquilino.ocr_metadata.numero_identidad,
           nombre_completo: payload.inquilino.ocr_metadata.nombre_completo
         },
-        firmado_at: new Date().toISOString()
+        firmado_at: firmadoAtInquilino,
+        hash_integridad: hashInquilino
       }
     };
 
