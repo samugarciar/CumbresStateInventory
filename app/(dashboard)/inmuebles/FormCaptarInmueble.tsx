@@ -272,8 +272,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
       <form ref={formRef} onSubmit={handleSubmit} style={styles.form}>
         
         {/* PESTAÑA 1: GENERAL */}
-        {activeTab === 'general' && (
-          <div className="animate-fade-in" style={styles.tabContent}>
+          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'general' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1' }}>
                 <label style={styles.label}>Título de Captación *</label>
@@ -364,11 +363,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </button>
             </div>
           </div>
-        )}
 
         {/* PESTAÑA 2: CARACTERÍSTICAS */}
-        {activeTab === 'caracteristicas' && (
-          <div className="animate-fade-in" style={styles.tabContent}>
+          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'caracteristicas' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Número de Habitaciones *</label>
@@ -435,11 +432,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </button>
             </div>
           </div>
-        )}
 
         {/* PESTAÑA 3: COMODIDADES */}
-        {activeTab === 'comodidades' && (
-          <div className="animate-fade-in" style={styles.tabContent}>
+          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'comodidades' ? 'flex' : 'none' }}>
             
             <div style={{ ...styles.fieldGrid, marginBottom: '1.5rem' }} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
@@ -519,11 +514,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </button>
             </div>
           </div>
-        )}
 
         {/* PESTAÑA 4: PROPIETARIO */}
-        {activeTab === 'propietario' && (
-          <div className="animate-fade-in" style={styles.tabContent}>
+          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'propietario' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Nombre del Propietario *</label>
@@ -588,11 +581,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </button>
             </div>
           </div>
-        )}
 
         {/* PESTAÑA 5: FOTOS */}
-        {activeTab === 'fotos' && (
-          <div className="animate-fade-in" style={styles.tabContent}>
+          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'fotos' ? 'flex' : 'none' }}>
             
             <div 
               onDragEnter={handleDrag}
@@ -698,7 +689,6 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
             )}
 
           </div>
-        )}
 
       </form>
     </div>
