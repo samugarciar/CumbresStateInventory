@@ -73,33 +73,33 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
   }
 
   // 2. Vista de Catálogo de Inventarios
-  let queryInvs = supabase
-    .from('inventarios')
-    .select(`
+  // Admins: inner join para filtrar por inmobiliaria_id en inmuebles
+  // Asesores: left join (sin !inner) para que RLS filtre. Con !inner, si el asesor
+  // creó el inventario pero no es asesor_id del inmueble, PostgREST lo excluye.
+  const selectFields = (inner: boolean) => `
+    id,
+    titulo,
+    created_at,
+    creado_por,
+    items,
+    arrendasoft_contrato_id,
+    contrato_id_propuesto,
+    usuarios (nombre_completo),
+    inmuebles${inner ? '!inner' : ''} (
       id,
       titulo,
-      created_at,
-      creado_por,
-      items,
-      arrendasoft_contrato_id,
-      contrato_id_propuesto,
-      usuarios (nombre_completo),
-      inmuebles!inner (
-        id,
-        titulo,
-        direccion,
-        inmobiliaria_id,
-        asesor_id
-      )
-    `);
+      direccion,
+      inmobiliaria_id,
+      asesor_id
+    )
+  `;
 
-  if (isAdmin) {
-    queryInvs = queryInvs.eq('inmuebles.inmobiliaria_id', profile.inmobiliaria_id);
-  } else {
-    queryInvs = queryInvs.or(`creado_por.eq.${profile.id},inmuebles.asesor_id.eq.${profile.id}`);
-  }
+  const inventariosQuery = isAdmin
+    ? supabase.from('inventarios').select(selectFields(true)).eq('inmuebles.inmobiliaria_id', profile.inmobiliaria_id)
+    : supabase.from('inventarios').select(selectFields(false));
 
-  const { data: inventarios } = await queryInvs.order('created_at', { ascending: false });
+  const { data: inventariosRaw } = await inventariosQuery.order('created_at', { ascending: false });
+  const inventarios = (inventariosRaw || []) as any[];
 
   // 3. Consultar tareas pendientes asociadas a los inventarios
   const { data: tareasPendientes } = await supabase

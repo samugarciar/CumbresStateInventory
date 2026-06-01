@@ -206,13 +206,19 @@ CREATE POLICY "Asesores pueden crear y editar inventarios para sus inmuebles asi
     USING (
         EXISTS (
             SELECT 1 FROM public.inmuebles i
-            WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND i.asesor_id = auth.uid()
+            WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND (
+                i.asesor_id = auth.uid() OR
+                inventarios.creado_por = auth.uid()
+            )
         )
     )
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM public.inmuebles i
-            WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND i.asesor_id = auth.uid()
+            WHERE i.id = inmueble_id AND i.inmobiliaria_id = public.get_my_inmobiliaria() AND (
+                i.asesor_id = auth.uid() OR
+                inventarios.creado_por = auth.uid()
+            )
         )
     );
 
