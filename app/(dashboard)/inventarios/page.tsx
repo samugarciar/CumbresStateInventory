@@ -46,7 +46,7 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
       .neq('estado', 'inactivo');
 
     if (!isAdmin) {
-      queryInm = queryInm.eq('asesor_id', profile.id);
+      queryInm = queryInm.or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`);
     }
 
     const { data: inmuebles } = await queryInm.order('titulo');

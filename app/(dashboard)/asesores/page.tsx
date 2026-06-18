@@ -2,6 +2,7 @@ import { getCurrentUser } from '@/lib/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import FormRegisterAsesor from './FormRegisterAsesor';
+import TelefonoAsesorEditor from './TelefonoAsesorEditor';
 import { Users, Mail, Calendar, Key, ShieldCheck, Briefcase } from 'lucide-react';
 
 export default async function AsesoresPage() {
@@ -17,7 +18,7 @@ export default async function AsesoresPage() {
   // 2. Obtener lista de asesores registrados en la inmobiliaria
   const { data: asesores, error } = await supabase
     .from('usuarios')
-    .select('id, nombre_completo, email, created_at')
+    .select('id, nombre_completo, email, telefono, created_at')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .eq('rol', 'asesor')
     .order('created_at', { ascending: false });
@@ -69,6 +70,7 @@ export default async function AsesoresPage() {
                         <Calendar size={12} />
                         Registrado el {new Date(asesor.created_at).toLocaleDateString('es-CO')}
                       </span>
+                      <TelefonoAsesorEditor asesorId={asesor.id} telefono={asesor.telefono} />
                     </div>
                   </div>
                   <div className="badge badge-info" style={styles.roleBadge}>

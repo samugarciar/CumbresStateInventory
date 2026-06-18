@@ -14,6 +14,115 @@ export interface SyncResult {
   details?: string[];
 }
 
+// Convierte valores numéricos sueltos del ERP (string/number) a entero positivo o null.
+// Nuby usa "-1" (y a veces 0/"") para indicar "sin dato", por eso exigimos > 0.
+function aEnteroPositivo(valor: unknown): number | null {
+  const n = Number(valor);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
+// Extrae un valor numérico del arreglo `caracteristicas` de Nuby buscando por
+// el texto de `descripcion` (insensible a acentos/mayúsculas).
+// Ej: "Nº De Habitaciones" -> 3, "Nº De Baños" -> 2.
+function extraerCaracteristicaNumerica(caracteristicas: unknown, keyword: string): number | null {
+  if (!Array.isArray(caracteristicas)) return null;
+  const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const item = caracteristicas.find(
+    (c: any) => c && typeof c.descripcion === 'string' && norm(c.descripcion).includes(keyword)
+  );
+  return item ? aEnteroPositivo(item.valor) : null;
+}
+
+// Normaliza texto para comparar: sin acentos, minúsculas, puntuación → espacio,
+// espacios colapsados. Ej: "URBVIDANTA, Apto-713" -> "urbvidanta apto 713".
+function normalizarTexto(s: string): string {
+  return s
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escaparRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Nombres de unidad demasiado cortos generan falsos positivos al buscarlos
+// dentro de direcciones; se ignoran los de menos de este largo (normalizado).
+const UNIDAD_MIN_CHARS = 3;
+
+// Prefijos de urbanización que se anteponen al nombre del edificio en las
+// direcciones colombianas, a veces PEGADOS (ej. "URBVIDANTA" = "URB"+"VIDANTA").
+// Se permiten como prefijo opcional para que "VIDANTA", "URB VIDANTA" y
+// "URBVIDANTA" se reconozcan como la misma unidad "Vidanta".
+const UNIDAD_PREFIJOS = 'urb|urbanizacion|conj|conjunto|edif|edificio|cond|condominio|ciudadela';
+
+/**
+ * Infiere la unidad de un inmueble leyendo su dirección y buscando, por límite
+ * de palabra, el nombre de alguna unidad ya fijada manualmente (el "catálogo").
+ * Devuelve el valor ORIGINAL del catálogo (conserva grafía/acentos) o null.
+ * Si varias unidades coinciden, elige la más específica (la más larga), de modo
+ * que "Luna del Bosque" no se confunda con un genérico "Bosque".
+ *
+ * Ej: catálogo ["Luna del Bosque"], dirección "CL 65 #97AE-20 LUNA DEL BOSQUE APTO 212"
+ *     -> "Luna del Bosque".
+ */
+function inferirUnidad(direccion: string | null, unidadesConocidas: string[]): string | null {
+  if (!direccion || unidadesConocidas.length === 0) return null;
+  const dirNorm = normalizarTexto(direccion);
+  let mejor: string | null = null;
+  let mejorLargo = 0;
+  for (const unidad of unidadesConocidas) {
+    const norm = normalizarTexto(unidad);
+    if (norm.length < UNIDAD_MIN_CHARS) continue;
+    // Prefijo de urbanización opcional (pegado) + nombre de la unidad por límite de palabra
+    const re = new RegExp(`\\b(?:${UNIDAD_PREFIJOS})?${escaparRegex(norm)}\\b`);
+    if (re.test(dirNorm) && norm.length > mejorLargo) {
+      mejor = unidad;
+      mejorLargo = norm.length;
+    }
+  }
+  return mejor;
+}
+
+// Abreviaturas de tipo de vía → código canónico (para que "CALLE 72", "CL 72"
+// y "CL72" produzcan la misma firma de dirección).
+const VIA_MAP: Record<string, string> = {
+  calle: 'ca', cll: 'ca', clle: 'ca', calla: 'ca', cl: 'ca',
+  cra: 'cr', cr: 'cr', carrera: 'cr', kra: 'cr', krra: 'cr',
+  av: 'av', ave: 'av', avda: 'av', avenida: 'av',
+  diag: 'dg', dg: 'dg', diagonal: 'dg',
+  transv: 'tv', tv: 'tv', transversal: 'tv',
+  autopista: 'au', autop: 'au', circular: 'ci', circ: 'ci',
+};
+const VIA_CODES = new Set(['ca', 'cr', 'av', 'dg', 'tv', 'au', 'ci']);
+
+/**
+ * Calcula una "firma" estable de la dirección: tipo de vía canónico + números/placa,
+ * descartando el apartamento/torre y el nombre del edificio. Dos inmuebles del mismo
+ * edificio comparten firma aunque su texto esté escrito distinto o NO mencione el
+ * nombre de la unidad. Ej:
+ *   "CALLE 72 #65B-60 URBVIDANTA APTO 713" -> "ca 72 65b 60"
+ *   "CL. 72 #65B -60 APTO 2817"            -> "ca 72 65b 60"  (misma, sin nombre)
+ * Devuelve '' si no logra extraer una firma útil.
+ */
+function firmaDireccion(direccion: string | null): string {
+  if (!direccion) return '';
+  let s = normalizarTexto(direccion);
+  // separar pegados letra/dígito: "cl72"->"cl 72", "221apto"->"221 apto", "65b"->"65 b"
+  s = s.replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2');
+  // cortar desde el marcador de apartamento/torre/etc. en adelante
+  s = s.replace(/\b(apto|aptp|apartamento|apt|ap|casa|local|oficina|of|torre|bloque|bl|interior|int|parqueadero|parq|pq|piso|t)\b.*$/, '');
+  // canonizar el tipo de vía
+  s = s.replace(/\b([a-z]+)\b/g, (m) => VIA_MAP[m] || m);
+  // re-unir la placa: "65 b" -> "65b", "97 ae" -> "97ae"
+  s = s.replace(/(\d+)\s+([a-z]{1,2})\b/g, '$1$2');
+  // conservar solo códigos de vía + números/placa
+  const toks = s.split(' ').filter(Boolean).filter((t) => /\d/.test(t) || VIA_CODES.has(t));
+  return toks.join(' ').trim();
+}
+
 /**
  * Server Action para sincronizar inmuebles de Arrendasoft/Nuby con la base de datos local.
  * Este proceso es seguro y se ejecuta completamente del lado del servidor.
@@ -167,7 +276,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   // Consultar inmuebles locales previamente sincronizados para distinguir entre "creación" y "actualización"
   const { data: inmueblesExistentes, error: existingErr } = await supabase
     .from('inmuebles')
-    .select('id, arrendasoft_id')
+    .select('id, arrendasoft_id, unidad')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .not('arrendasoft_id', 'is', null);
 
@@ -175,14 +284,50 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
     console.error('Error al consultar inmuebles existentes:', existingErr);
   }
 
-  const existingMap = new Map<string, string>(); // arrendasoft_id -> local_id
+  const existingMap = new Map<string, { id: string; unidad: string | null }>(); // arrendasoft_id -> registro local
   if (inmueblesExistentes) {
     inmueblesExistentes.forEach(item => {
       if (item.arrendasoft_id) {
-        existingMap.set(String(item.arrendasoft_id), item.id);
+        existingMap.set(String(item.arrendasoft_id), { id: item.id, unidad: item.unidad ?? null });
       }
     });
   }
+
+  // Inmuebles con unidad ya fijada en TODA la inmobiliaria (a mano o por syncs previos).
+  // Sirven de "semilla" para etiquetar a los demás de dos formas complementarias:
+  //   1) por NOMBRE: buscando el nombre del edificio dentro de la dirección.
+  //   2) por DIRECCIÓN: misma firma de calle/placa, aunque el texto no nombre el edificio.
+  const { data: inmueblesConUnidad } = await supabase
+    .from('inmuebles')
+    .select('unidad, direccion')
+    .eq('inmobiliaria_id', profile.inmobiliaria_id)
+    .not('unidad', 'is', null);
+
+  const unidadesConocidas = Array.from(
+    new Set((inmueblesConUnidad || []).map((r: any) => (r.unidad || '').trim()).filter(Boolean))
+  );
+
+  // Mapa firma-de-dirección → unidad. Solo se conservan firmas NO ambiguas
+  // (las que apuntan a un único edificio); si una firma choca con dos unidades
+  // distintas se descarta por seguridad.
+  const firmaAUnidad: Record<string, string> = {};
+  const firmasAmbiguas = new Set<string>();
+  for (const r of inmueblesConUnidad || []) {
+    const u = (r.unidad || '').trim();
+    const f = firmaDireccion(r.direccion);
+    if (!u || !f || firmasAmbiguas.has(f)) continue;
+    if (firmaAUnidad[f] && firmaAUnidad[f] !== u) {
+      delete firmaAUnidad[f];
+      firmasAmbiguas.add(f);
+    } else {
+      firmaAUnidad[f] = u;
+    }
+  }
+
+  if (unidadesConocidas.length > 0) {
+    details.push(`Catálogo de unidades: ${unidadesConocidas.length} nombre(s), ${Object.keys(firmaAUnidad).length} firma(s) de dirección.`);
+  }
+  let unidadInferidaCount = 0;
 
   // Mapear e insertar en lotes o individualmente con control de errores
   for (const prop of allProperties) {
@@ -289,6 +434,10 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         titulo: prop.titulo || `${prop.clase_inmueble || 'Inmueble'} en ${prop.barrio || 'Cumbres'}`,
         descripcion: prop.observaciones || prop.observaciones_publicas || `Sincronizado desde Arrendasoft. Código: ${prop.codigo}`,
         direccion: prop.direccion || 'Dirección no especificada',
+        ciudad: prop.municipio || null,
+        barrio: prop.barrio || null,
+        habitaciones: extraerCaracteristicaNumerica(prop.caracteristicas, 'habitacion'),
+        banos: extraerCaracteristicaNumerica(prop.caracteristicas, 'bano'),
         precio: precio,
         tipo_transaccion: tipoTransaccion,
         tipo_inmueble: tipoInmueble,
@@ -299,19 +448,38 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         imagenes: imagenesArr,
       };
 
+      // Inferir la unidad: 1º por nombre del edificio en la dirección; si no aparece,
+      // 2º por firma de dirección (mismo edificio aunque el texto no lo nombre).
+      // El payload base NO incluye `unidad` para no pisar asignaciones manuales.
+      const unidadInferida =
+        inferirUnidad(payload.direccion, unidadesConocidas) ||
+        firmaAUnidad[firmaDireccion(payload.direccion)] ||
+        null;
+
       if (isUpdate) {
-        const localId = existingMap.get(arrendasoftId)!;
+        const existente = existingMap.get(arrendasoftId)!;
+        const updatePayload: Record<string, any> = { ...payload };
+        // Solo autocompletar si el inmueble NO tiene ya una unidad (soberanía local)
+        if (unidadInferida && !(existente.unidad && existente.unidad.trim())) {
+          updatePayload.unidad = unidadInferida;
+          unidadInferidaCount++;
+        }
         const { error: updateErr } = await supabase
           .from('inmuebles')
-          .update(payload)
-          .eq('id', localId);
+          .update(updatePayload)
+          .eq('id', existente.id);
 
         if (updateErr) throw new Error(updateErr.message);
         updatedCount++;
       } else {
+        const insertPayload: Record<string, any> = { ...payload };
+        if (unidadInferida) {
+          insertPayload.unidad = unidadInferida;
+          unidadInferidaCount++;
+        }
         const { error: insertErr } = await supabase
           .from('inmuebles')
-          .insert(payload);
+          .insert(insertPayload);
 
         if (insertErr) throw new Error(insertErr.message);
         importedCount++;
@@ -322,6 +490,10 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
       failedCount++;
       details.push(`Código ${prop.codigo}: Error al guardar (${err.message})`);
     }
+  }
+
+  if (unidadInferidaCount > 0) {
+    details.push(`Se autocompletó la unidad de ${unidadInferidaCount} inmueble(s) a partir de la dirección (catálogo manual).`);
   }
 
   details.push(`Sincronización completada. Nuevos: ${importedCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}.`);

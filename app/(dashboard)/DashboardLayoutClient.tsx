@@ -16,7 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  CalendarDays,
+  CalendarCheck
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
@@ -177,6 +179,38 @@ export default function DashboardLayoutClient({
           >
             <ClipboardList size={20} />
             {(!isCollapsed || !mounted) && <span>Inventarios</span>}
+          </Link>
+
+          <Link 
+            href="/agenda" 
+            onClick={() => setIsMobileOpen(false)}
+            style={{ 
+              ...styles.navLink, 
+              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+              backgroundColor: pathname.startsWith('/agenda') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+              color: pathname.startsWith('/agenda') ? 'var(--primary)' : 'var(--text-secondary)',
+              fontWeight: pathname.startsWith('/agenda') ? '700' : '500'
+            }}
+            title={isCollapsed ? 'Agenda' : undefined}
+          >
+            <CalendarDays size={20} />
+            {(!isCollapsed || !mounted) && <span>Agenda</span>}
+          </Link>
+
+          <Link
+            href="/citas"
+            onClick={() => setIsMobileOpen(false)}
+            style={{
+              ...styles.navLink,
+              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+              backgroundColor: pathname.startsWith('/citas') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+              color: pathname.startsWith('/citas') ? 'var(--primary)' : 'var(--text-secondary)',
+              fontWeight: pathname.startsWith('/citas') ? '700' : '500'
+            }}
+            title={isCollapsed ? 'Citas' : undefined}
+          >
+            <CalendarCheck size={20} />
+            {(!isCollapsed || !mounted) && <span>Citas</span>}
           </Link>
 
           {isAdmin && (

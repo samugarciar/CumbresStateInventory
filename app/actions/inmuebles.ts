@@ -76,7 +76,7 @@ export async function actualizarEstadoInmueble(inmuebleId: string, nuevoEstado: 
   // 1. Consultar el estado actual del inmueble para validar reglas de negocio
   const { data: inmueble, error: getErr } = await supabase
     .from('inmuebles')
-    .select('estado, arrendasoft_id, inmobiliaria_id, titulo, asesor_id, direccion')
+    .select('estado, arrendasoft_id, inmobiliaria_id, titulo, asesor_id, asesor_id_override, direccion')
     .eq('id', inmuebleId)
     .single();
 
@@ -165,7 +165,7 @@ export async function actualizarEstadoInmueble(inmuebleId: string, nuevoEstado: 
       .from('tareas')
       .insert({
         inmobiliaria_id: inmueble.inmobiliaria_id,
-        usuario_id: inmueble.asesor_id || user?.id || null,
+        usuario_id: inmueble.asesor_id_override || inmueble.asesor_id || user?.id || null,
         entidad_tipo: 'inmueble',
         entidad_id: inmuebleId,
         evento_origen: 'inmueble_desactivado',
@@ -179,4 +179,69 @@ export async function actualizarEstadoInmueble(inmuebleId: string, nuevoEstado: 
   revalidatePath('/dashboard');
   revalidatePath('/tareas');
   return { success: true, message: 'Estado actualizado correctamente.' };
+}
+
+export async function reasignarAsesor(inmuebleId: string, asesorId: string | null) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Sesión no válida.' };
+
+  const { data: profile } = await supabase
+    .from('usuarios')
+    .select('rol, inmobiliaria_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.rol !== 'admin') {
+    return { success: false, error: 'No autorizado. Solo los administradores pueden reasignar asesores.' };
+  }
+
+  // Actualizar el campo asesor_id_override (el null sirve para limpiar el override y volver al del ERP)
+  const { error } = await supabase
+    .from('inmuebles')
+    .update({ asesor_id_override: asesorId || null })
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/inmuebles');
+  revalidatePath('/dashboard');
+  revalidatePath('/tareas');
+  revalidatePath('/agenda');
+  return { success: true, message: 'Asesor reasignado exitosamente.' };
+}
+
+export async function actualizarUnidad(inmuebleId: string, unidad: string | null) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Sesión no válida.' };
+
+  const { data: profile } = await supabase
+    .from('usuarios')
+    .select('rol, inmobiliaria_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.rol !== 'admin') {
+    return { success: false, error: 'No autorizado. Solo los administradores pueden asignar la unidad.' };
+  }
+
+  // La unidad agrupa inmuebles del mismo lugar: las franjas de agenda de un
+  // inmueble cubren a todos los que comparten unidad (o dirección si es null)
+  const { error } = await supabase
+    .from('inmuebles')
+    .update({ unidad: unidad?.trim() || null })
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath('/inmuebles');
+  revalidatePath('/agenda');
+  return { success: true, message: 'Unidad actualizada.' };
 }

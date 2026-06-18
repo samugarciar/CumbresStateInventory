@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import FormCaptarInmueble from './FormCaptarInmueble';
 import LogsWebhookTable from './LogsWebhookTable';
 import StateSelector from './StateSelector';
+import AsesorSelector from './AsesorSelector';
+import UnidadEditor from './UnidadEditor';
 import PhotosGallery from './PhotosGallery';
 import FiltersPanel from './FiltersPanel';
 import { 
@@ -61,6 +63,20 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .eq('rol', 'asesor');
     asesores = data || [];
+  }
+
+  // Unidades ya existentes en la inmobiliaria (para el autocompletado del editor de unidad).
+  // Se listan todas, no solo las de la página actual, para evitar duplicados por tipeo.
+  let unidadesExistentes: string[] = [];
+  if (isAdmin) {
+    const { data } = await supabase
+      .from('inmuebles')
+      .select('unidad')
+      .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .not('unidad', 'is', null);
+    unidadesExistentes = Array.from(
+      new Set((data || []).map((r: any) => (r.unidad || '').trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, 'es'));
   }
 
   // 1. Renderizar Vista de Registro / Captación de Inmueble a través de n8n
@@ -122,14 +138,14 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   // 2. Calcular contadores (KPIs) en base a roles y filtros
   let statsQuery = supabase
     .from('inmuebles')
-    .select('estado')
+    .select('estado, asesor_id, asesor_id_override')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .in('estado', ['disponible', 'arrendado']);
 
   if (!isAdmin) {
-    statsQuery = statsQuery.eq('asesor_id', profile.id);
+    statsQuery = statsQuery.or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`);
   } else if (resolvedParams.asesor) {
-    statsQuery = statsQuery.eq('asesor_id', resolvedParams.asesor);
+    statsQuery = statsQuery.or(`asesor_id_override.eq.${resolvedParams.asesor},and(asesor_id_override.is.null,asesor_id.eq.${resolvedParams.asesor})`);
   }
   const { data: allStats } = await statsQuery;
   const totalDisponibles = allStats?.filter(i => i.estado === 'disponible').length || 0;
@@ -145,15 +161,15 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   // Construir consulta dinámica basada en los filtros con count: 'exact'
   let query = supabase
     .from('inmuebles')
-    .select('*, usuarios(nombre_completo)', { count: 'exact' })
+    .select('*, usuarios!inmuebles_asesor_id_fkey(nombre_completo), usuarios_override:usuarios!inmuebles_asesor_id_override_fkey(nombre_completo)', { count: 'exact' })
     .eq('inmobiliaria_id', profile.inmobiliaria_id);
 
   if (!isAdmin) {
-    // Si es asesor, forzar visualización exclusiva de los propios
-    query = query.eq('asesor_id', profile.id);
+    // Si es asesor, forzar visualización exclusiva de los propios o reasignados a sí mismos
+    query = query.or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`);
   } else if (resolvedParams.asesor) {
     // Si es admin y se seleccionó un asesor, filtrar por ese asesor
-    query = query.eq('asesor_id', resolvedParams.asesor);
+    query = query.or(`asesor_id_override.eq.${resolvedParams.asesor},and(asesor_id_override.is.null,asesor_id.eq.${resolvedParams.asesor})`);
   }
 
   // Aplicar filtros de URL si existen
@@ -330,11 +346,16 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
                     <span style={styles.codeLabel}>Arrendasoft ID:</span>
                     <span style={styles.codeVal}>{inm.arrendasoft_id || 'Registrado Local'}</span>
                   </div>
-                  {isAdmin && inm.usuarios && (
+                  {isAdmin && (inm.usuarios_override || inm.usuarios) && (
                     <div style={styles.metaItem}>
                       <UserCheck size={14} color="var(--secondary)" />
-                      <span style={styles.metaText} title={inm.usuarios.nombre_completo}>
-                        Asesor: {inm.usuarios.nombre_completo}
+                      <span style={styles.metaText} title={inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}>
+                        Asesor: {inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}
+                        {inm.usuarios_override && (
+                          <span style={{ fontSize: '0.7rem', color: '#10b981', marginLeft: '0.3rem', fontWeight: 600 }}>
+                            (Reasignado)
+                          </span>
+                        )}
                       </span>
                     </div>
                   )}
@@ -342,11 +363,28 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
               </div>
 
               <div style={styles.cardFooter}>
-                <div style={styles.cardFooterRow}>
+                <div style={{ ...styles.cardFooterRow, flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'flex-start' }}>
                   <div style={styles.stateSelectorWrapper}>
                     <span style={styles.stateLabel}>Estado:</span>
                     <StateSelector inmuebleId={inm.id} currentEstado={inm.estado} />
                   </div>
+                  {isAdmin && (
+                    <div style={styles.stateSelectorWrapper}>
+                      <span style={styles.stateLabel}>Asignar Asesor:</span>
+                      <AsesorSelector
+                        inmuebleId={inm.id}
+                        asesorOverrideId={inm.asesor_id_override}
+                        defaultAsesorName={inm.usuarios?.nombre_completo || 'Sin asesor'}
+                        asesores={asesores}
+                      />
+                    </div>
+                  )}
+                  {isAdmin && (
+                    <div style={styles.stateSelectorWrapper}>
+                      <span style={styles.stateLabel}>Unidad:</span>
+                      <UnidadEditor inmuebleId={inm.id} unidad={inm.unidad} unidadesExistentes={unidadesExistentes} />
+                    </div>
+                  )}
                 </div>
                 
                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', width: '100%', alignItems: 'center' }}>
