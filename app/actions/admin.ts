@@ -8,9 +8,10 @@ export async function registrarAsesor(prevState: any, formData: FormData) {
   const nombreCompleto = formData.get('nombreCompleto') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
+  const telefono = ((formData.get('telefono') as string) || '').trim();
 
   if (!nombreCompleto || !email || !password) {
-    return { success: false, error: 'Todos los campos son obligatorios.' };
+    return { success: false, error: 'El nombre, el correo y la contraseña son obligatorios.' };
   }
 
   if (password.length < 6) {
@@ -67,6 +68,7 @@ export async function registrarAsesor(prevState: any, formData: FormData) {
         inmobiliaria_id: profile.inmobiliaria_id,
         nombre_completo: nombreCompleto,
         email,
+        telefono: telefono || null,
         rol: 'asesor',
       });
 
@@ -78,6 +80,57 @@ export async function registrarAsesor(prevState: any, formData: FormData) {
 
     revalidatePath('/asesores');
     return { success: true, message: 'Asesor comercial registrado de manera exitosa.' };
+  } catch (err: any) {
+    return { success: false, error: `Excepción inesperada: ${err.message || err}` };
+  }
+}
+
+/**
+ * Actualiza el teléfono de un asesor existente (solo admin de su inmobiliaria).
+ * Se usa para completar el dato en asesores ya creados, de modo que el payload
+ * de "Confirmar citas" hacia n8n pueda incluir el teléfono del asesor.
+ */
+export async function actualizarTelefonoAsesor(asesorId: string, telefono: string | null) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Sesión no activa.' };
+
+  const { data: profile } = await supabase
+    .from('usuarios')
+    .select('rol, inmobiliaria_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.rol !== 'admin') {
+    return { success: false, error: 'No posees permisos de administrador.' };
+  }
+
+  try {
+    const supabaseAdmin = createAdminClient();
+
+    // El asesor debe pertenecer a la inmobiliaria del admin
+    const { data: asesor } = await supabaseAdmin
+      .from('usuarios')
+      .select('id, inmobiliaria_id')
+      .eq('id', asesorId)
+      .single();
+
+    if (!asesor || asesor.inmobiliaria_id !== profile.inmobiliaria_id) {
+      return { success: false, error: 'Asesor no encontrado.' };
+    }
+
+    const limpio = (telefono || '').trim();
+    const { error } = await supabaseAdmin
+      .from('usuarios')
+      .update({ telefono: limpio || null })
+      .eq('id', asesorId);
+
+    if (error) {
+      return { success: false, error: `No se pudo actualizar el teléfono: ${error.message}` };
+    }
+
+    revalidatePath('/asesores');
+    return { success: true };
   } catch (err: any) {
     return { success: false, error: `Excepción inesperada: ${err.message || err}` };
   }

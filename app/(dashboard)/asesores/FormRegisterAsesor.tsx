@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { registrarAsesor } from '@/app/actions/admin';
-import { User, Mail, Lock, Plus, Loader2 } from 'lucide-react';
+import { User, Mail, Lock, Plus, Loader2, Phone } from 'lucide-react';
 
 export default function FormRegisterAsesor() {
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +72,24 @@ export default function FormRegisterAsesor() {
             type="email"
             required
             placeholder="juan.restrepo@cumbres.com"
+            className="form-input"
+            style={styles.inputWithIcon}
+            disabled={isPending}
+          />
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label" htmlFor="telefono">
+          Teléfono <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(opcional)</span>
+        </label>
+        <div style={styles.inputWrapper}>
+          <Phone size={18} style={styles.inputIcon} />
+          <input
+            id="telefono"
+            name="telefono"
+            type="tel"
+            placeholder="3001234567"
             className="form-input"
             style={styles.inputWithIcon}
             disabled={isPending}

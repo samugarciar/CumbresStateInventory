@@ -15,6 +15,15 @@ export interface NubyProperty {
   observaciones?: string;
   estado: number;
   estado_texto?: string;
+  // Ubicación: la ciudad real viene en `municipio` (NO existe `ciudad`).
+  municipio?: string;
+  barrio?: string;
+  area?: string;            // metros cuadrados como string, ej. "52.00"
+  estrato_texto?: string;   // "Dos", "Tres", "Cuatro"...
+  edificio_unidad?: string | null; // campo de unidad del ERP (vacío en esta instancia)
+  // Habitaciones/baños NO son top-level: viven en `caracteristicas[]` como
+  // { descripcion: "Nº De Habitaciones" | "Nº De Baños", valor: "3" }. "-1" = sin dato.
+  caracteristicas?: Array<{ descripcion?: string; valor?: string; [k: string]: any }>;
   [key: string]: any;
 }
 
@@ -175,7 +184,7 @@ export async function fetchPropiedadesNuby(
 /**
  * Traduce el tipo de inmueble de Nuby a la categoría de nuestro sistema
  */
-export function mapearTipoInmueble(claseInmueble?: string): 'casa' | 'apartamento' | 'lote' | 'local' | 'bodega' | 'otro' {
+export function mapearTipoInmueble(claseInmueble?: string): 'casa' | 'apartamento' | 'lote' | 'local' | 'bodega' | 'oficina' | 'otro' {
   if (!claseInmueble) return 'otro';
   
   const tipoNormalized = claseInmueble.toLowerCase().trim();
@@ -194,6 +203,9 @@ export function mapearTipoInmueble(claseInmueble?: string): 'casa' | 'apartament
   }
   if (tipoNormalized.includes('bodega')) {
     return 'bodega';
+  }
+  if (tipoNormalized.includes('oficina') || tipoNormalized.includes('consultorio')) {
+    return 'oficina';
   }
   
   return 'otro';

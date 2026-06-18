@@ -62,13 +62,13 @@ export default async function DashboardPage() {
     const { count: countInm } = await supabase
       .from('inmuebles')
       .select('*', { count: 'exact', head: true })
-      .eq('asesor_id', profile.id);
+      .or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`);
     totalInmuebles = countInm || 0;
 
     const { count: countDisp } = await supabase
       .from('inmuebles')
       .select('*', { count: 'exact', head: true })
-      .eq('asesor_id', profile.id)
+      .or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`)
       .eq('estado', 'disponible');
     disponiblesInmuebles = countDisp || 0;
 
@@ -84,7 +84,7 @@ export default async function DashboardPage() {
   if (isAdmin) {
     const { data } = await supabase
       .from('inmuebles')
-      .select('id, titulo, direccion, precio, tipo_transaccion, estado, arrendasoft_id, usuarios(nombre_completo)')
+      .select('id, titulo, direccion, precio, tipo_transaccion, estado, arrendasoft_id, usuarios!inmuebles_asesor_id_fkey(nombre_completo), usuarios_override:usuarios!inmuebles_asesor_id_override_fkey(nombre_completo)')
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
@@ -93,7 +93,7 @@ export default async function DashboardPage() {
     const { data } = await supabase
       .from('inmuebles')
       .select('id, titulo, direccion, precio, tipo_transaccion, estado, arrendasoft_id')
-      .eq('asesor_id', profile.id)
+      .or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`)
       .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
     inmueblesRecientes = data || [];
@@ -321,9 +321,14 @@ export default async function DashboardPage() {
                         </span>
                       )}
                     </div>
-                    {isAdmin && inm.usuarios && (
+                    {isAdmin && (inm.usuarios_override || inm.usuarios) && (
                       <span style={styles.recentCardAsesor}>
-                        Asesor: {inm.usuarios.nombre_completo}
+                        Asesor: {inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}
+                        {inm.usuarios_override && (
+                          <span style={{ fontSize: '0.75rem', color: '#10b981', marginLeft: '0.3rem', fontWeight: 600 }}>
+                            (Reasignado)
+                          </span>
+                        )}
                       </span>
                     )}
                   </div>
