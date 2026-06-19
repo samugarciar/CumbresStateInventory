@@ -489,12 +489,23 @@ export async function confirmarCitas(citaIds: string[]) {
 
     const url = process.env.N8N_CONFIRMAR_CITAS_URL
       || 'https://n8n.arriendabot.com/webhook/confirmar-citas';
+    // El webhook exige Header Auth (X-Webhook-Token). El token va en el entorno,
+    // nunca en el código ni en el navegador (este action corre en el servidor).
+    const token = process.env.N8N_CONFIRMAR_CITAS_TOKEN;
+
+    if (!token) {
+      console.error('[Citas] Falta N8N_CONFIRMAR_CITAS_TOKEN en el entorno.');
+      return { success: false, error: 'El servicio de confirmación no está configurado (falta el token). Avisa al administrador.' };
+    }
 
     let resp: Response;
     try {
       resp = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Webhook-Token': token,
+        },
         body: JSON.stringify(payload),
       });
     } catch (e: any) {
