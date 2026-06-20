@@ -3,7 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import AgendaView from './AgendaView';
 
-export default async function AgendaPage() {
+export default async function AgendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ semana?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user || !user.profile) {
     redirect('/login');
@@ -13,8 +17,11 @@ export default async function AgendaPage() {
   const isAdmin = profile.rol === 'admin';
   const supabase = await createClient();
 
-  // Obtener la semana actual (lunes a sábado)
-  const hoy = new Date();
+  // Semana a mostrar: la del parámetro ?semana=YYYY-MM-DD, o la semana actual.
+  // (Sin esto, navegar de semana no volvía a consultar datos: se quedaba en la actual.)
+  const { semana } = await searchParams;
+  const semanaValida = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana);
+  const hoy = semanaValida ? new Date(semana + 'T00:00:00') : new Date();
   const diaSemana = hoy.getDay(); // 0=dom, 1=lun...
   const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
   const lunes = new Date(hoy);

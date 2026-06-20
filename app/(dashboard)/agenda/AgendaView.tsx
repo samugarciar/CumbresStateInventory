@@ -111,7 +111,8 @@ export default function AgendaView({
   franjas: franjasIniciales, citas, asesores, inmuebles, isAdmin, userId, inmobiliariaId, fechaInicioSemana
 }: AgendaViewProps) {
   const router = useRouter();
-  const [lunes, setLunes] = useState(() => new Date(fechaInicioSemana + 'T00:00:00'));
+  // La semana mostrada la dicta el servidor (prop), que la lee de la URL (?semana=)
+  const lunes = useMemo(() => new Date(fechaInicioSemana + 'T00:00:00'), [fechaInicioSemana]);
   const [filtroAsesor, setFiltroAsesor] = useState<string>('todos');
   const [modalOpen, setModalOpen] = useState(false);
   const [editData, setEditData] = useState<any>(null);
@@ -172,17 +173,15 @@ export default function AgendaView({
     return set;
   }, [franjasFiltradas]);
 
-  // Navegación semanal
+  // Navegación semanal: cambia la URL (?semana=) para que el servidor traiga esa semana
   const navSemana = useCallback((dir: number) => {
     const nueva = new Date(lunes);
     nueva.setDate(lunes.getDate() + dir * 7);
-    setLunes(nueva);
-    router.refresh();
+    router.push(`/agenda?semana=${formatFecha(nueva)}`);
   }, [lunes, router]);
 
   const irHoy = useCallback(() => {
-    setLunes(getLunes(new Date()));
-    router.refresh();
+    router.push(`/agenda?semana=${formatFecha(getLunes(new Date()))}`);
   }, [router]);
 
   // Abrir modal para nueva franja
