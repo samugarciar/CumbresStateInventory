@@ -371,25 +371,9 @@ export async function agendarCitaManual(data: CitaManualData) {
       };
     }
 
-    // Elegir la primera franja sin cita que se cruce (pre-chequeo; el constraint es la garantía)
-    let franjaElegida: string | null = null;
-    for (const f of candidatas) {
-      const { data: cruces } = await supabase
-        .from('citas')
-        .select('id')
-        .eq('franja_id', f.id)
-        .eq('estado', 'agendada')
-        .lt('hora_inicio', data.hora_fin)
-        .gt('hora_fin', data.hora_inicio);
-      if (!cruces || cruces.length === 0) {
-        franjaElegida = f.id;
-        break;
-      }
-    }
-
-    if (!franjaElegida) {
-      return { success: false, error: 'Ese horario ya está ocupado por otra cita. Elige otro bloque.' };
-    }
+    // Se permiten varias citas a la vez en la misma franja (misma unidad):
+    // tomamos la primera franja que cubre el horario, sin exigir que esté libre.
+    const franjaElegida: string = candidatas[0].id;
 
     const { error: insertError } = await supabase
       .from('citas')
@@ -409,10 +393,6 @@ export async function agendarCitaManual(data: CitaManualData) {
       });
 
     if (insertError) {
-      // 23P01 = exclusion_violation: dos citas cruzadas en la misma franja (carrera)
-      if ((insertError as any).code === '23P01') {
-        return { success: false, error: 'Ese horario acaba de ocuparse. Intenta con otro bloque.' };
-      }
       console.error('[Agenda] Error al agendar cita manual:', insertError.message);
       return { success: false, error: 'No se pudo agendar la cita.' };
     }

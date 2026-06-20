@@ -401,12 +401,10 @@ CREATE TABLE IF NOT EXISTS public.citas (
     CONSTRAINT citas_grilla_30min CHECK (
         EXTRACT(MINUTE FROM hora_inicio)::int % 30 = 0 AND EXTRACT(SECOND FROM hora_inicio) = 0 AND
         EXTRACT(MINUTE FROM hora_fin)::int % 30 = 0 AND EXTRACT(SECOND FROM hora_fin) = 0
-    ),
-    -- Garantía a nivel de motor contra doble reserva concurrente
-    CONSTRAINT citas_sin_cruce EXCLUDE USING gist (
-        franja_id WITH =,
-        tsrange((fecha + hora_inicio), (fecha + hora_fin)) WITH &&
-    ) WHERE (estado = 'agendada')
+    )
+    -- Nota: se permiten VARIAS citas a la vez en una misma franja (visitas
+    -- grupales de la misma unidad), por eso NO hay constraint anti-cruce.
+    -- Ver migración 2026-06-20_citas_multiples_por_franja.sql
 );
 
 CREATE INDEX IF NOT EXISTS idx_citas_franja ON public.citas(franja_id);
