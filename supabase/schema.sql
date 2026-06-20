@@ -496,4 +496,6 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   resolver_inmuebles_por_texto (helper), consultar_disponibilidad_por_texto,
 --   agendar_cita_por_texto  (resuelven el inmueble por texto libre, sin UUID)
 --   → 2026-06-16_consultar_disponibilidad_por_texto.sql
+--   buscar_inmueble_por_codigo  (busca por código del ERP arrendasoft_id)
+--   → 2026-06-20_buscar_inmueble_por_codigo.sql
 -- ---------------------------------------------------------------------
