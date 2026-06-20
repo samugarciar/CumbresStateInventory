@@ -15,7 +15,7 @@ interface Franja {
   hora_inicio: string;
   hora_fin: string;
   color: string;
-  inmuebles: { id: string; titulo: string; direccion: string } | null;
+  inmuebles: { id: string; titulo: string; direccion: string; unidad?: string | null } | null;
   usuarios: { id: string; nombre_completo: string } | null;
 }
 
@@ -29,7 +29,7 @@ interface Cita {
   cliente_nombre: string;
   cliente_telefono: string;
   origen: string;
-  inmuebles: { titulo: string } | null;
+  inmuebles: { titulo: string; direccion?: string; unidad?: string | null } | null;
 }
 
 interface Asesor { id: string; nombre_completo: string; }
@@ -98,6 +98,13 @@ function calcSlots(horaInicio: string, horaFin: string): number {
   const [h1, m1] = horaInicio.split(':').map(Number);
   const [h2, m2] = horaFin.split(':').map(Number);
   return ((h2 * 60 + m2) - (h1 * 60 + m1)) / 30;
+}
+
+// Etiqueta de ubicación para mostrar: la unidad si existe; si no, la dirección
+function etiquetaUbicacion(inm?: { unidad?: string | null; direccion?: string | null } | null): string {
+  if (!inm) return 'Sin ubicación';
+  const u = (inm.unidad || '').trim();
+  return u || inm.direccion || 'Sin ubicación';
 }
 
 export default function AgendaView({
@@ -370,7 +377,7 @@ export default function AgendaView({
 
                 if (franja) {
                   const numSlots = calcSlots(franja.hora_inicio.substring(0, 5), franja.hora_fin.substring(0, 5));
-                  const inmuebleNombre = franja.inmuebles?.titulo || 'Sin título';
+                  const inmuebleNombre = etiquetaUbicacion(franja.inmuebles);
                   const asesorNombre = franja.usuarios?.nombre_completo || '';
                   const citasFranja = citasPorFranja[franja.id] || [];
 
@@ -501,8 +508,8 @@ export default function AgendaView({
                   )}
                 </div>
               </div>
-              <div style={styles.movilCardTitle}>{f.inmuebles?.titulo || 'Sin título'}</div>
-              {f.inmuebles?.direccion && (
+              <div style={styles.movilCardTitle}>{etiquetaUbicacion(f.inmuebles)}</div>
+              {f.inmuebles?.unidad?.trim() && f.inmuebles?.direccion && (
                 <div style={styles.movilCardDireccion}>{f.inmuebles.direccion}</div>
               )}
               {(citasPorFranja[f.id] || []).map(c => (

@@ -17,7 +17,7 @@ interface Cita {
   cliente_telefono: string;
   cliente_email: string | null;
   origen: string;
-  inmuebles: { titulo: string; direccion: string } | null;
+  inmuebles: { titulo: string; direccion: string; unidad?: string | null } | null;
   franjas_horarias: { asesor_id: string; usuarios: { id: string; nombre_completo: string } | null } | null;
 }
 
@@ -267,8 +267,9 @@ export default function CitasView({ citas, asesores, inmuebles, isAdmin, hoy }: 
                         <div style={styles.detalleLinea}>
                           <Building2 size={13} style={{ flexShrink: 0 }} />
                           <span style={styles.inmuebleTxt}>
-                            {c.inmuebles.titulo}
-                            {c.inmuebles.direccion ? ` · ${c.inmuebles.direccion}` : ''}
+                            {c.inmuebles.unidad?.trim()
+                              ? `${c.inmuebles.unidad.trim()}${c.inmuebles.direccion ? ` · ${c.inmuebles.direccion}` : ''}`
+                              : (c.inmuebles.direccion || c.inmuebles.titulo)}
                           </span>
                         </div>
                       )}

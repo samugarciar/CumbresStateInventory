@@ -18,7 +18,7 @@ interface Cita {
   cliente_nombre: string;
   cliente_telefono: string;
   origen: string;
-  inmuebles: { titulo: string } | null;
+  inmuebles: { titulo: string; direccion?: string; unidad?: string | null } | null;
 }
 
 interface Asesor {
@@ -100,6 +100,17 @@ export default function ModalFranja({
   const inmueblesCubiertos = inmuebleSeleccionado
     ? inmuebles.filter(i => ubicacionKey(i) === ubicacionKey(inmuebleSeleccionado)).length
     : 0;
+
+  // Datos para el resumen de info de la franja (modo edición)
+  const asesorSeleccionado = asesores.find(a => a.id === asesorId);
+  const ubicacionInmueble = inmuebleSeleccionado
+    ? (inmuebleSeleccionado.unidad?.trim() || inmuebleSeleccionado.direccion)
+    : '';
+  const fechaLegible = fecha
+    ? new Date(fecha + 'T00:00:00')
+        .toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
+        .replace(/^\w/, c => c.toUpperCase())
+    : '';
 
   function calcularHoraFin(inicio: string): string {
     const idx = HORAS.indexOf(inicio);
@@ -193,6 +204,24 @@ export default function ModalFranja({
         {error && (
           <div className="badge badge-danger" style={styles.errorBanner}>
             {error}
+          </div>
+        )}
+
+        {/* Resumen de la franja (solo al editar una existente) */}
+        {isEditing && (
+          <div style={styles.infoResumen}>
+            <div style={styles.infoFila}>
+              <Building2 size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+              <span style={styles.infoTexto}>{ubicacionInmueble || '—'}</span>
+            </div>
+            <div style={styles.infoFila}>
+              <Users size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+              <span style={styles.infoTexto}>{asesorSeleccionado?.nombre_completo || '—'}</span>
+            </div>
+            <div style={styles.infoFila}>
+              <Clock size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+              <span style={styles.infoTexto}>{fechaLegible} · {horaInicio} – {horaFin}</span>
+            </div>
           </div>
         )}
 
@@ -334,7 +363,9 @@ export default function ModalFranja({
                     </div>
                     <div style={styles.citaCliente}>
                       {c.cliente_nombre} · {c.cliente_telefono}
-                      {c.inmuebles?.titulo ? ` · ${c.inmuebles.titulo}` : ''}
+                      {c.inmuebles
+                        ? ` · ${c.inmuebles.unidad?.trim() || c.inmuebles.direccion || c.inmuebles.titulo}`
+                        : ''}
                     </div>
                   </div>
                   <button
@@ -429,6 +460,30 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '1rem',
     textAlign: 'center' as const,
     width: '100%',
+  },
+  infoResumen: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '0.4rem',
+    padding: '0.75rem 0.85rem',
+    marginBottom: '1.1rem',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(0, 171, 216, 0.05)',
+    border: '1px solid rgba(0, 171, 216, 0.15)',
+  },
+  infoFila: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    minWidth: 0,
+  },
+  infoTexto: {
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
   },
   form: {
     display: 'flex',
