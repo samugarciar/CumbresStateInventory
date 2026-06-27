@@ -26,16 +26,19 @@ interface Asesor {
   nombre_completo: string;
 }
 
-interface Inmueble {
+interface FranjaDisponible {
   id: string;
-  titulo: string;
-  direccion: string;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  inmuebles: { titulo: string; direccion: string; unidad?: string | null } | null;
+  usuarios: { nombre_completo: string } | null;
 }
 
 interface CitasViewProps {
   citas: Cita[];
   asesores: Asesor[];
-  inmuebles: Inmueble[];
+  franjasDisponibles: FranjaDisponible[];
   isAdmin: boolean;
   hoy: string; // 'YYYY-MM-DD' en la zona horaria de Colombia
 }
@@ -59,7 +62,7 @@ function etiquetaDia(fechaStr: string, hoy: string): { rel: string | null; resto
   return { rel: null, resto: base.charAt(0).toUpperCase() + base.slice(1) };
 }
 
-export default function CitasView({ citas, asesores, inmuebles, isAdmin, hoy }: CitasViewProps) {
+export default function CitasView({ citas, asesores, franjasDisponibles, isAdmin, hoy }: CitasViewProps) {
   const router = useRouter();
   const [filtroAsesor, setFiltroAsesor] = useState<string>('todos');
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
@@ -342,8 +345,7 @@ export default function CitasView({ citas, asesores, inmuebles, isAdmin, hoy }: 
         <ModalNuevaCita
           isOpen={modalOpen}
           onClose={() => { setModalOpen(false); router.refresh(); }}
-          inmuebles={inmuebles}
-          defaultFecha={hoy}
+          franjas={franjasDisponibles}
         />
       )}
     </div>

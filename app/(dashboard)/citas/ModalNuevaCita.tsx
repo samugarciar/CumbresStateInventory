@@ -1,40 +1,41 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Loader2, CalendarPlus, Building2, Clock, User as UserIcon, Phone } from 'lucide-react';
+import { X, Loader2, CalendarPlus, User as UserIcon, Phone, CheckCircle2, Circle, CalendarX } from 'lucide-react';
 import { agendarCitaManual } from '@/app/actions/agenda';
 
-interface Inmueble {
+interface Franja {
   id: string;
-  titulo: string;
-  direccion: string;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  inmuebles: { titulo: string; direccion: string; unidad?: string | null } | null;
+  usuarios: { nombre_completo: string } | null;
 }
 
 interface ModalNuevaCitaProps {
   isOpen: boolean;
   onClose: () => void;
-  inmuebles: Inmueble[];
-  defaultFecha?: string;
+  franjas: Franja[];
 }
 
-// Opciones de hora cada 30 min de 8:00 a 18:00 (misma grilla que las franjas)
-function generarOpcionesHora(): string[] {
-  const o: string[] = [];
-  for (let h = 8; h <= 17; h++) {
-    o.push(`${String(h).padStart(2, '0')}:00`);
-    o.push(`${String(h).padStart(2, '0')}:30`);
-  }
-  o.push('18:00');
-  return o;
-}
-const HORAS = generarOpcionesHora();
+const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFecha }: ModalNuevaCitaProps) {
-  const [inmuebleId, setInmuebleId] = useState('');
-  const [busqueda, setBusqueda] = useState('');
-  const [fecha, setFecha] = useState(defaultFecha || '');
-  const [horaInicio, setHoraInicio] = useState('09:00');
-  const [horaFin, setHoraFin] = useState('09:30');
+function fechaCorta(fechaStr: string): string {
+  const [y, m, d] = fechaStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${DIAS[dt.getUTCDay()]} ${d} ${MESES[m - 1]}`;
+}
+
+// Ubicación a mostrar: la unidad si existe; si no, la dirección
+function ubicacion(inm: Franja['inmuebles']): string {
+  if (!inm) return 'Sin ubicación';
+  return (inm.unidad || '').trim() || inm.direccion || 'Sin ubicación';
+}
+
+export default function ModalNuevaCita({ isOpen, onClose, franjas }: ModalNuevaCitaProps) {
+  const [franjaId, setFranjaId] = useState('');
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [notas, setNotas] = useState('');
@@ -43,19 +44,8 @@ export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFech
 
   if (!isOpen) return null;
 
-  const calcularFin = (inicio: string): string => {
-    const i = HORAS.indexOf(inicio);
-    return i >= 0 && i < HORAS.length - 1 ? HORAS[i + 1] : '18:00';
-  };
-
-  const onInicio = (val: string) => {
-    setHoraInicio(val);
-    if (val >= horaFin) setHoraFin(calcularFin(val));
-  };
-
   const resetForm = () => {
-    setInmuebleId('');
-    setBusqueda('');
+    setFranjaId('');
     setNombre('');
     setTelefono('');
     setNotas('');
@@ -66,28 +56,20 @@ export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFech
     e.preventDefault();
     setError(null);
 
-    if (!inmuebleId || !fecha || !horaInicio || !horaFin) {
-      setError('Completa inmueble, fecha y horario.');
+    if (!franjaId) {
+      setError('Elige una franja disponible.');
       return;
     }
     if (!nombre.trim() || !telefono.trim()) {
       setError('El nombre y el teléfono del cliente son obligatorios.');
       return;
     }
-    if (horaInicio >= horaFin) {
-      setError('La hora de fin debe ser posterior a la de inicio.');
-      return;
-    }
 
     setLoading(true);
     const result = await agendarCitaManual({
-      inmueble_id: inmuebleId,
-      fecha,
-      hora_inicio: horaInicio,
-      hora_fin: horaFin,
+      franja_id: franjaId,
       cliente_nombre: nombre,
       cliente_telefono: telefono,
-      cliente_email: null,
       notas: notas || null,
     });
     setLoading(false);
@@ -99,13 +81,6 @@ export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFech
       setError(result.error || 'No se pudo agendar la cita.');
     }
   };
-
-  const filtrados = busqueda
-    ? inmuebles.filter(i =>
-        i.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
-        i.direccion.toLowerCase().includes(busqueda.toLowerCase())
-      )
-    : inmuebles;
 
   return (
     <div style={styles.overlay} className="animate-fade-in">
@@ -127,66 +102,50 @@ export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFech
         )}
 
         <form onSubmit={submit} style={styles.form}>
-          {/* Inmueble */}
+          {/* Franja disponible */}
           <div className="form-group">
-            <label className="form-label">
-              <Building2 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-              Inmueble
-            </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Buscar inmueble..."
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-              style={{ marginBottom: '0.35rem' }}
-            />
-            <select
-              className="form-select"
-              value={inmuebleId}
-              onChange={e => setInmuebleId(e.target.value)}
-              required
-              size={Math.min(filtrados.length + 1, 5)}
-              style={{ minHeight: '2.5rem' }}
-            >
-              <option value="">Seleccionar inmueble</option>
-              {filtrados.map(i => (
-                <option key={i.id} value={i.id}>
-                  {i.titulo} — {i.direccion}
-                </option>
-              ))}
-            </select>
-          </div>
+            <label className="form-label">Elige una franja disponible</label>
 
-          {/* Fecha */}
-          <div className="form-group">
-            <label className="form-label">Fecha</label>
-            <input
-              type="date"
-              className="form-input"
-              value={fecha}
-              onChange={e => setFecha(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Horas */}
-          <div style={styles.row}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">
-                <Clock size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                Hora inicio
-              </label>
-              <select className="form-select" value={horaInicio} onChange={e => onInicio(e.target.value)} required>
-                {HORAS.filter(h => h < '18:00').map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Hora fin</label>
-              <select className="form-select" value={horaFin} onChange={e => setHoraFin(e.target.value)} required>
-                {HORAS.filter(h => h > horaInicio).map(h => <option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
+            {franjas.length === 0 ? (
+              <div style={styles.sinFranjas}>
+                <CalendarX size={28} color="var(--text-muted)" style={{ marginBottom: '0.4rem' }} />
+                <div>No hay franjas disponibles.</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                  Créalas primero en la Agenda.
+                </div>
+              </div>
+            ) : (
+              <div style={styles.franjaList}>
+                {franjas.map(f => {
+                  const sel = f.id === franjaId;
+                  const asesor = f.usuarios?.nombre_completo || 'Sin asesor';
+                  return (
+                    <button
+                      type="button"
+                      key={f.id}
+                      onClick={() => setFranjaId(f.id)}
+                      style={{ ...styles.franjaItem, ...(sel ? styles.franjaItemSel : {}) }}
+                    >
+                      {sel
+                        ? <CheckCircle2 size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                        : <Circle size={18} color="var(--text-muted)" style={{ flexShrink: 0 }} />}
+                      <span style={styles.franjaInfo}>
+                        <span style={styles.franjaUbic}>
+                          {ubicacion(f.inmuebles)}
+                          {f.inmuebles?.titulo && (
+                            <span style={styles.franjaTitulo}> · {f.inmuebles.titulo}</span>
+                          )}
+                        </span>
+                        <span style={styles.franjaMeta}>
+                          <UserIcon size={12} style={{ verticalAlign: '-1px', marginRight: 2 }} />
+                          {asesor.split(' ')[0]} · {fechaCorta(f.fecha)} · {f.hora_inicio.substring(0, 5)}–{f.hora_fin.substring(0, 5)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Cliente */}
@@ -229,25 +188,17 @@ export default function ModalNuevaCita({ isOpen, onClose, inmuebles, defaultFech
             <input
               type="text"
               className="form-input"
-              placeholder="Ej: el cliente prefiere la mañana"
+              placeholder="Ej: el cliente llega 10 min tarde"
               value={notas}
               onChange={e => setNotas(e.target.value)}
             />
-          </div>
-
-          <div style={styles.hint}>
-            <Clock size={13} style={{ flexShrink: 0, marginTop: '1px' }} />
-            <span>
-              La cita debe caer dentro de una franja del asesor para este inmueble. Si no hay franja que cubra
-              el horario, créala primero en Agenda.
-            </span>
           </div>
 
           <div style={styles.actions}>
             <button type="button" onClick={onClose} className="btn btn-secondary" disabled={loading}>
               Cancelar
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-primary" disabled={loading || franjas.length === 0}>
               {loading ? <Loader2 size={16} className="animate-spin" /> : null}
               Agendar cita
             </button>
@@ -317,16 +268,61 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '0.75rem',
   },
-  hint: {
+  franjaList: {
     display: 'flex',
-    alignItems: 'flex-start',
+    flexDirection: 'column' as const,
     gap: '0.4rem',
-    fontSize: '0.76rem',
+    maxHeight: '230px',
+    overflowY: 'auto' as const,
+    paddingRight: '0.15rem',
+  },
+  franjaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.6rem',
+    width: '100%',
+    textAlign: 'left' as const,
+    padding: '0.6rem 0.7rem',
+    borderRadius: '10px',
+    border: '1px solid var(--border-color)',
+    backgroundColor: 'transparent',
+    cursor: 'pointer',
+  },
+  franjaItemSel: {
+    border: '1.5px solid var(--primary)',
+    backgroundColor: 'rgba(0, 171, 216, 0.06)',
+  },
+  franjaInfo: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    minWidth: 0,
+    flex: 1,
+  },
+  franjaUbic: {
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  franjaTitulo: {
+    fontWeight: '400',
     color: 'var(--text-muted)',
-    backgroundColor: 'rgba(0, 171, 216, 0.05)',
-    borderRadius: '8px',
-    padding: '0.5rem 0.65rem',
-    margin: '0.25rem 0 0.5rem',
+  },
+  franjaMeta: {
+    fontSize: '0.76rem',
+    color: 'var(--text-secondary)',
+    marginTop: '1px',
+  },
+  sinFranjas: {
+    textAlign: 'center' as const,
+    color: 'var(--text-secondary)',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    padding: '1.5rem 1rem',
+    border: '1px dashed var(--border-color)',
+    borderRadius: '10px',
   },
   actions: {
     display: 'flex',

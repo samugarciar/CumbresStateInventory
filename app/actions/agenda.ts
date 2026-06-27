@@ -13,13 +13,9 @@ interface FranjaData {
 }
 
 interface CitaManualData {
-  inmueble_id: string;
-  fecha: string;        // 'YYYY-MM-DD'
-  hora_inicio: string;  // 'HH:MM'
-  hora_fin: string;     // 'HH:MM'
+  franja_id: string;
   cliente_nombre: string;
   cliente_telefono: string;
-  cliente_email?: string | null;
   notas?: string | null;
 }
 
@@ -288,11 +284,10 @@ export async function eliminarFranjaHoraria(id: string) {
 }
 
 /**
- * Agenda una cita manualmente (solo admin), como complemento del agente n8n.
- * El admin entra inmueble + fecha + horario libre; aquí resolvemos la franja
- * del asesor que cubre ese rango en la misma ubicación (igual que el agente),
- * y se inserta la cita con origen='app'. El constraint de exclusión de la BD
- * es la garantía real contra el doble-agendamiento concurrente.
+ * Agenda una cita manualmente (solo admin) eligiendo una FRANJA ya creada en la
+ * agenda. La franja ya define asesor, inmueble, fecha y horario; el admin solo
+ * agrega el cliente. La cita toma el horario completo de la franja (se permiten
+ * varias citas a la vez en una misma franja → visitas grupales de la unidad).
  */
 export async function agendarCitaManual(data: CitaManualData) {
   try {
@@ -310,89 +305,49 @@ export async function agendarCitaManual(data: CitaManualData) {
       return { success: false, error: 'Solo los administradores pueden agendar citas manualmente.' };
     }
 
-    // --- Validaciones de entrada ---
     const nombre = (data.cliente_nombre || '').trim();
     const telefono = (data.cliente_telefono || '').trim();
     if (!nombre || !telefono) {
       return { success: false, error: 'El nombre y el teléfono del cliente son obligatorios.' };
     }
-    if (!data.inmueble_id || !data.fecha || !data.hora_inicio || !data.hora_fin) {
-      return { success: false, error: 'Faltan datos de la cita (inmueble, fecha u horario).' };
-    }
-    if (data.hora_inicio >= data.hora_fin) {
-      return { success: false, error: 'La hora de fin debe ser posterior a la de inicio.' };
-    }
-    // Grilla de 30 min (debe empezar y terminar en :00 o :30)
-    const enGrilla = (h: string) => /^\d{2}:(00|30)$/.test(h);
-    if (!enGrilla(data.hora_inicio) || !enGrilla(data.hora_fin)) {
-      return { success: false, error: 'Las citas deben empezar y terminar en bloques de 30 minutos (ej. 09:00, 09:30).' };
-    }
-    // No agendar en el pasado (fecha de hoy en zona horaria de Colombia)
-    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
-    if (data.fecha < hoy) {
-      return { success: false, error: 'No se pueden agendar citas en fechas pasadas.' };
+    if (!data.franja_id) {
+      return { success: false, error: 'Selecciona una franja disponible.' };
     }
 
-    // --- Inmueble objetivo (debe ser de la inmobiliaria del admin y estar disponible) ---
-    const { data: inmueble } = await supabase
-      .from('inmuebles')
-      .select('id, inmobiliaria_id, unidad, direccion, estado')
-      .eq('id', data.inmueble_id)
+    // La franja ya tiene asesor, inmueble, fecha y horario. Debe ser de la inmobiliaria del admin.
+    const { data: franja } = await supabase
+      .from('franjas_horarias')
+      .select('id, inmobiliaria_id, inmueble_id, fecha, hora_inicio, hora_fin')
+      .eq('id', data.franja_id)
       .single();
 
-    if (!inmueble || inmueble.inmobiliaria_id !== profile.inmobiliaria_id) {
-      return { success: false, error: 'Inmueble no encontrado.' };
-    }
-    if (inmueble.estado !== 'disponible') {
-      return { success: false, error: 'El inmueble no está disponible.' };
+    if (!franja || franja.inmobiliaria_id !== profile.inmobiliaria_id) {
+      return { success: false, error: 'Franja no encontrada.' };
     }
 
-    const keyObjetivo = ubicacionKey(inmueble.unidad, inmueble.direccion);
-
-    // --- Franjas de esa fecha que cubren el rango pedido, en la misma ubicación ---
-    const { data: franjas } = await supabase
-      .from('franjas_horarias')
-      .select('id, hora_inicio, inmuebles ( unidad, direccion )')
-      .eq('inmobiliaria_id', profile.inmobiliaria_id)
-      .eq('fecha', data.fecha)
-      .lte('hora_inicio', data.hora_inicio)
-      .gte('hora_fin', data.hora_fin)
-      .order('hora_inicio', { ascending: true });
-
-    const candidatas = (franjas || []).filter((f: any) => {
-      const base = f.inmuebles;
-      return base && ubicacionKey(base.unidad, base.direccion) === keyObjetivo;
-    });
-
-    if (candidatas.length === 0) {
-      return {
-        success: false,
-        error: 'No hay una franja del asesor que cubra ese horario para este inmueble. Crea o ajusta la franja en Agenda.'
-      };
-    }
-
-    // Se permiten varias citas a la vez en la misma franja (misma unidad):
-    // tomamos la primera franja que cubre el horario, sin exigir que esté libre.
-    const franjaElegida: string = candidatas[0].id;
-
+    // La cita hereda inmueble, fecha y horario de la franja
     const { error: insertError } = await supabase
       .from('citas')
       .insert({
-        inmobiliaria_id: profile.inmobiliaria_id,
-        franja_id: franjaElegida,
-        inmueble_id: data.inmueble_id,
-        fecha: data.fecha,
-        hora_inicio: data.hora_inicio,
-        hora_fin: data.hora_fin,
+        inmobiliaria_id: franja.inmobiliaria_id,
+        franja_id: franja.id,
+        inmueble_id: franja.inmueble_id,
+        fecha: franja.fecha,
+        hora_inicio: franja.hora_inicio,
+        hora_fin: franja.hora_fin,
         cliente_nombre: nombre,
         cliente_telefono: telefono,
-        cliente_email: (data.cliente_email || '').trim() || null,
+        cliente_email: null,
         notas: (data.notas || '').trim() || null,
         origen: 'app',
         estado: 'agendada',
       });
 
     if (insertError) {
+      // 23P01 = exclusion_violation: aún está el candado anti-cruce (migración pendiente de aplicar)
+      if ((insertError as any).code === '23P01') {
+        return { success: false, error: 'Esta franja ya tiene una cita. Para permitir varias a la vez, aplica la migración de citas múltiples (2026-06-20) en Supabase.' };
+      }
       console.error('[Agenda] Error al agendar cita manual:', insertError.message);
       return { success: false, error: 'No se pudo agendar la cita.' };
     }

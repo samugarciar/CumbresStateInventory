@@ -42,7 +42,7 @@ export default async function CitasPage() {
 
   // Para admin: lista de asesores de la inmobiliaria para los chips de filtro
   let asesores: any[] = [];
-  let inmuebles: any[] = [];
+  let franjasDisponibles: any[] = [];
   if (isAdmin) {
     const { data: dataAsesores } = await supabase
       .from('usuarios')
@@ -52,21 +52,27 @@ export default async function CitasPage() {
       .order('nombre_completo');
     asesores = dataAsesores || [];
 
-    // Inmuebles disponibles para el selector del formulario "Nueva cita"
-    const { data: dataInmuebles } = await supabase
-      .from('inmuebles')
-      .select('id, titulo, direccion')
+    // Franjas disponibles (de hoy en adelante) para el formulario "Nueva cita":
+    // ya traen asesor, inmueble (unidad/dirección), fecha y horario.
+    const { data: dataFranjas } = await supabase
+      .from('franjas_horarias')
+      .select(`
+        id, fecha, hora_inicio, hora_fin,
+        inmuebles ( titulo, direccion, unidad ),
+        usuarios!franjas_horarias_asesor_id_fkey ( nombre_completo )
+      `)
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
-      .eq('estado', 'disponible')
-      .order('titulo');
-    inmuebles = dataInmuebles || [];
+      .gte('fecha', hoy)
+      .order('fecha', { ascending: true })
+      .order('hora_inicio', { ascending: true });
+    franjasDisponibles = dataFranjas || [];
   }
 
   return (
     <CitasView
       citas={(citas || []) as any[]}
       asesores={asesores}
-      inmuebles={inmuebles}
+      franjasDisponibles={franjasDisponibles}
       isAdmin={isAdmin}
       hoy={hoy}
     />
