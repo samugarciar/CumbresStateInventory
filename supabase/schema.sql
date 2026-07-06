@@ -53,7 +53,9 @@ CREATE TABLE public.inmuebles (
     precio NUMERIC NOT NULL CHECK (precio >= 0),
     tipo_transaccion TEXT NOT NULL CHECK (tipo_transaccion IN ('venta', 'arriendo')),
     tipo_inmueble TEXT NOT NULL CHECK (tipo_inmueble IN ('casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro')),
-    estado TEXT NOT NULL DEFAULT 'disponible' CHECK (estado IN ('disponible', 'arrendado', 'inactivo')),
+    estado TEXT NOT NULL DEFAULT 'disponible' CHECK (estado IN ('disponible', 'arrendado', 'inactivo')), -- EFECTIVO: lo que ofrecemos (app + agente filtran por aquí)
+    estado_erp TEXT, -- Estado crudo del ERP (referencia). El sync lo escribe siempre.
+    estado_override TEXT CHECK (estado_override IS NULL OR estado_override = 'disponible'), -- Decisión local para ofertar un desocupado; el sync no la toca
     arrendasoft_id BIGINT UNIQUE,
     arrendasoft_contrato_id TEXT,
     contrato_id_propuesto TEXT,

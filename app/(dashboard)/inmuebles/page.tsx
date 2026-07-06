@@ -7,6 +7,7 @@ import LogsWebhookTable from './LogsWebhookTable';
 import StateSelector from './StateSelector';
 import AsesorSelector from './AsesorSelector';
 import UnidadEditor from './UnidadEditor';
+import OfertarControl from './OfertarControl';
 import PhotosGallery from './PhotosGallery';
 import FiltersPanel from './FiltersPanel';
 import { 
@@ -368,6 +369,9 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
                     <span style={styles.stateLabel}>Estado:</span>
                     <StateSelector inmuebleId={inm.id} currentEstado={inm.estado} />
                   </div>
+                  {isAdmin && (
+                    <OfertarControl inmuebleId={inm.id} estadoErp={inm.estado_erp} estadoOverride={inm.estado_override} />
+                  )}
                   {isAdmin && (
                     <div style={styles.stateSelectorWrapper}>
                       <span style={styles.stateLabel}>Asignar Asesor:</span>

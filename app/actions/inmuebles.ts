@@ -245,3 +245,53 @@ export async function actualizarUnidad(inmuebleId: string, unidad: string | null
   revalidatePath('/agenda');
   return { success: true, message: 'Unidad actualizada.' };
 }
+
+/**
+ * Oferta (o deja de ofertar) un inmueble mediante un override LOCAL de estado.
+ * Caso de uso: un inmueble se desocupa y queremos ofertarlo, pero el ERP lo
+ * mantiene como 'arrendado' por temas de contrato pendientes.
+ * - ofertar=true  → estado_override='disponible' y estado='disponible' (efectivo).
+ * - ofertar=false → limpia el override; estado vuelve al del ERP (estado_erp).
+ * Nunca escribe al ERP; el sync respeta el override (no lo pisa).
+ */
+export async function ofertarInmueble(inmuebleId: string, ofertar: boolean) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Sesión no válida.' };
+
+  const { data: profile } = await supabase
+    .from('usuarios')
+    .select('rol, inmobiliaria_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.rol !== 'admin') {
+    return { success: false, error: 'No autorizado. Solo los administradores pueden ofertar inmuebles.' };
+  }
+
+  const { data: inmueble } = await supabase
+    .from('inmuebles')
+    .select('id, estado_erp')
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id)
+    .single();
+
+  if (!inmueble) return { success: false, error: 'Inmueble no encontrado.' };
+
+  const update = ofertar
+    ? { estado_override: 'disponible', estado: 'disponible' }
+    : { estado_override: null, estado: inmueble.estado_erp || 'arrendado' };
+
+  const { error } = await supabase
+    .from('inmuebles')
+    .update(update)
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id);
+
+  if (error) return { success: false, error: error.message };
+
+  revalidatePath('/inmuebles');
+  revalidatePath('/citas');
+  revalidatePath('/agenda');
+  return { success: true };
+}

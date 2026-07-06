@@ -276,7 +276,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   // Consultar inmuebles locales previamente sincronizados para distinguir entre "creación" y "actualización"
   const { data: inmueblesExistentes, error: existingErr } = await supabase
     .from('inmuebles')
-    .select('id, arrendasoft_id, unidad')
+    .select('id, arrendasoft_id, unidad, estado_override')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .not('arrendasoft_id', 'is', null);
 
@@ -284,11 +284,11 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
     console.error('Error al consultar inmuebles existentes:', existingErr);
   }
 
-  const existingMap = new Map<string, { id: string; unidad: string | null }>(); // arrendasoft_id -> registro local
+  const existingMap = new Map<string, { id: string; unidad: string | null; estado_override: string | null }>(); // arrendasoft_id -> registro local
   if (inmueblesExistentes) {
     inmueblesExistentes.forEach(item => {
       if (item.arrendasoft_id) {
-        existingMap.set(String(item.arrendasoft_id), { id: item.id, unidad: item.unidad ?? null });
+        existingMap.set(String(item.arrendasoft_id), { id: item.id, unidad: item.unidad ?? null, estado_override: item.estado_override ?? null });
       }
     });
   }
@@ -428,6 +428,8 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         }
       }
 
+      const erpEstado = isArrendado ? 'arrendado' : 'disponible';
+
       const payload = {
         inmobiliaria_id: profile.inmobiliaria_id,
         asesor_id: matchedAsesorId,
@@ -441,7 +443,10 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         precio: precio,
         tipo_transaccion: tipoTransaccion,
         tipo_inmueble: tipoInmueble,
-        estado: isArrendado ? 'arrendado' : 'disponible',
+        // estado_erp = lo que dice el ERP; estado (efectivo) = override local si existe, si no el del ERP.
+        // NO incluimos estado_override en el payload: es soberanía local (como asesor_id_override).
+        estado_erp: erpEstado,
+        estado: erpEstado,
         arrendasoft_id: isNaN(Number(arrendasoftId)) ? null : Number(arrendasoftId),
         arrendasoft_contrato_id: arrendasoftContratoId,
         arrendasoft_contrato_info: arrendasoftContratoInfo,
@@ -459,6 +464,9 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
       if (isUpdate) {
         const existente = existingMap.get(arrendasoftId)!;
         const updatePayload: Record<string, any> = { ...payload };
+        // Estado efectivo = override local si existe (ej. desocupado ofertado), si no el del ERP.
+        // Así el sync no pisa la decisión local de ofertar un inmueble arrendado en el ERP.
+        updatePayload.estado = existente.estado_override || erpEstado;
         // Solo autocompletar si el inmueble NO tiene ya una unidad (soberanía local)
         if (unidadInferida && !(existente.unidad && existente.unidad.trim())) {
           updatePayload.unidad = unidadInferida;
