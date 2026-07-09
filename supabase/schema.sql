@@ -498,4 +498,7 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   → 2026-06-16_consultar_disponibilidad_por_texto.sql
 --   buscar_inmueble_por_codigo  (busca por código del ERP arrendasoft_id)
 --   → 2026-06-20_buscar_inmueble_por_codigo.sql
+--   consultar_disponibilidad_por_texto + resolver_inmuebles_por_texto: modo
+--   'disponibilidad_unidad' y param p_tipo_transaccion (agrupan aptos de la misma unidad)
+--   → 2026-07-09_disponibilidad_unidad.sql
 -- ---------------------------------------------------------------------
