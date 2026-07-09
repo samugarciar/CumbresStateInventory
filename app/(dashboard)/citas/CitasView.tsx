@@ -17,6 +17,9 @@ interface Cita {
   cliente_telefono: string;
   cliente_email: string | null;
   origen: string;
+  alcance?: string; // 'inmueble' | 'unidad'
+  unidad?: string | null; // nombre de la unidad cuando alcance='unidad'
+  aptos_snapshot?: { titulo: string }[] | null; // aptos disponibles al agendar (solo unidad)
   inmuebles: { titulo: string; direccion: string; unidad?: string | null } | null;
   franjas_horarias: { asesor_id: string; usuarios: { id: string; nombre_completo: string } | null } | null;
 }
@@ -60,6 +63,21 @@ function etiquetaDia(fechaStr: string, hoy: string): { rel: string | null; resto
   if (fechaStr === hoy) return { rel: 'Hoy', resto: base };
   if (fechaStr === sumarDias(hoy, 1)) return { rel: 'Mañana', resto: base };
   return { rel: null, resto: base.charAt(0).toUpperCase() + base.slice(1) };
+}
+
+// Texto de ubicación de una cita. Si es a nivel unidad → "Mi Mundo · 3 aptos";
+// si es a un apto puntual → unidad · dirección (o dirección/título como fallback).
+function textoUbicacion(c: Cita): string {
+  if (c.alcance === 'unidad') {
+    const n = c.aptos_snapshot?.length ?? 0;
+    const uni = (c.unidad || c.inmuebles?.unidad || 'Unidad').trim();
+    return `${uni} · ${n} apto${n !== 1 ? 's' : ''}`;
+  }
+  if (!c.inmuebles) return '';
+  const uni = c.inmuebles.unidad?.trim();
+  return uni
+    ? `${uni}${c.inmuebles.direccion ? ` · ${c.inmuebles.direccion}` : ''}`
+    : (c.inmuebles.direccion || c.inmuebles.titulo);
 }
 
 export default function CitasView({ citas, asesores, franjasDisponibles, isAdmin, hoy }: CitasViewProps) {
@@ -266,14 +284,13 @@ export default function CitasView({ citas, asesores, franjasDisponibles, isAdmin
                         <Phone size={13} style={{ flexShrink: 0 }} />
                         <span>{c.cliente_telefono}</span>
                       </div>
-                      {c.inmuebles && (
+                      {(c.alcance === 'unidad' || c.inmuebles) && (
                         <div style={styles.detalleLinea}>
                           <Building2 size={13} style={{ flexShrink: 0 }} />
-                          <span style={styles.inmuebleTxt}>
-                            {c.inmuebles.unidad?.trim()
-                              ? `${c.inmuebles.unidad.trim()}${c.inmuebles.direccion ? ` · ${c.inmuebles.direccion}` : ''}`
-                              : (c.inmuebles.direccion || c.inmuebles.titulo)}
-                          </span>
+                          <span style={styles.inmuebleTxt}>{textoUbicacion(c)}</span>
+                          {c.alcance === 'unidad' && (
+                            <span style={styles.unidadBadge}>Unidad</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -538,6 +555,17 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     padding: '0.1rem 0.55rem',
     whiteSpace: 'nowrap' as const,
+  },
+  unidadBadge: {
+    fontSize: '0.62rem',
+    fontWeight: '700',
+    color: 'var(--primary)',
+    backgroundColor: 'rgba(0, 171, 216, 0.1)',
+    borderRadius: '8px',
+    padding: '0.02rem 0.4rem',
+    flexShrink: 0,
+    letterSpacing: '0.02em',
+    textTransform: 'uppercase' as const,
   },
   cancelarBtn: {
     padding: '0.25rem 0.6rem',

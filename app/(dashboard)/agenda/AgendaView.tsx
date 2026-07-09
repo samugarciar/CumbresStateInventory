@@ -29,6 +29,9 @@ interface Cita {
   cliente_nombre: string;
   cliente_telefono: string;
   origen: string;
+  alcance?: string;
+  unidad?: string | null;
+  aptos_snapshot?: { titulo: string }[] | null;
   inmuebles: { titulo: string; direccion?: string; unidad?: string | null } | null;
 }
 

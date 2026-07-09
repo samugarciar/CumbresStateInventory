@@ -32,6 +32,9 @@ export default async function CitasPage() {
       cliente_telefono,
       cliente_email,
       origen,
+      alcance,
+      unidad,
+      aptos_snapshot,
       inmuebles ( titulo, direccion, unidad ),
       franjas_horarias ( asesor_id, usuarios!franjas_horarias_asesor_id_fkey ( id, nombre_completo ) )
     `)

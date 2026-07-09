@@ -18,6 +18,9 @@ interface Cita {
   cliente_nombre: string;
   cliente_telefono: string;
   origen: string;
+  alcance?: string;
+  unidad?: string | null;
+  aptos_snapshot?: { titulo: string }[] | null;
   inmuebles: { titulo: string; direccion?: string; unidad?: string | null } | null;
 }
 
@@ -363,9 +366,11 @@ export default function ModalFranja({
                     </div>
                     <div style={styles.citaCliente}>
                       {c.cliente_nombre} · {c.cliente_telefono}
-                      {c.inmuebles
-                        ? ` · ${c.inmuebles.unidad?.trim() || c.inmuebles.direccion || c.inmuebles.titulo}`
-                        : ''}
+                      {c.alcance === 'unidad'
+                        ? ` · ${(c.unidad || c.inmuebles?.unidad || 'Unidad')} · ${c.aptos_snapshot?.length ?? 0} apto${(c.aptos_snapshot?.length ?? 0) !== 1 ? 's' : ''}`
+                        : (c.inmuebles
+                            ? ` · ${c.inmuebles.unidad?.trim() || c.inmuebles.direccion || c.inmuebles.titulo}`
+                            : '')}
                     </div>
                   </div>
                   <button

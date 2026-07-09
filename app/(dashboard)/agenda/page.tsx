@@ -53,7 +53,7 @@ export default async function AgendaPage({
   // Citas agendadas de la semana (RLS limita: admin ve todas, asesor las de sus franjas)
   const { data: citas } = await supabase
     .from('citas')
-    .select('id, franja_id, inmueble_id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono, origen, inmuebles ( titulo, direccion, unidad )')
+    .select('id, franja_id, inmueble_id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono, origen, alcance, unidad, aptos_snapshot, inmuebles ( titulo, direccion, unidad )')
     .gte('fecha', fechaInicio)
     .lte('fecha', fechaFin)
     .eq('estado', 'agendada')

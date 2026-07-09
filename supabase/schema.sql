@@ -396,6 +396,11 @@ CREATE TABLE IF NOT EXISTS public.citas (
     notas TEXT,
     estado TEXT NOT NULL DEFAULT 'agendada' CHECK (estado IN ('agendada', 'cancelada', 'completada')),
     origen TEXT NOT NULL DEFAULT 'n8n' CHECK (origen IN ('n8n', 'app')),
+    -- Alcance de la visita: a un apto puntual, o a la unidad (varios aptos
+    -- equivalentes que comparten franjas). Ver 2026-07-09_agendar_unidad.sql
+    alcance TEXT NOT NULL DEFAULT 'inmueble' CHECK (alcance IN ('inmueble', 'unidad')),
+    unidad TEXT,            -- nombre de la unidad cuando alcance='unidad'
+    aptos_snapshot JSONB,  -- aptos disponibles al agendar [{inmueble_id,titulo,precio,habitaciones,banos}] (solo alcance='unidad')
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
 
     CONSTRAINT citas_hora_fin_mayor CHECK (hora_fin > hora_inicio),
@@ -501,4 +506,7 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   consultar_disponibilidad_por_texto + resolver_inmuebles_por_texto: modo
 --   'disponibilidad_unidad' y param p_tipo_transaccion (agrupan aptos de la misma unidad)
 --   → 2026-07-09_disponibilidad_unidad.sql
+--   agendar_cita + agendar_cita_por_texto: alcance='unidad' (agenda a la unidad,
+--   guarda unidad + aptos_snapshot); columnas alcance/unidad/aptos_snapshot en citas
+--   → 2026-07-09_agendar_unidad.sql
 -- ---------------------------------------------------------------------
