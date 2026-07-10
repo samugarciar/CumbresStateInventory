@@ -59,6 +59,20 @@ async function enviarVeredicto(payload: VeredictoPayload): Promise<{ enviado: bo
       console.error('[Solicitudes] El webhook de veredicto respondió', resp.status);
       return { enviado: false, aviso: `Decisión guardada, pero el webhook de veredicto respondió con error (${resp.status}).` };
     }
+    // El workflow responde 200 SIEMPRE, con body [{ estado: 'ok' | 'error', mensaje?, ... }].
+    // estado != 'ok' = el flujo corrió pero no entregó el veredicto (ej. el teléfono no
+    // corresponde a ningún lead en Kommo) y manda un correo de alerta a la inmobiliaria.
+    try {
+      const body = await resp.json();
+      const r = Array.isArray(body) ? body[0] : body;
+      if (r && typeof r.estado === 'string' && r.estado !== 'ok') {
+        console.warn('[Solicitudes] El flujo de veredicto reportó estado:', r.estado, r.mensaje);
+        return {
+          enviado: true,
+          aviso: `n8n recibió el veredicto pero reportó "${r.estado}"${r.mensaje ? `: ${r.mensaje}` : ''}. Revisa el correo de alerta.`,
+        };
+      }
+    } catch { /* body vacío o no-JSON: lo tratamos como entregado */ }
     return { enviado: true };
   } catch (e: any) {
     console.error('[Solicitudes] Error de red al enviar el veredicto:', e?.message);
