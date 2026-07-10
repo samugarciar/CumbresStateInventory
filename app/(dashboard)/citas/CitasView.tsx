@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Eye, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send } from 'lucide-react';
 import { cancelarCitaAdmin, confirmarCitas } from '@/app/actions/agenda';
 import ModalNuevaCita from './ModalNuevaCita';
+import SolicitudesApertura from './SolicitudesApertura';
 
 interface Cita {
   id: string;
@@ -42,6 +43,7 @@ interface CitasViewProps {
   citas: Cita[];
   asesores: Asesor[];
   franjasDisponibles: FranjaDisponible[];
+  solicitudes?: any[]; // solicitudes de apertura pendientes (solo admin)
   isAdmin: boolean;
   hoy: string; // 'YYYY-MM-DD' en la zona horaria de Colombia
 }
@@ -80,7 +82,7 @@ function textoUbicacion(c: Cita): string {
     : (c.inmuebles.direccion || c.inmuebles.titulo);
 }
 
-export default function CitasView({ citas, asesores, franjasDisponibles, isAdmin, hoy }: CitasViewProps) {
+export default function CitasView({ citas, asesores, franjasDisponibles, solicitudes = [], isAdmin, hoy }: CitasViewProps) {
   const router = useRouter();
   const [filtroAsesor, setFiltroAsesor] = useState<string>('todos');
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
@@ -193,6 +195,11 @@ export default function CitasView({ citas, asesores, franjasDisponibles, isAdmin
           )}
         </div>
       </div>
+
+      {/* Solicitudes de apertura pendientes (solo admin) */}
+      {isAdmin && (
+        <SolicitudesApertura solicitudes={solicitudes} asesores={asesores} hoy={hoy} />
+      )}
 
       {/* Filtro por asesor (solo admin) */}
       {isAdmin && asesores.length > 0 && (

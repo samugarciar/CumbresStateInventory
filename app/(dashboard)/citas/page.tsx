@@ -46,7 +46,22 @@ export default async function CitasPage() {
   // Para admin: lista de asesores de la inmobiliaria para los chips de filtro
   let asesores: any[] = [];
   let franjasDisponibles: any[] = [];
+  let solicitudes: any[] = [];
   if (isAdmin) {
+    // Solicitudes de apertura pendientes (capturadas por el agente vía RPC).
+    // El join a inmuebles trae el asesor asignado para preseleccionarlo al aprobar.
+    const { data: dataSolicitudes } = await supabase
+      .from('solicitudes_apertura')
+      .select(`
+        id, inmueble_id, alcance, unidad, tipo_transaccion,
+        fecha, hora_inicio, hora_fin,
+        cliente_nombre, cliente_telefono, notas, created_at,
+        inmuebles ( titulo, direccion, unidad, asesor_id, asesor_id_override )
+      `)
+      .eq('estado', 'pendiente')
+      .order('fecha', { ascending: true })
+      .order('hora_inicio', { ascending: true });
+    solicitudes = dataSolicitudes || [];
     const { data: dataAsesores } = await supabase
       .from('usuarios')
       .select('id, nombre_completo')
@@ -76,6 +91,7 @@ export default async function CitasPage() {
       citas={(citas || []) as any[]}
       asesores={asesores}
       franjasDisponibles={franjasDisponibles}
+      solicitudes={solicitudes}
       isAdmin={isAdmin}
       hoy={hoy}
     />

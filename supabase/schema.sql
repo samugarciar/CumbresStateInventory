@@ -440,6 +440,42 @@ CREATE POLICY "Asesores ven citas de sus franjas"
     );
 
 -- ---------------------------------------------------------------------
+-- Solicitudes de apertura de agenda (capturadas por el agente n8n)
+-- El cliente pide un horario que ninguna franja cubre → el agente registra la
+-- solicitud vía RPC solicitar_apertura_agenda; un admin la aprueba (crea
+-- franja + cita desde la app) o la deniega, y la app dispara el webhook n8n
+-- del veredicto (WhatsApp al cliente). Definición completa y RPC:
+-- → migración 2026-07-09_solicitudes_apertura.sql
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.solicitudes_apertura (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    inmueble_id UUID NOT NULL REFERENCES public.inmuebles(id) ON DELETE CASCADE, -- representativo si alcance='unidad'
+    alcance TEXT NOT NULL DEFAULT 'inmueble' CHECK (alcance IN ('inmueble', 'unidad')),
+    unidad TEXT,
+    tipo_transaccion TEXT,
+    fecha DATE NOT NULL,
+    hora_inicio TIME NOT NULL,
+    hora_fin TIME NOT NULL,
+    cliente_nombre TEXT NOT NULL,
+    cliente_telefono TEXT NOT NULL,
+    cliente_email TEXT,
+    notas TEXT,
+    estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'denegada')),
+    motivo_denegacion TEXT,
+    cita_id UUID REFERENCES public.citas(id) ON DELETE SET NULL,
+    decidido_por UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    decidido_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    CONSTRAINT solicitudes_hora_fin_mayor CHECK (hora_fin > hora_inicio),
+    CONSTRAINT solicitudes_grilla_30min CHECK (
+        EXTRACT(MINUTE FROM hora_inicio)::int % 30 = 0 AND EXTRACT(SECOND FROM hora_inicio) = 0 AND
+        EXTRACT(MINUTE FROM hora_fin)::int % 30 = 0 AND EXTRACT(SECOND FROM hora_fin) = 0
+    )
+);
+-- RLS: solo admins de la inmobiliaria; anon SIN acceso directo (inserta vía RPC).
+
+-- ---------------------------------------------------------------------
 -- Acceso de LECTURA para el agente (rol anon vía PostgREST)
 -- ---------------------------------------------------------------------
 -- Inmuebles: anon solo ve disponibles y solo columnas comerciales.
@@ -509,4 +545,7 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   agendar_cita + agendar_cita_por_texto: alcance='unidad' (agenda a la unidad,
 --   guarda unidad + aptos_snapshot); columnas alcance/unidad/aptos_snapshot en citas
 --   → 2026-07-09_agendar_unidad.sql
+--   solicitar_apertura_agenda  (solicitud de apertura cuando no hay franja que
+--   cubra el horario pedido; guardas ya_disponible + dedupe ya_existia)
+--   → 2026-07-09_solicitudes_apertura.sql
 -- ---------------------------------------------------------------------
