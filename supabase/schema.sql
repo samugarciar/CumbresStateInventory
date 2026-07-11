@@ -548,4 +548,8 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   solicitar_apertura_agenda  (solicitud de apertura cuando no hay franja que
 --   cubra el horario pedido; guardas ya_disponible + dedupe ya_existia)
 --   → 2026-07-09_solicitudes_apertura.sql
+--   solicitar_apertura_agenda ahora crea tarea en /tareas por solicitud (la app
+--   la completa al decidir) + crear_tarea_actualizar_inmuebles() con pg_cron
+--   ('0 11 * * 1-6' UTC = lun–sáb 6:00 AM Bogotá)
+--   → 2026-07-11_tareas_solicitudes_y_sync.sql
 -- ---------------------------------------------------------------------

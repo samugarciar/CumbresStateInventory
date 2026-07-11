@@ -85,6 +85,25 @@ function hoyBogota(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
 }
 
+// Completa la tarea automática creada por solicitar_apertura_agenda para esta
+// solicitud (evento_origen='solicitud_apertura', entidad_id=solicitud). Best-effort:
+// si falla, la decisión ya quedó guardada y la tarea se puede completar a mano.
+async function completarTareaSolicitud(supabase: any, solicitudId: string, userId: string) {
+  const { error } = await supabase
+    .from('tareas')
+    .update({
+      estado: 'completada',
+      completada_at: new Date().toISOString(),
+      completada_por: userId,
+    })
+    .eq('entidad_id', solicitudId)
+    .eq('evento_origen', 'solicitud_apertura')
+    .eq('estado', 'pendiente');
+  if (error) {
+    console.warn('[Solicitudes] No se pudo completar la tarea de la solicitud:', error.message);
+  }
+}
+
 /**
  * Aprueba una solicitud de apertura: crea la franja para el asesor elegido,
  * agenda la cita de una vez (respetando alcance inmueble/unidad) y dispara el
@@ -238,6 +257,9 @@ export async function aprobarSolicitud(data: AprobarData) {
       return { success: false, error: 'La franja y la cita se crearon, pero la solicitud no se pudo marcar como aprobada. Recarga la página.' };
     }
 
+    // Completar la tarea automática de esta solicitud en /tareas (best-effort)
+    await completarTareaSolicitud(supabase, solicitud.id, user.id);
+
     // 5) Veredicto al cliente vía n8n (fire-and-forget; la decisión ya está guardada)
     const inmueble = (solicitud as any).inmuebles;
     const { enviado, aviso } = await enviarVeredicto({
@@ -262,6 +284,8 @@ export async function aprobarSolicitud(data: AprobarData) {
 
     revalidatePath('/citas');
     revalidatePath('/agenda');
+    revalidatePath('/tareas');
+    revalidatePath('/dashboard');
     return {
       success: true,
       webhookEnviado: enviado,
@@ -329,6 +353,9 @@ export async function denegarSolicitud(data: DenegarData) {
       return { success: false, error: 'No se pudo denegar la solicitud.' };
     }
 
+    // Completar la tarea automática de esta solicitud en /tareas (best-effort)
+    await completarTareaSolicitud(supabase, solicitud.id, user.id);
+
     const inmueble = (solicitud as any).inmuebles;
     const { enviado, aviso } = await enviarVeredicto({
       solicitud_id: solicitud.id,
@@ -351,6 +378,8 @@ export async function denegarSolicitud(data: DenegarData) {
     });
 
     revalidatePath('/citas');
+    revalidatePath('/tareas');
+    revalidatePath('/dashboard');
     return {
       success: true,
       webhookEnviado: enviado,
