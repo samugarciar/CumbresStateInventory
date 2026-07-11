@@ -453,6 +453,17 @@ export async function confirmarCitas(citaIds: string[]) {
       return { success: false, error: `El servicio de confirmación respondió con un error (${resp.status}).` };
     }
 
+    // Marcar las citas enviadas como confirmadas (queda el rastro de cuáles y
+    // cuándo; re-enviar actualiza la marca). Best-effort: si falla, el envío
+    // al flujo ya ocurrió y solo se pierde el badge.
+    const { error: markErr } = await supabase
+      .from('citas')
+      .update({ confirmada_at: new Date().toISOString(), confirmada_por: user.id })
+      .in('id', citas.map((c: any) => c.id));
+    if (markErr) {
+      console.warn('[Citas] Enviadas al flujo pero no se pudieron marcar como confirmadas:', markErr.message);
+    }
+
     revalidatePath('/citas');
     return { success: true, count: payload.citas.length };
   } catch (error: any) {

@@ -18,6 +18,7 @@ interface Cita {
   cliente_telefono: string;
   cliente_email: string | null;
   origen: string;
+  confirmada_at?: string | null; // última vez enviada al flujo n8n de confirmación (→ Kommo)
   alcance?: string; // 'inmueble' | 'unidad'
   unidad?: string | null; // nombre de la unidad cuando alcance='unidad'
   aptos_snapshot?: { titulo: string }[] | null; // aptos disponibles al agendar (solo unidad)
@@ -304,6 +305,15 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
 
                     {/* Badges + acción */}
                     <div style={styles.derecha}>
+                      {c.confirmada_at && (
+                        <span
+                          style={styles.confirmadaBadge}
+                          title={`Enviada a Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
+                        >
+                          <CheckCheck size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
+                          Confirmada
+                        </span>
+                      )}
                       {isAdmin && asesorNombre && (
                         <span style={styles.asesorBadge}>
                           <UserIcon size={12} style={{ marginRight: 3, verticalAlign: '-1px' }} />
@@ -573,6 +583,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     letterSpacing: '0.02em',
     textTransform: 'uppercase' as const,
+  },
+  confirmadaBadge: {
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    color: '#22c55e',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    border: '1px solid rgba(34, 197, 94, 0.35)',
+    borderRadius: '12px',
+    padding: '0.1rem 0.55rem',
+    whiteSpace: 'nowrap' as const,
   },
   cancelarBtn: {
     padding: '0.25rem 0.6rem',

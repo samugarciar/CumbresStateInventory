@@ -401,6 +401,10 @@ CREATE TABLE IF NOT EXISTS public.citas (
     alcance TEXT NOT NULL DEFAULT 'inmueble' CHECK (alcance IN ('inmueble', 'unidad')),
     unidad TEXT,            -- nombre de la unidad cuando alcance='unidad'
     aptos_snapshot JSONB,  -- aptos disponibles al agendar [{inmueble_id,titulo,precio,habitaciones,banos}] (solo alcance='unidad')
+    -- Marca de "enviada al flujo n8n Confirmar citas (→ Kommo)"; aparte de
+    -- `estado` a propósito. Ver 2026-07-11_citas_confirmada.sql
+    confirmada_at TIMESTAMP WITH TIME ZONE,   -- NULL = nunca enviada; re-enviar la actualiza
+    confirmada_por UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
 
     CONSTRAINT citas_hora_fin_mayor CHECK (hora_fin > hora_inicio),
