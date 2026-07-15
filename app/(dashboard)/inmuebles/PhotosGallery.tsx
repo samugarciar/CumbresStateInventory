@@ -5,9 +5,11 @@ import { Camera, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PhotosGalleryProps {
   imagenes: string[] | any;
+  /** 'bar' = botón plano para la barra de acciones de la tarjeta feed */
+  variant?: 'default' | 'bar';
 }
 
-export default function PhotosGallery({ imagenes }: PhotosGalleryProps) {
+export default function PhotosGallery({ imagenes, variant = 'default' }: PhotosGalleryProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -17,7 +19,17 @@ export default function PhotosGallery({ imagenes }: PhotosGalleryProps) {
     imageList = imagenes.map(img => typeof img === 'string' ? img : img?.imagen).filter(Boolean);
   }
 
-  if (imageList.length === 0) return null;
+  if (imageList.length === 0) {
+    if (variant === 'bar') {
+      return (
+        <span style={{ ...styles.barBtn, color: 'var(--text-muted)', cursor: 'default' }}>
+          <Camera size={14} />
+          Sin fotos
+        </span>
+      );
+    }
+    return null;
+  }
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -31,18 +43,33 @@ export default function PhotosGallery({ imagenes }: PhotosGalleryProps) {
 
   return (
     <>
-      <button 
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setIsOpen(true);
-        }} 
-        className="btn btn-secondary" 
-        style={styles.photosBtn}
-      >
-        <Camera size={14} color="var(--primary)" />
-        Fotos ({imageList.length})
-      </button>
+      {variant === 'bar' ? (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(true);
+          }}
+          style={styles.barBtn}
+          title="Ver galería de fotos"
+        >
+          <Camera size={14} color="var(--primary)" />
+          Fotos ({imageList.length})
+        </button>
+      ) : (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(true);
+          }}
+          className="btn btn-secondary"
+          style={styles.photosBtn}
+        >
+          <Camera size={14} color="var(--primary)" />
+          Fotos ({imageList.length})
+        </button>
+      )}
 
       {isOpen && (
         <div 
@@ -116,6 +143,21 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '0.35rem',
     padding: '0.4rem 0.85rem',
     fontSize: '0.8rem',
+  },
+  barBtn: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.35rem',
+    padding: '0.6rem 0.5rem',
+    fontSize: '0.78rem',
+    fontWeight: '600',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    width: '100%',
   },
   overlay: {
     position: 'fixed',
