@@ -170,7 +170,11 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   if (resolvedParams.transaccion) {
     query = query.eq('tipo_transaccion', resolvedParams.transaccion);
   }
-  if (resolvedParams.estado) {
+  if (resolvedParams.estado === 'desocupacion') {
+    // Ofertados: se muestran como disponibles en la app pero el ERP los
+    // mantiene 'arrendado' (override local, ver OfertarControl)
+    query = query.eq('estado_override', 'disponible');
+  } else if (resolvedParams.estado) {
     query = query.eq('estado', resolvedParams.estado);
   } else {
     // Omitir inactivos por defecto (según requerimiento de negocio)
