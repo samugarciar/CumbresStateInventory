@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { consultaBI } from '@/lib/bi/db';
 import { consultaERP, type RecursoERP } from '@/lib/bi/erp';
-import { PROMPT_CUMBRE, contextoVariable } from '@/lib/bi/prompt';
+import { PROMPT_ARRIENDABOT, contextoVariable } from '@/lib/bi/prompt';
 
 // Bucle agéntico (LangGraph) con varias consultas SQL/ERP + modelo:
 // necesita más que el timeout por defecto de Vercel.
@@ -124,7 +124,7 @@ export async function POST(request: Request) {
   // bloque variable (inmobiliaria/usuario/fecha) al final.
   const sistema = new SystemMessage({
     content: [
-      { type: 'text', text: PROMPT_CUMBRE, cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: PROMPT_ARRIENDABOT, cache_control: { type: 'ephemeral' } },
       {
         type: 'text',
         text: contextoVariable({

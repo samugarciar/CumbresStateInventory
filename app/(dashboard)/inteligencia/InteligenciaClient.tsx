@@ -185,7 +185,7 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
           <BrainCircuit size={26} color="var(--primary)" />
         </div>
         <div>
-          <h1 style={styles.titulo}>Cumbre · Asesor BI</h1>
+          <h1 style={styles.titulo}>Arriendabot · Asesor BI</h1>
           <p style={styles.subtitulo}>
             Inteligencia comercial en vivo: citas, agenda, inventario, cartera y contratos.
           </p>
