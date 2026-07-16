@@ -81,34 +81,52 @@ export async function obtenerTokenJWT(config: NubyConfig): Promise<string> {
     },
   ];
 
+  // Headers "de navegador" completos: la instancia está detrás de un WAF
+  // (openresty) que desde IPs de datacenter (Vercel) puede responder 415 a
+  // peticiones que no parezcan un navegador real. Ver comentario de la función.
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/plain, */*',
+    'Accept-Language': 'es-CO,es;q=0.9,en;q=0.8',
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Origin: `https://${instancia}`,
+    Referer: `https://${instancia}/`,
+  };
+
   const errores: string[] = [];
+  // El WAF a veces responde 415/503 de forma intermitente; reintentar con
+  // backoff corto suele resolverlo sin cambiar la petición.
+  const REINTENTABLES = new Set([415, 429, 500, 502, 503, 504]);
+  const MAX_REINTENTOS = 3;
 
   for (const intento of intentos) {
-    try {
-      const res = await fetch(intento.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        body: JSON.stringify(intento.body),
-        cache: 'no-store',
-      });
+    for (let n = 0; n < MAX_REINTENTOS; n++) {
+      try {
+        const res = await fetch(intento.url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(intento.body),
+          cache: 'no-store',
+        });
 
-      if (!res.ok) {
+        if (res.ok) {
+          const data = await res.json();
+          // El campo varía por despliegue: `token` en arrendasoft.co, `jwt` en la doc oficial.
+          const token = data.token || data.jwt || data.access_token;
+          if (token) return token;
+          errores.push(`${intento.url} → 200 pero sin campo token/jwt en la respuesta`);
+          break; // 200 sin token no es reintentable
+        }
+
         const errorText = await res.text();
-        errores.push(`${intento.url} → ${res.status}: ${errorText.slice(0, 200)}`);
-        continue;
+        errores.push(`${intento.url} → ${res.status}${n < MAX_REINTENTOS - 1 && REINTENTABLES.has(res.status) ? ` (reintento ${n + 1})` : ''}: ${errorText.slice(0, 150)}`);
+        if (!REINTENTABLES.has(res.status)) break; // 4xx de credenciales: no insistir
+        await new Promise((r) => setTimeout(r, 400 * (n + 1)));
+      } catch (error: any) {
+        errores.push(`${intento.url} → ${error.message} (reintento ${n + 1})`);
+        await new Promise((r) => setTimeout(r, 400 * (n + 1)));
       }
-
-      const data = await res.json();
-      // El campo también varía por despliegue: `token` en arrendasoft.co, `jwt` en la doc oficial.
-      const token = data.token || data.jwt || data.access_token;
-      if (token) return token;
-
-      errores.push(`${intento.url} → 200 pero sin campo token/jwt en la respuesta`);
-    } catch (error: any) {
-      errores.push(`${intento.url} → ${error.message}`);
     }
   }
 
