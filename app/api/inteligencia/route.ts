@@ -8,14 +8,14 @@ import { createClient } from '@/lib/supabase/server';
 import { consultaBI } from '@/lib/bi/db';
 import { consultaERP, type RecursoERP } from '@/lib/bi/erp';
 import { PROMPT_ARRIENDABOT, contextoVariable } from '@/lib/bi/prompt';
-import { calcularCostoUSD } from '@/lib/bi/costos';
+import { calcularCostoUSD, MODELO_BI } from '@/lib/bi/costos';
 import type { Parte } from '@/lib/bi/parte';
 
 // Bucle agéntico (LangGraph) con varias consultas SQL/ERP + modelo:
 // necesita más que el timeout por defecto de Vercel.
 export const maxDuration = 300;
 
-const MODELO = process.env.BI_MODEL || 'claude-opus-4-8';
+const MODELO = MODELO_BI;
 // Cada iteración del agente son ~2 pasos del grafo (modelo + herramientas).
 const LIMITE_RECURSION = 35;
 
@@ -71,8 +71,14 @@ const herramientaERP = tool(
   async ({ recurso, ...params }) => {
     const datos = await consultaERP(recurso as RecursoERP, params);
     const texto = JSON.stringify(datos);
-    // Guarda de tamaño: los listados del ERP pueden ser grandes.
-    return texto.length > 150_000 ? texto.slice(0, 150_000) + '…(truncado)' : texto;
+    // Guarda de tamaño: cada carácter de un resultado de herramienta se
+    // RE-ENVÍA al modelo en todas las iteraciones siguientes del bucle
+    // (una respuesta de 150k chars llegó a costar ~256k tokens de input en
+    // una sola llamada). Si esto trunca, la consulta estaba mal planteada.
+    return texto.length > 60_000
+      ? texto.slice(0, 60_000) +
+          '…(truncado: no pagines listados crudos — usa buscar_factura/buscar_contrato/cartera_resumen o un por_pagina menor)'
+      : texto;
   },
   {
     name: 'consultar_erp',
@@ -105,6 +111,10 @@ const herramientaERP = tool(
       fecha_fin: z.string().optional().describe('YYYY-MM-DD (solo auxiliar_contable).'),
       cuenta_ini: z.string().optional().describe('Clase PUC inicial 1-9 (solo auxiliar_contable).'),
       cuenta_fin: z.string().optional().describe('Clase PUC final 1-9 (solo auxiliar_contable).'),
+      con_detalles: z
+        .boolean()
+        .optional()
+        .describe('auxiliar_contable: true para incluir los movimientos por tercero (por defecto solo saldos, mucho más liviano).'),
     }),
   }
 );
@@ -226,6 +236,9 @@ export async function POST(request: Request) {
 
   const historial = turnos
     .filter((t) => typeof t.texto === 'string' && t.texto.trim())
+    // Conversaciones largas: los turnos viejos rara vez cambian la respuesta
+    // y se pagan completos en cada petición nueva (el caché expira en 5 min).
+    .slice(-30)
     .map((t) => (t.rol === 'usuario' ? new HumanMessage(t.texto) : new AIMessage(t.texto)));
 
   const codificador = new TextEncoder();
@@ -346,9 +359,19 @@ export async function POST(request: Request) {
         }
       );
 
+      const tools = [herramientaBaseDatos, herramientaERP, herramientaGrafico, herramientaInforme];
+
+      // cache_control de nivel superior (API de Anthropic): en cada llamada
+      // mueve un breakpoint de caché al final de la conversación, así la
+      // SIGUIENTE iteración del bucle agéntico lee todo el historial previo
+      // (incluidos los resultados de herramientas, el grueso del costo) a
+      // 0.1x en vez de re-pagarlo a precio completo. El bloque estable del
+      // sistema conserva su breakpoint propio (arriba).
+      const llmConCache = modelo.bindTools(tools, { cache_control: { type: 'ephemeral' } });
+
       const agente = createReactAgent({
-        llm: modelo,
-        tools: [herramientaBaseDatos, herramientaERP, herramientaGrafico, herramientaInforme],
+        llm: llmConCache,
+        tools,
         prompt: sistema,
       });
 

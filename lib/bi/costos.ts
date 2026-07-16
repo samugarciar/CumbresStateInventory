@@ -6,6 +6,11 @@
 // escritura 1.25x (TTL de 5 minutos — el que usa el route con
 // cache_control: {type: 'ephemeral'}).
 
+// ÚNICA fuente del modelo del asesor BI. Sonnet 5 por defecto (calidad
+// casi-Opus en tool-use estructurado a 40-60% menos); BI_MODEL lo
+// sobreescribe. OJO: en Vercel, cambiar la env var requiere redeploy.
+export const MODELO_BI = process.env.BI_MODEL || 'claude-sonnet-5';
+
 interface PrecioModelo {
   entrada: number; // USD por millón de tokens de entrada
   salida: number;  // USD por millón de tokens de salida

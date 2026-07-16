@@ -35,11 +35,77 @@ interface ParamsERP {
   fecha_fin?: string;
   cuenta_ini?: string; // clase PUC 1-9
   cuenta_fin?: string;
+  con_detalles?: boolean; // auxiliar_contable: incluir los movimientos por tercero
   // Filtros para buscar_factura / buscar_contrato (la API no soporta
   // filtrar server-side; se recorre todo el listado y se filtra aquí).
   documento?: string;
   contrato_numero?: string | number;
   nombre_contiene?: string;
+}
+
+// ---- Proyecciones compactas (eficiencia de tokens) ----
+// Cada resultado de herramienta se re-envía al modelo en TODAS las
+// iteraciones siguientes del bucle agéntico, así que cada campo inútil se
+// paga muchas veces. Se proyecta aquí lo que el BI realmente usa; la ficha
+// completa sigue disponible (recurso 'propiedad' por código, o
+// con_detalles=true en auxiliar_contable).
+
+function facturaCompacta(f: any) {
+  return {
+    factura_numero: f.factura_numero,
+    fecha_factura: f.fecha_factura,
+    fecha_vencimiento: f.fecha_vencimiento,
+    valor_total: parseFloat(f.valor_total) || 0,
+    saldo: parseFloat(f.saldo) || 0,
+    documento_tercero: f.documento_tercero,
+    nombre_tercero: f.nombre_tercero,
+    estado: f.estado,
+    contrato_numero: f.detalles?.[0]?.contrato_numero ?? null,
+    concepto: f.detalles?.[0]?.producto ?? null,
+  };
+}
+
+function contratoCompacto(c: any) {
+  if (!c || typeof c !== 'object') return c;
+  const { observaciones, ...resto } = c;
+  return {
+    ...resto,
+    observaciones:
+      typeof observaciones === 'string' && observaciones.length > 140
+        ? observaciones.slice(0, 140) + '…'
+        : observaciones ?? null,
+  };
+}
+
+function propiedadCompacta(p: any) {
+  if (!p || typeof p !== 'object') return p;
+  const caract = (fragmento: string) => {
+    const item = Array.isArray(p.caracteristicas)
+      ? p.caracteristicas.find(
+          (c: any) => typeof c?.descripcion === 'string' && c.descripcion.toLowerCase().includes(fragmento)
+        )
+      : undefined;
+    const v = item?.valor;
+    return v && v !== '-1' ? v : null;
+  };
+  return {
+    codigo: p.codigo,
+    titulo: p.titulo,
+    clase_inmueble: p.clase_inmueble,
+    tipo_servicio: p.tipo_servicio,
+    asesor: p.asesor,
+    estado: p.estado,
+    estado_texto: p.estado_texto,
+    valor_arriendo1: p.valor_arriendo1,
+    valor_venta1: p.valor_venta1,
+    municipio: p.municipio,
+    barrio: p.barrio,
+    direccion: p.direccion,
+    area: p.area,
+    estrato_texto: p.estrato_texto,
+    habitaciones: caract('habitacion'),
+    banos: caract('baño'),
+  };
 }
 
 const UA =
@@ -64,7 +130,9 @@ function rutaYQuery(recurso: RecursoERP, p: ParamsERP): { ruta: string; query: U
       return { ruta: '/service/v2/public/contracts/list', query };
     case 'facturas':
       query.set('page', pagina);
-      query.set('page_size', String(p.por_pagina ?? 1000));
+      // 100 por defecto (no 1000): el listado crudo es solo para "ver recientes";
+      // buscar/agregar se hace con buscar_factura / cartera_resumen.
+      query.set('page_size', String(p.por_pagina ?? 100));
       return { ruta: '/service/v2/public/invoices/list', query };
     case 'asesores':
       return { ruta: '/service/v2/public/agents', query };
@@ -74,7 +142,11 @@ function rutaYQuery(recurso: RecursoERP, p: ParamsERP): { ruta: string; query: U
       if (p.fecha_ini) query.set('fecha_ini', p.fecha_ini);
       if (p.fecha_fin) query.set('fecha_fin', p.fecha_fin);
       if (p.cuenta_ini) query.set('cuenta_ini', p.cuenta_ini);
-      if (p.cuenta_fin) query.set('cuenta_fin', p.cuenta_fin);
+      // El ERP compara los códigos de cuenta LEXICOGRÁFICAMENTE como texto:
+      // cuenta_fin='4' excluye '41050501' ("41050501" > "4" como string), por
+      // eso "clase 4 a 4" devolvía vacío. Rellenar con 9s convierte cuenta_fin
+      // en "todo lo que empiece por ese prefijo" (verificado contra la API).
+      if (p.cuenta_fin) query.set('cuenta_fin', String(p.cuenta_fin).padEnd(12, '9'));
       return { ruta: '/service/v2/public/accounting/general-ledger', query };
     case 'buscar_factura':
     case 'cartera_resumen':
@@ -155,11 +227,17 @@ async function fetchTodasLasPaginas(ruta: string): Promise<ResultadoEscaneo> {
   return { registros, totalRevisados: registros.length, totalReportadoPorAPI, limiteAlcanzado };
 }
 
-/** "12" o "[1] 1000902076 - NATALIA..." → "1000902076". Solo dígitos, sin ceros/espacios. */
+/**
+ * Normaliza un documento a su tira de dígitos más larga:
+ * "1.054.986.516" → "1054986516" (quita separadores de miles),
+ * "[1] 1000902076 - NATALIA..." → "1000902076" (ignora el índice [1]).
+ */
 function soloDigitos(valor?: string | number | null): string | undefined {
   if (valor === undefined || valor === null) return undefined;
-  const m = String(valor).match(/(\d{4,})/);
-  return m ? m[1] : undefined;
+  const sinSeparadores = String(valor).replace(/(?<=\d)[.,](?=\d)/g, '');
+  const corridas = sinSeparadores.match(/\d{4,}/g);
+  if (!corridas) return undefined;
+  return corridas.reduce((a, b) => (b.length > a.length ? b : a));
 }
 
 function diagnostico(r: ResultadoEscaneo) {
@@ -182,7 +260,11 @@ async function buscarFactura(p: ParamsERP) {
   const coincidencias = escaneo.registros.filter((f) => {
     if (documento && soloDigitos(f.documento_tercero) === documento) return true;
     if (contratoNumero && Array.isArray(f.detalles)) {
-      if (f.detalles.some((d: any) => String(d.contrato_numero) === contratoNumero || String(d.contrato_id) === contratoNumero)) {
+      // Igual que en buscar_contrato: SOLO detalles[].contrato_numero (el
+      // consecutivo que usa el personal). NUNCA detalles[].contrato_id: es la
+      // clave interna y puede coincidir por casualidad con el consecutivo de
+      // OTRO contrato (así se coló una factura ajena en una búsqueda real).
+      if (f.detalles.some((d: any) => String(d.contrato_numero) === contratoNumero)) {
         return true;
       }
     }
@@ -197,24 +279,31 @@ async function buscarFactura(p: ParamsERP) {
   const conSaldo = coincidencias.filter((f) => saldoDe(f) > 0);
   const vencidas = conSaldo.filter((f) => f.fecha_vencimiento && f.fecha_vencimiento < hoy);
 
+  // Tokens: el resumen cubre TODAS las coincidencias; el detalle lista las con
+  // saldo primero (lo que importa para cobro) y completa con las más recientes.
+  const MAX_FACTURAS_DETALLE = 60;
+  const detalle = [...conSaldo, ...coincidencias.filter((f) => saldoDe(f) === 0)].slice(0, MAX_FACTURAS_DETALLE);
+
   return {
-    facturas: coincidencias.map((f) => ({
-      factura_numero: f.factura_numero,
-      fecha_factura: f.fecha_factura,
-      fecha_vencimiento: f.fecha_vencimiento,
-      valor_total: parseFloat(f.valor_total) || 0,
-      saldo: saldoDe(f),
-      estado: f.estado,
-      nombre_tercero: f.nombre_tercero,
-      documento_tercero: f.documento_tercero,
-      contrato_numero: f.detalles?.[0]?.contrato_numero ?? null,
-    })),
+    facturas: detalle.map(facturaCompacta),
+    ...(coincidencias.length > MAX_FACTURAS_DETALLE
+      ? { nota: `Se listan ${MAX_FACTURAS_DETALLE} de ${coincidencias.length} facturas (todas las con saldo van primero); el resumen cubre todas.` }
+      : {}),
     resumen: {
       facturas_encontradas: coincidencias.length,
       facturas_con_saldo: conSaldo.length,
       saldo_total: conSaldo.reduce((a, f) => a + saldoDe(f), 0),
       facturas_vencidas: vencidas.length,
       saldo_vencido: vencidas.reduce((a, f) => a + saldoDe(f), 0),
+      // Señal de alerta: en este ERP una deuda puede NO tener factura emitida
+      // (la facturación electrónica no siempre cubre la cuenta de cobro). Si
+      // la última factura es vieja para un contrato activo mensual, "saldo 0"
+      // NO garantiza que esté al día.
+      ultima_factura_fecha:
+        coincidencias.reduce<string | null>(
+          (max, f) => (f.fecha_factura && (!max || f.fecha_factura > max) ? f.fecha_factura : max),
+          null
+        ),
     },
     diagnostico: diagnostico(escaneo),
   };
@@ -278,7 +367,23 @@ async function buscarContrato(p: ParamsERP) {
     return false;
   });
 
-  return { contratos: coincidencias, diagnostico: diagnostico(escaneo) };
+  return { contratos: coincidencias.map(contratoCompacto), diagnostico: diagnostico(escaneo) };
+}
+
+/** Quita los movimientos por tercero del auxiliar contable (pueden ser enormes). */
+function auxiliarSinDetalles(cuentas: any[]): any[] {
+  return cuentas.map((cuenta) => ({
+    ...cuenta,
+    terceros:
+      cuenta?.terceros && typeof cuenta.terceros === 'object'
+        ? Object.fromEntries(
+            Object.entries(cuenta.terceros).map(([id, tercero]) => {
+              const { detalles: _omitidos, ...resto } = (tercero ?? {}) as Record<string, unknown>;
+              return [id, resto];
+            })
+          )
+        : cuenta?.terceros,
+  }));
 }
 
 /**
@@ -297,10 +402,20 @@ export async function consultaERP(recurso: RecursoERP, params: ParamsERP = {}): 
   const { ruta, query } = rutaYQuery(recurso, params);
   const datos = await fetchPagina(ruta, query);
 
-  if (Array.isArray(datos)) return datos;
+  // Proyección compacta de los listados crudos (ver comentario arriba).
+  const compactar = (registros: any[]): any[] => {
+    if (recurso === 'facturas') return registros.map(facturaCompacta);
+    if (recurso === 'contratos') return registros.map(contratoCompacto);
+    if (recurso === 'propiedades') return registros.map(propiedadCompacta);
+    if (recurso === 'auxiliar_contable' && !params.con_detalles) return auxiliarSinDetalles(registros);
+    return registros;
+  };
+
+  if (Array.isArray(datos)) return compactar(datos);
   if (datos && typeof datos === 'object') {
     if (datos.error === true) throw new Error(`Error del ERP: ${datos.message || 'desconocido'}`);
-    if (datos.pagination) return { registros: datos.body ?? [], paginacion: datos.pagination };
+    if (datos.pagination) return { registros: compactar(datos.body ?? []), paginacion: datos.pagination };
+    if (Array.isArray(datos.body)) return compactar(datos.body);
     return datos.body ?? datos.data ?? datos;
   }
   return datos;

@@ -1,4 +1,5 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
+import { MODELO_BI } from '@/lib/bi/costos';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import AgentesClient from './AgentesClient';
@@ -95,7 +96,7 @@ export default async function AgentesPage() {
   const suma = (fn: (r: any) => number) => filas.reduce((acc, r) => acc + fn(r), 0);
   const filasHoy = filas.filter((r) => r.created_at >= inicioHoy);
   const bi = {
-    modelo: process.env.BI_MODEL || 'claude-opus-4-8',
+    modelo: MODELO_BI,
     gastoMesUsd: suma((r) => Number(r.costo_usd || 0)),
     gastoHoyUsd: filasHoy.reduce((acc, r) => acc + Number(r.costo_usd || 0), 0),
     peticionesMes: filas.length,
