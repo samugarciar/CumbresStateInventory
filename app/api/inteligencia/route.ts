@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { consultaBI } from '@/lib/bi/db';
 import { consultaERP, type RecursoERP } from '@/lib/bi/erp';
 import { PROMPT_CUMBRE, contextoVariable } from '@/lib/bi/prompt';
+import { calcularCostoUSD } from '@/lib/bi/costos';
 import type { Parte } from '@/lib/bi/parte';
 
 // Bucle agéntico (LangGraph) con varias consultas SQL/ERP + modelo:
@@ -117,6 +118,17 @@ function tituloDesde(texto: string): string {
   return limpio.length > 60 ? limpio.slice(0, 60).trimEnd() + '…' : limpio;
 }
 
+// Inicio del mes actual en Bogotá, como instante UTC (00:00 -05 = 05:00Z;
+// Colombia no tiene horario de verano). Para acotar el gasto mensual en bi_uso.
+function inicioMesBogotaISO(): string {
+  const ym = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+  }).format(new Date());
+  return `${ym}-01T05:00:00.000Z`;
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.profile) {
@@ -141,6 +153,38 @@ export async function POST(request: Request) {
   // usuario — no service_role: si el token expiró a mitad del chat, las
   // escrituras fallan igual que cualquier otra lectura de la app.
   const supabase = await createClient();
+
+  // ---- Administración de agentes (/agentes): switch + límite mensual ----
+  // Sin fila de config = activo (la pausa es una acción explícita del admin).
+  const { data: configBI } = await supabase
+    .from('agentes_config')
+    .select('activo, limite_mensual_usd')
+    .eq('agente', 'arriendabot_bi')
+    .maybeSingle();
+
+  if (configBI && !configBI.activo) {
+    return Response.json(
+      { error: 'El asesor BI está pausado. Puedes reactivarlo en Agentes.' },
+      { status: 403 }
+    );
+  }
+
+  if (configBI?.limite_mensual_usd) {
+    const { data: usoMes } = await supabase
+      .from('bi_uso')
+      .select('costo_usd')
+      .gte('created_at', inicioMesBogotaISO());
+    const gastado = (usoMes || []).reduce((acc, r) => acc + Number(r.costo_usd || 0), 0);
+    const limite = Number(configBI.limite_mensual_usd);
+    if (gastado >= limite) {
+      return Response.json(
+        {
+          error: `El asesor BI alcanzó su límite mensual de USD $${limite.toFixed(2)} (gastado: $${gastado.toFixed(2)}). Ajusta o quita el límite en Agentes.`,
+        },
+        { status: 403 }
+      );
+    }
+  }
 
   const modelo = new ChatAnthropic({
     model: MODELO,
@@ -219,6 +263,13 @@ export async function POST(request: Request) {
         .from('bi_conversaciones')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversacionId);
+
+      // Medición de uso (tokens → USD) para /agentes: se acumula lo que
+      // reporta cada llamada al modelo dentro del bucle agéntico.
+      let usoEntrada = 0;
+      let usoSalida = 0;
+      let usoCacheLectura = 0;
+      let usoCacheEscritura = 0;
 
       // Partes de la respuesta del asesor, acumuladas para persistir un solo
       // mensaje al final (igual que el cliente arma la burbuja en vivo).
@@ -310,6 +361,20 @@ export async function POST(request: Request) {
                     ? String(input.titulo ?? '')
                     : String(input.recurso ?? ''),
             });
+          } else if (evento.event === 'on_chat_model_end') {
+            // usage_metadata de LangChain: input_tokens YA incluye los tokens
+            // de cache; el desglose viene en input_token_details.
+            const um = (evento.data?.output as { usage_metadata?: Record<string, unknown> } | undefined)
+              ?.usage_metadata;
+            if (um) {
+              const det = (um.input_token_details ?? {}) as Record<string, unknown>;
+              const cacheLectura = Number(det.cache_read ?? 0) || 0;
+              const cacheEscritura = Number(det.cache_creation ?? 0) || 0;
+              usoEntrada += Math.max(0, (Number(um.input_tokens ?? 0) || 0) - cacheLectura - cacheEscritura);
+              usoSalida += Number(um.output_tokens ?? 0) || 0;
+              usoCacheLectura += cacheLectura;
+              usoCacheEscritura += cacheEscritura;
+            }
           }
         }
 
@@ -333,6 +398,27 @@ export async function POST(request: Request) {
             .from('bi_conversaciones')
             .update({ updated_at: new Date().toISOString() })
             .eq('id', conversacionId);
+        }
+        // Registrar el uso de la petición (best-effort: si falla, el chat
+        // ya respondió; solo se pierde la fila de medición).
+        if (usoEntrada + usoSalida + usoCacheLectura + usoCacheEscritura > 0) {
+          const { error: usoError } = await supabase.from('bi_uso').insert({
+            inmobiliaria_id: user.profile!.inmobiliaria_id,
+            usuario_id: user.profile!.id,
+            conversacion_id: conversacionId,
+            modelo: MODELO,
+            tokens_entrada: usoEntrada,
+            tokens_salida: usoSalida,
+            tokens_cache_lectura: usoCacheLectura,
+            tokens_cache_escritura: usoCacheEscritura,
+            costo_usd: calcularCostoUSD(MODELO, {
+              entrada: usoEntrada,
+              salida: usoSalida,
+              cacheLectura: usoCacheLectura,
+              cacheEscritura: usoCacheEscritura,
+            }),
+          });
+          if (usoError) console.warn('[BI] No se pudo registrar el uso:', usoError.message);
         }
         controlador.close();
       }
