@@ -37,16 +37,21 @@ Máximo ~200 filas por consulta (se trunca): agrega en SQL en lugar de traer det
 
 ## ERP Nuby/Arrendasoft (consultar_erp)
 
-Recursos disponibles (todos de solo lectura; listados paginan con pagina/por_pagina):
-- **propiedades**: codigo, titulo, clase_inmueble, tipo_servicio, asesor, estado, estado_texto, valor_arriendo1, valor_venta1, municipio (¡la ciudad viene aquí, NO existe 'ciudad'!), barrio, area (string "52.00"), estrato_texto ("Tres"), caracteristicas[] (habitaciones/baños NO son top-level: {descripcion:"Nº De Habitaciones"|"Nº De Baños", valor:"3"}; "-1" = sin dato).
+Recursos disponibles (todos de solo lectura):
+
+- **buscar_factura** (documento y/o contrato_numero y/o nombre_contiene): la cartera/facturas de UNA persona o contrato. Recorre TODO el histórico de facturas (miles de registros) y filtra por ti — devuelve las facturas encontradas + resumen (saldo total, vencido) + diagnostico (cuántos registros había en el ERP y cuántos se revisaron). **Úsala siempre que te pregunten por la deuda de alguien puntual; NUNCA intentes buscarlo con 'facturas' sin filtro** — la API no soporta filtrar por nombre/documento y con miles de registros la persona rara vez está en la primera página.
+- **cartera_resumen** (sin parámetros): cifras agregadas de TODA la cartera — saldo total, saldo vencido, cantidad de facturas, y top 10 deudores. Úsala para preguntas de cartera total/vencida en vez de sumar tú mismo páginas de 'facturas'.
+- **buscar_contrato** (documento y/o contrato_numero y/o nombre_contiene): ubica un contrato por cédula de inquilino/propietario, número de contrato o nombre. contrato_numero es el número que usa el personal (campo "consecutivo"), NO el contrato_id interno — son independientes y pueden coincidir por casualidad en contratos distintos.
+- **propiedades**: codigo, titulo, clase_inmueble, tipo_servicio, asesor, estado, estado_texto, valor_arriendo1, valor_venta1, municipio (¡la ciudad viene aquí, NO existe 'ciudad'!), barrio, area (string "52.00"), estrato_texto ("Tres"), caracteristicas[] (habitaciones/baños NO son top-level: {descripcion:"Nº De Habitaciones"|"Nº De Baños", valor:"3"}; "-1" = sin dato). Pagina con pagina/por_pagina.
 - **propiedad** (con codigo): ficha completa + propietarios[], imagenes[], codigos_portales[].
-- **contratos**: contrato_id, consecutivo, propiedad_id, propietario, inquilino, canon_total, porcentaje_comision, periodicidad, escenario, uso, estado, estado_id, fecha_inicio, fecha_fin, fecha_terminacion.
-- **facturas** (facturación y cartera): factura_numero, fecha_factura, fecha_vencimiento, valor_total, saldo (¡strings decimales → convertir a número!), nombre_tercero, estado, estado_dian.
+- **contratos** / **facturas**: listados crudos paginados (pagina/por_pagina), útiles para hojear ("últimas 20 facturas emitidas") pero NO para buscar a alguien — usa buscar_factura/buscar_contrato para eso. La respuesta incluye {registros, paginacion: {total_records, has_next_page, ...}} para que sepas si hay más páginas. Campos de factura: factura_numero, fecha_factura, fecha_vencimiento, valor_total, saldo (¡strings decimales → convertir a número!), documento_tercero, nombre_tercero, estado, estado_dian, detalles[] (incluye contrato_numero). Campos de contrato: contrato_id, consecutivo, propiedad_id, propietario, inquilino (formato "[N] documento - NOMBRE"), canon_total, porcentaje_comision, periodicidad, escenario, uso, estado, estado_id, fecha_inicio, fecha_fin, fecha_terminacion.
 - **asesores**: id, documento, nombre, telefono, email.
 - **estados**: maestra de estados de propiedad (Activa=1, Arrendada=0, Inactiva=2, Vendida=3).
 - **auxiliar_contable** (fecha_ini, fecha_fin, cuenta_ini, cuenta_fin): saldos/débitos/créditos por cuenta PUC con desglose por tercero. Clases PUC: 1 activos, 2 pasivos, 3 patrimonio, 4 ingresos, 5 gastos.
 
-Métricas ERP típicas: cartera vencida = facturas con saldo>0 y fecha_vencimiento < hoy; canon activo = suma de canon_total de contratos vigentes; ingresos del año = auxiliar_contable clase 4.
+Métricas ERP típicas: cartera vencida = cartera_resumen.saldo_vencido; canon activo = suma de canon_total de contratos vigentes; ingresos del año = auxiliar_contable clase 4.
+
+Si diagnostico.limite_de_escaneo_alcanzado viene en true, el resultado puede estar incompleto (portafolio creció más allá de la cota de seguridad) — dilo explícitamente en tu respuesta, no lo omitas.
 
 ## Gráficos (mostrar_grafico)
 

@@ -66,11 +66,27 @@ const herramientaERP = tool(
       'Consulta de SOLO LECTURA al ERP Nuby/Arrendasoft. Úsala para la fuente de verdad del portafolio y del dinero: contratos, cánones, facturación, cartera, asesores y contabilidad.',
     schema: z.object({
       recurso: z
-        .enum(['propiedades', 'propiedad', 'contratos', 'facturas', 'asesores', 'estados', 'auxiliar_contable'])
-        .describe('Recurso del ERP a consultar.'),
-      pagina: z.number().int().optional().describe('Página del listado (por defecto 1).'),
-      por_pagina: z.number().int().optional().describe('Registros por página (máx 1000).'),
+        .enum([
+          'propiedades',
+          'propiedad',
+          'contratos',
+          'facturas',
+          'buscar_factura',
+          'cartera_resumen',
+          'buscar_contrato',
+          'asesores',
+          'estados',
+          'auxiliar_contable',
+        ])
+        .describe(
+          "Recurso del ERP a consultar. Para la cartera/facturas de UNA persona o contrato usa 'buscar_factura'; para cifras agregadas de cartera (total, vencida, top deudores) usa 'cartera_resumen'; para ubicar un contrato usa 'buscar_contrato'. 'facturas'/'contratos' sin filtro son listados crudos paginados — NO sirven para buscar a alguien puntual."
+        ),
+      pagina: z.number().int().optional().describe('Página del listado (por defecto 1; solo propiedades/contratos/facturas).'),
+      por_pagina: z.number().int().optional().describe('Registros por página (máx 1000; solo propiedades/contratos/facturas).'),
       codigo: z.string().optional().describe("Código ERP de la propiedad (solo para recurso 'propiedad')."),
+      documento: z.string().optional().describe('Cédula/NIT a buscar (buscar_factura / buscar_contrato).'),
+      contrato_numero: z.union([z.string(), z.number()]).optional().describe("El número de contrato tal como lo dice el usuario (el 'consecutivo', no el ID interno) — buscar_factura / buscar_contrato."),
+      nombre_contiene: z.string().optional().describe('Fragmento de nombre a buscar, como respaldo si no hay documento (buscar_factura / buscar_contrato).'),
       fecha_ini: z.string().optional().describe('YYYY-MM-DD (solo auxiliar_contable).'),
       fecha_fin: z.string().optional().describe('YYYY-MM-DD (solo auxiliar_contable).'),
       cuenta_ini: z.string().optional().describe('Clase PUC inicial 1-9 (solo auxiliar_contable).'),
