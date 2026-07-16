@@ -147,7 +147,8 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
             style={styles.filterSelect}
           >
             <option value="">Todos (Disp/Arrend)</option>
-            <option value="disponible">Disponible</option>
+            <option value="disponible">Disponible (incluye desocupación)</option>
+            <option value="desocupacion">En desocupación (ofertados)</option>
             <option value="arrendado">Arrendado</option>
           </select>
         </div>

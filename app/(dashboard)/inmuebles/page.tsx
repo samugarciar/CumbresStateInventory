@@ -4,27 +4,17 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import FormCaptarInmueble from './FormCaptarInmueble';
 import LogsWebhookTable from './LogsWebhookTable';
-import StateSelector from './StateSelector';
-import AsesorSelector from './AsesorSelector';
-import UnidadEditor from './UnidadEditor';
-import OfertarControl from './OfertarControl';
-import PhotosGallery from './PhotosGallery';
+import InmuebleCard from './InmuebleCard';
 import FiltersPanel from './FiltersPanel';
-import { 
-  Building2, 
-  Plus, 
-  ArrowLeft, 
-  MapPin, 
-  Tag, 
-  Key, 
-  SlidersHorizontal,
+import {
+  Building2,
+  Plus,
+  ArrowLeft,
+  Key,
   Home,
-  UserCheck,
-  Search,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  UploadCloud,
   History
 } from 'lucide-react';
 
@@ -180,7 +170,11 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   if (resolvedParams.transaccion) {
     query = query.eq('tipo_transaccion', resolvedParams.transaccion);
   }
-  if (resolvedParams.estado) {
+  if (resolvedParams.estado === 'desocupacion') {
+    // Ofertados: se muestran como disponibles en la app pero el ERP los
+    // mantiene 'arrendado' (override local, ver OfertarControl)
+    query = query.eq('estado_override', 'disponible');
+  } else if (resolvedParams.estado) {
     query = query.eq('estado', resolvedParams.estado);
   } else {
     // Omitir inactivos por defecto (según requerimiento de negocio)
@@ -309,98 +303,13 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
           </div>
         ) : (
           inmuebles.map((inm) => (
-            <div key={inm.id} className="glass-card animate-fade-in" style={styles.inmuebleCard}>
-              <div style={styles.cardHeader}>
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                  <span className="badge badge-info" style={{ textTransform: 'capitalize' }}>
-                    {inm.tipo_inmueble}
-                  </span>
-                  {inm.arrendasoft_id && (
-                    <span className="badge" style={styles.erpBadge}>
-                      Arrendasoft
-                    </span>
-                  )}
-                </div>
-                <span style={styles.transactionBadge}>
-                  {inm.tipo_transaccion === 'arriendo' ? 'En Arriendo' : 'En Venta'}
-                </span>
-              </div>
-
-              <div style={styles.cardBody}>
-                <h3 style={styles.cardTitle} title={inm.titulo}>
-                  {inm.titulo}
-                </h3>
-                <p style={styles.cardDesc}>{inm.descripcion || 'Sin descripción adicional.'}</p>
-                
-                <div style={styles.metaList}>
-                  <div style={styles.metaItem}>
-                    <MapPin size={14} color="var(--primary)" />
-                    <span style={styles.metaText}>{inm.direccion}</span>
-                  </div>
-                  <div style={styles.metaItem}>
-                    <Tag size={14} color="var(--primary)" />
-                    <span style={styles.metaPrice}>
-                      ${Number(inm.precio).toLocaleString('es-CO')} COP
-                    </span>
-                  </div>
-                  <div style={styles.metaItem}>
-                    <span style={styles.codeLabel}>Arrendasoft ID:</span>
-                    <span style={styles.codeVal}>{inm.arrendasoft_id || 'Registrado Local'}</span>
-                  </div>
-                  {isAdmin && (inm.usuarios_override || inm.usuarios) && (
-                    <div style={styles.metaItem}>
-                      <UserCheck size={14} color="var(--secondary)" />
-                      <span style={styles.metaText} title={inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}>
-                        Asesor: {inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}
-                        {inm.usuarios_override && (
-                          <span style={{ fontSize: '0.7rem', color: '#10b981', marginLeft: '0.3rem', fontWeight: 600 }}>
-                            (Reasignado)
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div style={styles.cardFooter}>
-                <div style={{ ...styles.cardFooterRow, flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'flex-start' }}>
-                  <div style={styles.stateSelectorWrapper}>
-                    <span style={styles.stateLabel}>Estado:</span>
-                    <StateSelector inmuebleId={inm.id} currentEstado={inm.estado} />
-                  </div>
-                  {isAdmin && (
-                    <OfertarControl inmuebleId={inm.id} estadoErp={inm.estado_erp} estadoOverride={inm.estado_override} />
-                  )}
-                  {isAdmin && (
-                    <div style={styles.stateSelectorWrapper}>
-                      <span style={styles.stateLabel}>Asignar Asesor:</span>
-                      <AsesorSelector
-                        inmuebleId={inm.id}
-                        asesorOverrideId={inm.asesor_id_override}
-                        defaultAsesorName={inm.usuarios?.nombre_completo || 'Sin asesor'}
-                        asesores={asesores}
-                      />
-                    </div>
-                  )}
-                  {isAdmin && (
-                    <div style={styles.stateSelectorWrapper}>
-                      <span style={styles.stateLabel}>Unidad:</span>
-                      <UnidadEditor inmuebleId={inm.id} unidad={inm.unidad} unidadesExistentes={unidadesExistentes} />
-                    </div>
-                  )}
-                </div>
-                
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', width: '100%', alignItems: 'center' }}>
-                  <PhotosGallery imagenes={inm.imagenes} />
-                  
-                  <Link href={`/inventarios?action=new&inmuebleId=${inm.id}`} className="btn btn-primary" style={styles.inventarioBtn}>
-                    <Plus size={14} />
-                    Inventario
-                  </Link>
-                </div>
-              </div>
-            </div>
+            <InmuebleCard
+              key={inm.id}
+              inmueble={inm}
+              asesores={asesores}
+              unidadesExistentes={unidadesExistentes}
+              isAdmin={isAdmin}
+            />
           ))
         )}
       </section>
@@ -508,45 +417,6 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     marginTop: '0.15rem',
   },
-  searchWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    width: '100%',
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '0.75rem',
-    pointerEvents: 'none',
-  },
-  filterInput: {
-    width: '100%',
-    padding: '0.5rem 0.75rem 0.5rem 2.2rem',
-    fontSize: '0.85rem',
-  },
-  codeLabel: {
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    color: 'var(--text-muted)',
-  },
-  codeVal: {
-    fontSize: '0.78rem',
-    fontWeight: '700',
-    color: 'var(--text-secondary)',
-    marginLeft: '0.35rem',
-    fontFamily: 'monospace',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '1rem',
-  },
-  headerButtons: {
-    display: 'flex',
-    gap: '0.75rem',
-    alignItems: 'center',
-  },
   syncNavBtn: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -554,16 +424,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.55rem 1.1rem',
     fontSize: '0.87rem',
     fontWeight: '700',
-  },
-  erpBadge: {
-    backgroundColor: 'rgba(0, 171, 216, 0.08)',
-    border: '1px solid rgba(0, 171, 216, 0.2)',
-    color: 'var(--primary)',
-    fontSize: '0.7rem',
-    fontWeight: '700',
-    padding: '0.2rem 0.5rem',
-    borderRadius: '4px',
-    textTransform: 'uppercase',
   },
   formHeader: {
     display: 'flex',
@@ -593,164 +453,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   addBtn: {
     padding: '0.65rem 1.25rem',
-  },
-  filtersCard: {
-    padding: '1.25rem 1.5rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  filtersTitleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  filtersTitle: {
-    fontSize: '0.9rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  },
-  filtersForm: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '1.25rem',
-    alignItems: 'flex-end',
-  },
-  filterGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.35rem',
-    flex: 1,
-    minWidth: '180px',
-  },
-  filterLabel: {
-    fontSize: '0.75rem',
-    fontWeight: '600',
-    color: 'var(--text-secondary)',
-  },
-  filterSelect: {
-    padding: '0.5rem 0.75rem',
-    fontSize: '0.85rem',
-  },
-  filterButtons: {
-    display: 'flex',
-    gap: '0.5rem',
-  },
-  filterBtn: {
-    padding: '0.55rem 1.25rem',
-    fontSize: '0.85rem',
-  },
-  clearBtn: {
-    padding: '0.55rem 1.25rem',
-    fontSize: '0.85rem',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-    gap: '1.5rem',
-  },
-  inmuebleCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    padding: '1.5rem',
-    height: '100%',
-    minHeight: '340px',
-    minWidth: 0,
-    overflow: 'hidden',
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '1rem',
-  },
-  transactionBadge: {
-    fontSize: '0.8rem',
-    fontWeight: '700',
-    color: 'var(--primary)',
-  },
-  cardBody: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: '1.15rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  cardDesc: {
-    fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
-    lineHeight: '1.5',
-    display: '-webkit-box',
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    height: '2.5rem',
-  },
-  metaList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-    marginTop: '0.5rem',
-    borderTop: '1px solid var(--border-color)',
-    paddingTop: '0.75rem',
-  },
-  metaItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    minWidth: 0,
-  },
-  metaText: {
-    fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  metaPrice: {
-    fontSize: '0.9rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
-  },
-  cardFooter: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
-    marginTop: '1.5rem',
-    borderTop: '1px solid var(--border-color)',
-    paddingTop: '1rem',
-    minWidth: 0,
-  },
-  cardFooterRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-  },
-  stateSelectorWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.35rem',
-  },
-  stateLabel: {
-    fontSize: '0.75rem',
-    color: 'var(--text-muted)',
-    fontWeight: '600',
-  },
-  inventarioBtn: {
-    padding: '0.4rem 0.85rem',
-    fontSize: '0.8rem',
   },
   formCard: {
     padding: '2.5rem',
