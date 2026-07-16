@@ -14,7 +14,26 @@ export const maxDuration = 300;
 
 const MODELO = process.env.BI_MODEL || 'claude-opus-4-8';
 // Cada iteración del agente son ~2 pasos del grafo (modelo + herramientas).
-const LIMITE_RECURSION = 25;
+const LIMITE_RECURSION = 35;
+
+const esquemaGrafico = z
+  .object({
+    tipo: z
+      .enum(['barras', 'barras_horizontales', 'lineas', 'area', 'pastel'])
+      .describe('lineas/area para evolución temporal; barras para comparar categorías; barras_horizontales para top-N o etiquetas largas; pastel SOLO para composición con ≤6 porciones.'),
+    titulo: z.string().describe('Título corto que diga qué se ve y el período. Ej: "Citas por semana — últimas 8 semanas".'),
+    etiquetas: z.array(z.string()).min(1).max(31).describe('Categorías del eje X (o porciones del pastel). Cortas.'),
+    series: z
+      .array(z.object({ nombre: z.string(), datos: z.array(z.number()) }))
+      .min(1)
+      .max(4)
+      .describe('1 a 4 series; cada una con tantos datos como etiquetas. En pastel, exactamente 1.'),
+    formato: z.enum(['numero', 'moneda', 'porcentaje']).optional().describe('moneda = pesos colombianos.'),
+    nota: z.string().optional().describe('Nota corta bajo el gráfico (fuente/período/aclaración).'),
+  })
+  .refine((s) => s.series.every((x) => x.datos.length === s.etiquetas.length), {
+    message: 'Cada serie debe tener exactamente tantos datos como etiquetas.',
+  });
 
 const herramientaBaseDatos = tool(
   async ({ consulta }) => {
@@ -117,12 +136,6 @@ export async function POST(request: Request) {
     ],
   });
 
-  const agente = createReactAgent({
-    llm: modelo,
-    tools: [herramientaBaseDatos, herramientaERP],
-    prompt: sistema,
-  });
-
   const historial = turnos
     .filter((t) => typeof t.texto === 'string' && t.texto.trim())
     .map((t) => (t.rol === 'usuario' ? new HumanMessage(t.texto) : new AIMessage(t.texto)));
@@ -133,6 +146,27 @@ export async function POST(request: Request) {
     async start(controlador) {
       const emitir = (evento: Record<string, unknown>) =>
         controlador.enqueue(codificador.encode(JSON.stringify(evento) + '\n'));
+
+      // Definida aquí para poder empujar el gráfico (ya validado por Zod)
+      // directamente al stream del cliente.
+      const herramientaGrafico = tool(
+        async (spec) => {
+          emitir({ tipo: 'grafico', grafico: spec });
+          return 'Gráfico mostrado al usuario. Continúa con el insight en texto (no repitas los números del gráfico uno a uno).';
+        },
+        {
+          name: 'mostrar_grafico',
+          description:
+            'Muestra un gráfico interactivo al usuario dentro del chat. Úsala cuando los datos ganen con visualización: evolución temporal, comparación entre categorías, top-N o composición. Llama a esta herramienta DESPUÉS de obtener los datos con las otras herramientas, nunca con datos inventados.',
+          schema: esquemaGrafico,
+        }
+      );
+
+      const agente = createReactAgent({
+        llm: modelo,
+        tools: [herramientaBaseDatos, herramientaERP, herramientaGrafico],
+        prompt: sistema,
+      });
 
       try {
         const eventos = agente.streamEvents(
@@ -152,7 +186,9 @@ export async function POST(request: Request) {
               detalle:
                 evento.name === 'consultar_base_datos'
                   ? String(input.consulta ?? '')
-                  : String(input.recurso ?? ''),
+                  : evento.name === 'mostrar_grafico'
+                    ? String(input.titulo ?? '')
+                    : String(input.recurso ?? ''),
             });
           }
         }

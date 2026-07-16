@@ -1,20 +1,32 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { BrainCircuit, Send, Loader2, Database, Cloud, Sparkles } from 'lucide-react';
+import { BrainCircuit, Send, Loader2, Database, Cloud, Sparkles, BarChart3 } from 'lucide-react';
+import type { GraficoSpec } from '@/lib/bi/grafico';
+import GraficoBI from './GraficoBI';
+
+type Parte = { tipo: 'texto'; texto: string } | { tipo: 'grafico'; grafico: GraficoSpec };
 
 interface Turno {
   rol: 'usuario' | 'asesor';
-  texto: string;
+  partes: Parte[];
 }
 
 const SUGERENCIAS = [
   'Genera el brief del día',
   '¿Cómo van las citas esta semana vs. la anterior?',
-  '¿Cuánta cartera vencida tenemos y quiénes son los mayores deudores?',
+  'Grafícame la cartera vencida y los mayores deudores',
   '¿Qué inventario disponible tenemos por tipo y precio promedio?',
   '¿Hay discrepancias entre la app y el ERP?',
 ];
+
+// Texto plano de un turno (para enviar el historial a la API).
+function textoDeTurno(t: Turno): string {
+  return t.partes
+    .map((p) => (p.tipo === 'texto' ? p.texto : `[Gráfico mostrado: ${p.grafico.titulo}]`))
+    .join('\n')
+    .trim();
+}
 
 // Render mínimo de markdown (negritas, títulos y listas) sin dependencias.
 function renderTexto(texto: string): React.ReactNode {
@@ -71,26 +83,37 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
     const texto = (textoManual ?? entrada).trim();
     if (!texto || cargando) return;
 
-    const historial: Turno[] = [...turnos, { rol: 'usuario', texto }];
-    setTurnos([...historial, { rol: 'asesor', texto: '' }]);
+    const historial: Turno[] = [...turnos, { rol: 'usuario', partes: [{ tipo: 'texto', texto }] }];
+    setTurnos([...historial, { rol: 'asesor', partes: [] }]);
     setEntrada('');
     setCargando(true);
     setActividad(null);
 
-    const actualizarAsesor = (fn: (previo: string) => string) => {
+    const actualizarAsesor = (fn: (partes: Parte[]) => Parte[]) => {
       setTurnos((prev) => {
         const copia = [...prev];
         const ultimo = copia[copia.length - 1];
-        copia[copia.length - 1] = { ...ultimo, texto: fn(ultimo.texto) };
+        copia[copia.length - 1] = { ...ultimo, partes: fn(ultimo.partes) };
         return copia;
       });
     };
+
+    const agregarTexto = (fragmento: string) =>
+      actualizarAsesor((partes) => {
+        const ultima = partes[partes.length - 1];
+        if (ultima && ultima.tipo === 'texto') {
+          return [...partes.slice(0, -1), { tipo: 'texto', texto: ultima.texto + fragmento }];
+        }
+        return [...partes, { tipo: 'texto', texto: fragmento }];
+      });
 
     try {
       const res = await fetch('/api/inteligencia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensajes: historial }),
+        body: JSON.stringify({
+          mensajes: historial.map((t) => ({ rol: t.rol, texto: textoDeTurno(t) })),
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -112,7 +135,14 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
 
         for (const linea of lineas) {
           if (!linea.trim()) continue;
-          let evento: { tipo: string; texto?: string; nombre?: string; detalle?: string; mensaje?: string };
+          let evento: {
+            tipo: string;
+            texto?: string;
+            nombre?: string;
+            detalle?: string;
+            mensaje?: string;
+            grafico?: GraficoSpec;
+          };
           try {
             evento = JSON.parse(linea);
           } catch {
@@ -120,23 +150,26 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
           }
           if (evento.tipo === 'texto' && evento.texto) {
             setActividad(null);
-            actualizarAsesor((previo) => previo + evento.texto);
+            agregarTexto(evento.texto);
+          } else if (evento.tipo === 'grafico' && evento.grafico) {
+            setActividad(null);
+            const grafico = evento.grafico;
+            actualizarAsesor((partes) => [...partes, { tipo: 'grafico', grafico }]);
           } else if (evento.tipo === 'herramienta') {
             setActividad(
               evento.nombre === 'consultar_base_datos'
                 ? 'Consultando la base de datos de la app…'
-                : `Consultando el ERP (${evento.detalle})…`
+                : evento.nombre === 'mostrar_grafico'
+                  ? 'Generando gráfico…'
+                  : `Consultando el ERP (${evento.detalle})…`
             );
           } else if (evento.tipo === 'error') {
-            actualizarAsesor((previo) => previo + (previo ? '\n\n' : '') + `⚠️ ${evento.mensaje}`);
+            agregarTexto(`\n\n⚠️ ${evento.mensaje}`);
           }
         }
       }
     } catch (error) {
-      actualizarAsesor(
-        (previo) =>
-          previo + (previo ? '\n\n' : '') + `⚠️ ${error instanceof Error ? error.message : 'Error de conexión.'}`
-      );
+      agregarTexto(`\n\n⚠️ ${error instanceof Error ? error.message : 'Error de conexión.'}`);
     } finally {
       setCargando(false);
       setActividad(null);
@@ -184,12 +217,18 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
                   ...(t.rol === 'usuario' ? styles.burbujaUsuario : styles.burbujaAsesor),
                 }}
               >
-                {t.rol === 'asesor' && !t.texto && cargando && i === turnos.length - 1 ? (
+                {t.rol === 'asesor' && t.partes.length === 0 && cargando && i === turnos.length - 1 ? (
                   <span style={styles.actividad}>
                     <Loader2 size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
                     {actividad ? (
                       <>
-                        {actividad.includes('ERP') ? <Cloud size={14} /> : <Database size={14} />}
+                        {actividad.includes('gráfico') ? (
+                          <BarChart3 size={14} />
+                        ) : actividad.includes('ERP') ? (
+                          <Cloud size={14} />
+                        ) : (
+                          <Database size={14} />
+                        )}
                         {actividad}
                       </>
                     ) : (
@@ -197,14 +236,28 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
                     )}
                   </span>
                 ) : (
-                  <div style={styles.textoMensaje}>{renderTexto(t.texto)}</div>
+                  t.partes.map((p, j) =>
+                    p.tipo === 'texto' ? (
+                      <div key={j} style={styles.textoMensaje}>
+                        {renderTexto(p.texto)}
+                      </div>
+                    ) : (
+                      <GraficoBI key={j} spec={p.grafico} />
+                    )
+                  )
                 )}
               </div>
             ))}
-            {cargando && actividad && turnos[turnos.length - 1]?.texto ? (
+            {cargando && actividad && (turnos[turnos.length - 1]?.partes.length ?? 0) > 0 ? (
               <div style={{ ...styles.burbuja, ...styles.burbujaAsesor }}>
                 <span style={styles.actividad}>
-                  {actividad.includes('ERP') ? <Cloud size={14} /> : <Database size={14} />}
+                  {actividad.includes('gráfico') ? (
+                    <BarChart3 size={14} />
+                  ) : actividad.includes('ERP') ? (
+                    <Cloud size={14} />
+                  ) : (
+                    <Database size={14} />
+                  )}
                   {actividad}
                 </span>
               </div>

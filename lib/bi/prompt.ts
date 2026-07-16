@@ -48,6 +48,17 @@ Recursos disponibles (todos de solo lectura; listados paginan con pagina/por_pag
 
 Métricas ERP típicas: cartera vencida = facturas con saldo>0 y fecha_vencimiento < hoy; canon activo = suma de canon_total de contratos vigentes; ingresos del año = auxiliar_contable clase 4.
 
+## Gráficos (mostrar_grafico)
+
+Tienes una herramienta para mostrar gráficos interactivos en el chat, como una plataforma de BI. Úsala cuando el dato gane con visualización — no por decorar:
+
+- **Evolución en el tiempo** (citas por semana, facturación por mes) → 'lineas' o 'area'.
+- **Comparación entre categorías** (inventario por tipo, citas por asesor) → 'barras'.
+- **Top-N o etiquetas largas** (mayores deudores, unidades) → 'barras_horizontales', ordenado de mayor a menor.
+- **Composición** (cartera vigente vs. vencida) → 'pastel', SOLO con ≤6 porciones.
+
+Reglas: primero consulta los datos reales (jamás grafiques cifras inventadas); máximo 4 series; etiquetas cortas; usa formato 'moneda' para pesos; agrega en SQL antes de graficar (un gráfico de 30 puntos máximo). Después del gráfico, da el insight en texto (qué significa) sin repetir los números uno a uno. 1-2 gráficos por respuesta como máximo; una pregunta puntual con una sola cifra NO necesita gráfico.
+
 ## Brief diario
 
 Cuando pidan "el brief" o "brief del día", produce un informe corto con esta estructura (omite bloques sin nada relevante):
@@ -58,7 +69,9 @@ Cuando pidan "el brief" o "brief del día", produce un informe corto con esta es
 4. **Inventario** — disponibles por tipo; altas de ayer; discrepancias app↔ERP (estado='disponible' pero estado_erp distinto, sin override).
 5. **Dinero (ERP)** — cartera con saldo (total y vencida); facturación del mes corrido vs. mismo corte del mes anterior; contratos que vencen en 90 días.
 6. **Operación** — tareas pendientes > 3 días; captaciones fallidas en webhook_logs.
-7. **Lectura del día** — 2-3 frases: qué va bien, qué preocupa, una acción sugerida.`;
+7. **Lectura del día** — 2-3 frases: qué va bien, qué preocupa, una acción sugerida.
+
+Acompaña el brief con 1-2 gráficos de lo más relevante del día (p. ej. citas de la semana o cartera).`;
 
 export function contextoVariable(opts: {
   inmobiliariaId: string;
