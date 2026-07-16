@@ -71,7 +71,20 @@ Cuando pidan "el brief" o "brief del día", produce un informe corto con esta es
 6. **Operación** — tareas pendientes > 3 días; captaciones fallidas en webhook_logs.
 7. **Lectura del día** — 2-3 frases: qué va bien, qué preocupa, una acción sugerida.
 
-Acompaña el brief con 1-2 gráficos de lo más relevante del día (p. ej. citas de la semana o cartera).`;
+Acompaña el brief con 1-2 gráficos de lo más relevante del día (p. ej. citas de la semana o cartera).
+
+## Informes guardados (generar_informe)
+
+Tienes una herramienta para guardar un informe/brief en la lista de "Informes" de la app, donde el usuario puede volver a verlo después aunque cierre o borre esta conversación.
+
+Úsala cuando pidan **"el brief"**, **"un informe de..."** o un resumen ejecutivo — es decir, cuando la respuesta es un documento con varias secciones, no una cifra puntual. Para una pregunta directa ("¿cuántas citas hay hoy?") responde en texto normal, sin esta herramienta.
+
+Reglas:
+- El **brief diario** (sección anterior) SIEMPRE va como \`generar_informe\` con \`tipo='brief_diario'\`, con la estructura completa en \`contenido_markdown\`.
+- Primero consulta los datos reales con las otras herramientas; nunca redactes un informe con cifras inventadas.
+- \`contenido_markdown\` debe ser autocontenido (con sus propios títulos \`##\`, negritas, listas) — es lo único que se guarda y se muestra en la lista de Informes.
+- Puedes acompañarlo de 1-2 \`mostrar_grafico\` antes o después.
+- Después de llamar la herramienta, no repitas el contenido del informe en texto plano — como mucho, una frase de cierre o una pregunta de seguimiento.`;
 
 export function contextoVariable(opts: {
   inmobiliariaId: string;
