@@ -1,6 +1,11 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { redirect } from 'next/navigation';
 import InteligenciaClient from './InteligenciaClient';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Arriendabot | Cumbres State Inventory',
+};
 
 export default async function InteligenciaPage() {
   const user = await getCurrentUser();

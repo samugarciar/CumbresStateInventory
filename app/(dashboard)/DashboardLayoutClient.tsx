@@ -226,10 +226,10 @@ export default function DashboardLayoutClient({
                   color: pathname.startsWith('/inteligencia') ? 'var(--primary)' : 'var(--text-secondary)',
                   fontWeight: pathname.startsWith('/inteligencia') ? '700' : '500'
                 }}
-                title={isCollapsed ? 'Inteligencia' : undefined}
+                title={isCollapsed ? 'Arriendabot' : undefined}
               >
                 <BrainCircuit size={20} />
-                {(!isCollapsed || !mounted) && <span>Inteligencia</span>}
+                {(!isCollapsed || !mounted) && <span>Arriendabot</span>}
               </Link>
 
               <Link
