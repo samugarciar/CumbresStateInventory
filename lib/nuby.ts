@@ -49,11 +49,17 @@ export function getNubyConfig(overrides?: Partial<NubyConfig>): NubyConfig {
 }
 
 /**
- * Autentica con la API de Nuby para obtener un JWT temporal (válido por 1 hora).
+ * Autentica con la API de Nuby/Arrendasoft para obtener un JWT temporal (válido por 1 hora).
+ *
+ * OJO: la ruta difiere de la documentación oficial de Nuby. En los despliegues
+ * *.arrendasoft.co (como el nuestro) el login vive en /auth/login y recibe
+ * {username, password}; la ruta documentada /login con {client_id, client_secret}
+ * devuelve 405 ahí. Probamos primero la que funciona en producción y dejamos la
+ * documentada como respaldo por si la instancia migra al dominio nuby.app.
  */
 export async function obtenerTokenJWT(config: NubyConfig): Promise<string> {
   const { instancia, clientId, clientSecret } = config;
-  
+
   if (!instancia) {
     throw new Error('La dirección de la instancia de Arrendasoft/Nuby no está configurada.');
   }
@@ -64,37 +70,51 @@ export async function obtenerTokenJWT(config: NubyConfig): Promise<string> {
     return '';
   }
 
-  const loginUrl = `https://${instancia}/service/v2/public/login`;
+  const intentos = [
+    {
+      url: `https://${instancia}/service/v2/public/auth/login`,
+      body: { username: clientId, password: clientSecret },
+    },
+    {
+      url: `https://${instancia}/service/v2/public/login`,
+      body: { client_id: clientId, client_secret: clientSecret },
+    },
+  ];
 
-  try {
-    const res = await fetch(loginUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-      cache: 'no-store',
-    });
+  const errores: string[] = [];
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Error en autenticación Nuby (${res.status}): ${errorText}`);
+  for (const intento of intentos) {
+    try {
+      const res = await fetch(intento.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify(intento.body),
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        errores.push(`${intento.url} → ${res.status}: ${errorText.slice(0, 200)}`);
+        continue;
+      }
+
+      const data = await res.json();
+      // El campo también varía por despliegue: `token` en arrendasoft.co, `jwt` en la doc oficial.
+      const token = data.token || data.jwt || data.access_token;
+      if (token) return token;
+
+      errores.push(`${intento.url} → 200 pero sin campo token/jwt en la respuesta`);
+    } catch (error: any) {
+      errores.push(`${intento.url} → ${error.message}`);
     }
-
-    const data = await res.json();
-    if (!data.jwt) {
-      throw new Error('La respuesta de login de Nuby no contenía un token JWT válido.');
-    }
-
-    return data.jwt;
-  } catch (error: any) {
-    console.error('Error al obtener token JWT de Nuby:', error);
-    throw error;
   }
+
+  const mensaje = `No se pudo autenticar con Nuby/Arrendasoft:\n${errores.join('\n')}`;
+  console.error(mensaje);
+  throw new Error(mensaje);
 }
 
 /**
