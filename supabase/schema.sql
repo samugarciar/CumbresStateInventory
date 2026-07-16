@@ -598,3 +598,41 @@ CREATE TABLE IF NOT EXISTS public.bi_artefactos (
 -- por inmobiliaria_id=get_my_inmobiliaria() + rol admin. REVOKE ALL de anon
 -- en las tres.
 -- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- Administración de agentes (/agentes): switch on/off + presupuesto.
+-- agentes_config: activo + limite_mensual_usd por (inmobiliaria, agente
+-- 'arriendabot_bi'|'comercial_whatsapp'). bi_uso: medición del BI (tokens y
+-- costo USD por petición). Helper agente_comercial_pausado(uuid) (interna,
+-- SIN execute público) consultada por las RPCs del agente n8n:
+-- consultar_disponibilidad_por_texto (fila modo='agente_pausado'),
+-- agendar_cita / solicitar_apertura_agenda / cancelar_cita
+-- ({success:false, agente_pausado:true}). agendar_cita_por_texto hereda vía
+-- agendar_cita; consultar_disponibilidad y buscar_inmueble_por_codigo quedan
+-- sin guarda (reads puros). RLS solo admins; REVOKE anon en ambas tablas.
+-- → 2026-07-16_agentes_admin.sql
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.agentes_config (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    agente TEXT NOT NULL CHECK (agente IN ('arriendabot_bi', 'comercial_whatsapp')),
+    activo BOOLEAN NOT NULL DEFAULT true,
+    limite_mensual_usd NUMERIC(10, 2) CHECK (limite_mensual_usd IS NULL OR limite_mensual_usd > 0),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    UNIQUE (inmobiliaria_id, agente)
+);
+
+CREATE TABLE IF NOT EXISTS public.bi_uso (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    usuario_id UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    conversacion_id UUID REFERENCES public.bi_conversaciones(id) ON DELETE SET NULL,
+    modelo TEXT NOT NULL,
+    tokens_entrada INTEGER NOT NULL DEFAULT 0,
+    tokens_salida INTEGER NOT NULL DEFAULT 0,
+    tokens_cache_lectura INTEGER NOT NULL DEFAULT 0,
+    tokens_cache_escritura INTEGER NOT NULL DEFAULT 0,
+    costo_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);

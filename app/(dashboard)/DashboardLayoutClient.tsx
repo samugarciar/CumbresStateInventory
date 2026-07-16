@@ -19,7 +19,8 @@ import {
   X,
   CalendarDays,
   CalendarCheck,
-  BrainCircuit
+  BrainCircuit,
+  Bot
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
@@ -230,6 +231,22 @@ export default function DashboardLayoutClient({
               >
                 <BrainCircuit size={20} />
                 {(!isCollapsed || !mounted) && <span>Arriendabot</span>}
+              </Link>
+
+              <Link
+                href="/agentes"
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  ...styles.navLink,
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/agentes') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/agentes') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/agentes') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Agentes' : undefined}
+              >
+                <Bot size={20} />
+                {(!isCollapsed || !mounted) && <span>Agentes</span>}
               </Link>
 
               <Link
