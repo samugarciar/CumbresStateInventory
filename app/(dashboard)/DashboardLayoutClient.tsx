@@ -18,7 +18,8 @@ import {
   Menu,
   X,
   CalendarDays,
-  CalendarCheck
+  CalendarCheck,
+  BrainCircuit
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
@@ -215,8 +216,24 @@ export default function DashboardLayoutClient({
 
           {isAdmin && (
             <>
-              <Link 
-                href="/tareas" 
+              <Link
+                href="/inteligencia"
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  ...styles.navLink,
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/inteligencia') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/inteligencia') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/inteligencia') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Inteligencia' : undefined}
+              >
+                <BrainCircuit size={20} />
+                {(!isCollapsed || !mounted) && <span>Inteligencia</span>}
+              </Link>
+
+              <Link
+                href="/tareas"
                 onClick={() => setIsMobileOpen(false)}
                 style={{ 
                   ...styles.navLink, 
