@@ -568,6 +568,60 @@ body {
   }
 }
 
+/* Layout del Asesor BI (/inteligencia): rail de conversaciones + panel principal.
+   En móvil el rail se comporta como el sidebar principal: drawer fijo que se
+   abre con un botón (reusa .sidebar-overlay para el fondo). */
+.inteligencia-layout {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.inteligencia-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  padding: 0.75rem;
+  border-radius: var(--border-radius, 12px);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-surface);
+  overflow: hidden;
+}
+
+.inteligencia-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inteligencia-sidebar-toggle {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .inteligencia-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 260px;
+    z-index: 150;
+    transform: translateX(-100%);
+    box-shadow: 0 0 24px rgba(15, 23, 42, 0.18);
+    border-radius: 0;
+    transition: transform var(--transition-normal);
+  }
+
+  .inteligencia-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .inteligencia-sidebar-toggle {
+    display: inline-flex;
+  }
+}
 
 
 

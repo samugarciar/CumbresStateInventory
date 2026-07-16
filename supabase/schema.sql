@@ -557,3 +557,44 @@ GRANT SELECT ON public.franjas_inmuebles TO anon, authenticated;
 --   ('0 11 * * 1-6' UTC = lun–sáb 6:00 AM Bogotá)
 --   → 2026-07-11_tareas_solicitudes_y_sync.sql
 -- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- Persistencia del Asesor BI (/inteligencia): conversaciones + informes.
+-- bi_conversaciones/bi_mensajes son PRIVADOS por usuario_id = auth.uid()
+-- (historial de chat). bi_artefactos (informes/briefs, "artifacts") son
+-- COMPARTIDOS por inmobiliaria: cualquier admin los ve. Ninguna con grant
+-- a anon. No se toca el rol bi_reader. Definición completa + RLS:
+-- → 2026-07-16_bi_conversaciones.sql
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.bi_conversaciones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    usuario_id UUID NOT NULL REFERENCES public.usuarios(id) ON DELETE CASCADE,
+    titulo TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.bi_mensajes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversacion_id UUID NOT NULL REFERENCES public.bi_conversaciones(id) ON DELETE CASCADE,
+    rol TEXT NOT NULL CHECK (rol IN ('usuario', 'asesor')),
+    contenido JSONB NOT NULL, -- Parte[]: texto | grafico | informe
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.bi_artefactos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inmobiliaria_id UUID NOT NULL REFERENCES public.inmobiliarias(id) ON DELETE CASCADE,
+    usuario_id UUID REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    conversacion_id UUID REFERENCES public.bi_conversaciones(id) ON DELETE SET NULL,
+    tipo TEXT NOT NULL DEFAULT 'informe' CHECK (tipo IN ('brief_diario', 'informe', 'otro')),
+    titulo TEXT NOT NULL,
+    resumen TEXT,
+    contenido_markdown TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+-- RLS: bi_conversaciones/bi_mensajes por usuario_id=auth.uid(); bi_artefactos
+-- por inmobiliaria_id=get_my_inmobiliaria() + rol admin. REVOKE ALL de anon
+-- en las tres.
+-- ---------------------------------------------------------------------

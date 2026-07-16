@@ -4,9 +4,11 @@ import { tool } from '@langchain/core/tools';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth-helpers';
+import { createClient } from '@/lib/supabase/server';
 import { consultaBI } from '@/lib/bi/db';
 import { consultaERP, type RecursoERP } from '@/lib/bi/erp';
 import { PROMPT_ARRIENDABOT, contextoVariable } from '@/lib/bi/prompt';
+import type { Parte } from '@/lib/bi/parte';
 
 // Bucle agéntico (LangGraph) con varias consultas SQL/ERP + modelo:
 // necesita más que el timeout por defecto de Vercel.
@@ -34,6 +36,17 @@ const esquemaGrafico = z
   .refine((s) => s.series.every((x) => x.datos.length === s.etiquetas.length), {
     message: 'Cada serie debe tener exactamente tantos datos como etiquetas.',
   });
+
+const esquemaInforme = z.object({
+  tipo: z
+    .enum(['brief_diario', 'informe', 'otro'])
+    .describe("'brief_diario' para el resumen del día completo; 'informe' para un análisis puntual (ej. cartera, un asesor, una unidad); 'otro' si no encaja."),
+  titulo: z.string().describe('Título corto e identificable en una lista. Ej: "Brief del día — 16 jul" o "Cartera vencida — julio".'),
+  resumen: z.string().max(240).optional().describe('1-2 líneas para reconocerlo luego en la lista de informes guardados (no repitas el título).'),
+  contenido_markdown: z
+    .string()
+    .describe('Cuerpo completo del informe en markdown simple (##, **negritas**, listas con "-"). Autocontenido: no dependas de texto fuera de este bloque.'),
+});
 
 const herramientaBaseDatos = tool(
   async ({ consulta }) => {
@@ -112,6 +125,14 @@ function textoDeChunk(contenido: unknown): string {
   return '';
 }
 
+// Título corto y legible a partir del primer mensaje del usuario (fallback
+// simple, sin llamada extra al modelo — igual que cualquier chat).
+function tituloDesde(texto: string): string {
+  const limpio = texto.replace(/\s+/g, ' ').trim();
+  if (!limpio) return 'Nueva conversación';
+  return limpio.length > 60 ? limpio.slice(0, 60).trimEnd() + '…' : limpio;
+}
+
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.profile) {
@@ -129,6 +150,13 @@ export async function POST(request: Request) {
   if (turnos.length === 0 || turnos[turnos.length - 1].rol !== 'usuario') {
     return Response.json({ error: 'Petición inválida' }, { status: 400 });
   }
+  const conversacionIdSolicitada: string | null =
+    typeof cuerpo?.conversacion_id === 'string' ? cuerpo.conversacion_id : null;
+
+  // Cliente ligado a la sesión (cookies) para persistir bajo RLS del propio
+  // usuario — no service_role: si el token expiró a mitad del chat, las
+  // escrituras fallan igual que cualquier otra lectura de la app.
+  const supabase = await createClient();
 
   const modelo = new ChatAnthropic({
     model: MODELO,
@@ -163,11 +191,66 @@ export async function POST(request: Request) {
       const emitir = (evento: Record<string, unknown>) =>
         controlador.enqueue(codificador.encode(JSON.stringify(evento) + '\n'));
 
-      // Definida aquí para poder empujar el gráfico (ya validado por Zod)
-      // directamente al stream del cliente.
+      // ---- Resolver o crear la conversación (antes de correr el agente,
+      // para poder emitir su id de inmediato y para que la tool de informe
+      // pueda referenciarla). ----
+      let conversacionId = conversacionIdSolicitada;
+      if (conversacionId) {
+        const { data } = await supabase
+          .from('bi_conversaciones')
+          .select('id')
+          .eq('id', conversacionId)
+          .maybeSingle();
+        if (!data) conversacionId = null; // no existe o no es del usuario (RLS) → se crea una nueva
+      }
+      if (!conversacionId) {
+        const { data, error } = await supabase
+          .from('bi_conversaciones')
+          .insert({
+            inmobiliaria_id: user.profile!.inmobiliaria_id,
+            usuario_id: user.profile!.id,
+            titulo: tituloDesde(turnos[0]?.texto ?? ''),
+          })
+          .select('id')
+          .single();
+        if (error || !data) {
+          console.error('Error creando conversación BI:', error?.message);
+          emitir({ tipo: 'error', mensaje: 'No se pudo iniciar la conversación.' });
+          controlador.close();
+          return;
+        }
+        conversacionId = data.id;
+      }
+      emitir({ tipo: 'conversacion', id: conversacionId });
+
+      // Mensaje del usuario que disparó esta petición (el último del array;
+      // los anteriores, si los hay, ya se persistieron en llamadas previas).
+      const ultimoUsuario = turnos[turnos.length - 1];
+      await supabase.from('bi_mensajes').insert({
+        conversacion_id: conversacionId,
+        rol: 'usuario',
+        contenido: [{ tipo: 'texto', texto: ultimoUsuario.texto }] satisfies Parte[],
+      });
+      await supabase
+        .from('bi_conversaciones')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', conversacionId);
+
+      // Partes de la respuesta del asesor, acumuladas para persistir un solo
+      // mensaje al final (igual que el cliente arma la burbuja en vivo).
+      const partesAsesor: Parte[] = [];
+      const agregarParteTexto = (fragmento: string) => {
+        const ultima = partesAsesor[partesAsesor.length - 1];
+        if (ultima && ultima.tipo === 'texto') ultima.texto += fragmento;
+        else partesAsesor.push({ tipo: 'texto', texto: fragmento });
+      };
+
+      // Definidas aquí (closure sobre conversacionId/emitir) para poder
+      // escribir directo al stream y a la base.
       const herramientaGrafico = tool(
         async (spec) => {
           emitir({ tipo: 'grafico', grafico: spec });
+          partesAsesor.push({ tipo: 'grafico', grafico: spec });
           return 'Gráfico mostrado al usuario. Continúa con el insight en texto (no repitas los números del gráfico uno a uno).';
         },
         {
@@ -178,9 +261,43 @@ export async function POST(request: Request) {
         }
       );
 
+      const herramientaInforme = tool(
+        async (spec) => {
+          const { data, error } = await supabase
+            .from('bi_artefactos')
+            .insert({
+              inmobiliaria_id: user.profile!.inmobiliaria_id,
+              usuario_id: user.profile!.id,
+              conversacion_id: conversacionId,
+              tipo: spec.tipo,
+              titulo: spec.titulo,
+              resumen: spec.resumen ?? null,
+              contenido_markdown: spec.contenido_markdown,
+            })
+            .select('id, created_at')
+            .single();
+
+          if (error || !data) {
+            console.error('Error guardando informe BI:', error?.message);
+            return 'No se pudo guardar el informe (sigue mostrándolo en el chat, pero avísale al usuario que no quedó en la lista de Informes).';
+          }
+
+          const informe = { ...spec, id: data.id, created_at: data.created_at };
+          emitir({ tipo: 'informe', informe });
+          partesAsesor.push({ tipo: 'informe', informe });
+          return 'Informe guardado y mostrado al usuario (ya quedó disponible en su lista de Informes). Continúa solo con un comentario breve si aporta algo nuevo; no repitas el contenido del informe en texto plano.';
+        },
+        {
+          name: 'generar_informe',
+          description:
+            'Genera y guarda un informe/brief completo que el usuario podrá volver a ver después en la lista de Informes de la app, sin depender de esta conversación. Úsala cuando pidan "el brief", "un informe de…" o un resumen ejecutivo — NO para responder una pregunta puntual con una sola cifra.',
+          schema: esquemaInforme,
+        }
+      );
+
       const agente = createReactAgent({
         llm: modelo,
-        tools: [herramientaBaseDatos, herramientaERP, herramientaGrafico],
+        tools: [herramientaBaseDatos, herramientaERP, herramientaGrafico, herramientaInforme],
         prompt: sistema,
       });
 
@@ -193,7 +310,10 @@ export async function POST(request: Request) {
         for await (const evento of eventos) {
           if (evento.event === 'on_chat_model_stream') {
             const texto = textoDeChunk(evento.data?.chunk?.content);
-            if (texto) emitir({ tipo: 'texto', texto });
+            if (texto) {
+              emitir({ tipo: 'texto', texto });
+              agregarParteTexto(texto);
+            }
           } else if (evento.event === 'on_tool_start') {
             const input = (evento.data?.input ?? {}) as Record<string, unknown>;
             emitir({
@@ -202,7 +322,7 @@ export async function POST(request: Request) {
               detalle:
                 evento.name === 'consultar_base_datos'
                   ? String(input.consulta ?? '')
-                  : evento.name === 'mostrar_grafico'
+                  : evento.name === 'mostrar_grafico' || evento.name === 'generar_informe'
                     ? String(input.titulo ?? '')
                     : String(input.recurso ?? ''),
             });
@@ -213,13 +333,23 @@ export async function POST(request: Request) {
       } catch (error) {
         console.error('Error en el asesor BI:', error);
         const mensaje = error instanceof Error ? error.message : String(error);
-        emitir({
-          tipo: 'error',
-          mensaje: mensaje.includes('recursion')
-            ? 'La pregunta requirió demasiados pasos; intenta acotarla.'
-            : 'Error consultando los datos. Intenta de nuevo.',
-        });
+        const mensajeUsuario = mensaje.includes('recursion')
+          ? 'La pregunta requirió demasiados pasos; intenta acotarla.'
+          : 'Error consultando los datos. Intenta de nuevo.';
+        emitir({ tipo: 'error', mensaje: mensajeUsuario });
+        agregarParteTexto(`\n\n⚠️ ${mensajeUsuario}`);
       } finally {
+        if (partesAsesor.length > 0) {
+          await supabase.from('bi_mensajes').insert({
+            conversacion_id: conversacionId,
+            rol: 'asesor',
+            contenido: partesAsesor,
+          });
+          await supabase
+            .from('bi_conversaciones')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversacionId);
+        }
         controlador.close();
       }
     },

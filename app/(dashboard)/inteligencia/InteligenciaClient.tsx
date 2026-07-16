@@ -1,16 +1,27 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { BrainCircuit, Send, Loader2, Database, Cloud, Sparkles, BarChart3 } from 'lucide-react';
-import type { GraficoSpec } from '@/lib/bi/grafico';
+import {
+  BrainCircuit,
+  Send,
+  Loader2,
+  Database,
+  Cloud,
+  Sparkles,
+  BarChart3,
+  FileText,
+  Menu,
+  MessagesSquare,
+  LayoutList,
+} from 'lucide-react';
+import type { Turno } from '@/lib/bi/parte';
+import { textoDeTurno } from '@/lib/bi/parte';
 import GraficoBI from './GraficoBI';
-
-type Parte = { tipo: 'texto'; texto: string } | { tipo: 'grafico'; grafico: GraficoSpec };
-
-interface Turno {
-  rol: 'usuario' | 'asesor';
-  partes: Parte[];
-}
+import InformeBI from './InformeBI';
+import { renderMarkdown } from './renderMarkdown';
+import ConversacionesSidebar, { type ConversacionResumen } from './ConversacionesSidebar';
+import InformesPanel, { type InformeResumen } from './InformesPanel';
+import { cargarConversacion, eliminarConversacion } from '@/app/actions/inteligencia';
 
 const SUGERENCIAS = [
   'Genera el brief del día',
@@ -20,64 +31,71 @@ const SUGERENCIAS = [
   '¿Hay discrepancias entre la app y el ERP?',
 ];
 
-// Texto plano de un turno (para enviar el historial a la API).
-function textoDeTurno(t: Turno): string {
-  return t.partes
-    .map((p) => (p.tipo === 'texto' ? p.texto : `[Gráfico mostrado: ${p.grafico.titulo}]`))
-    .join('\n')
-    .trim();
+// Mismo criterio que el servidor (route.ts → tituloDesde) para que el título
+// provisional en la barra lateral no cambie al recargar.
+function tituloDesde(texto: string): string {
+  const limpio = texto.replace(/\s+/g, ' ').trim();
+  if (!limpio) return 'Nueva conversación';
+  return limpio.length > 60 ? limpio.slice(0, 60).trimEnd() + '…' : limpio;
 }
 
-// Render mínimo de markdown (negritas, títulos y listas) sin dependencias.
-function renderTexto(texto: string): React.ReactNode {
-  const conNegritas = (linea: string, key: number) => {
-    const partes = linea.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <React.Fragment key={key}>
-        {partes.map((p, i) =>
-          p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p
-        )}
-      </React.Fragment>
-    );
-  };
-
-  return texto.split('\n').map((linea, i) => {
-    if (/^#{1,4}\s/.test(linea)) {
-      return (
-        <div key={i} style={{ fontWeight: 700, marginTop: '0.75rem', marginBottom: '0.25rem' }}>
-          {conNegritas(linea.replace(/^#{1,4}\s/, ''), i)}
-        </div>
-      );
-    }
-    if (/^\s*[-*]\s/.test(linea)) {
-      return (
-        <div key={i} style={{ paddingLeft: '1rem', display: 'flex', gap: '0.5rem' }}>
-          <span>•</span>
-          <span>{conNegritas(linea.replace(/^\s*[-*]\s/, ''), i)}</span>
-        </div>
-      );
-    }
-    if (/^\s*\d+\.\s/.test(linea)) {
-      return (
-        <div key={i} style={{ paddingLeft: '1rem' }}>
-          {conNegritas(linea, i)}
-        </div>
-      );
-    }
-    return <div key={i}>{linea ? conNegritas(linea, i) : <br />}</div>;
-  });
+interface InteligenciaClientProps {
+  nombreUsuario: string;
+  conversacionesIniciales: ConversacionResumen[];
+  informesIniciales: InformeResumen[];
 }
 
-export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: string }) {
+export default function InteligenciaClient({
+  nombreUsuario,
+  conversacionesIniciales,
+  informesIniciales,
+}: InteligenciaClientProps) {
+  const [vista, setVista] = useState<'chat' | 'informes'>('chat');
   const [turnos, setTurnos] = useState<Turno[]>([]);
+  const [conversacionId, setConversacionId] = useState<string | null>(null);
+  const [conversaciones, setConversaciones] = useState<ConversacionResumen[]>(conversacionesIniciales);
+  const [informes, setInformes] = useState<InformeResumen[]>(informesIniciales);
   const [entrada, setEntrada] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [cargandoConversacion, setCargandoConversacion] = useState(false);
   const [actividad, setActividad] = useState<string | null>(null);
+  const [sidebarMovilAbierto, setSidebarMovilAbierto] = useState(false);
   const finRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turnos, actividad]);
+
+  const nuevaConversacion = () => {
+    setTurnos([]);
+    setConversacionId(null);
+    setSidebarMovilAbierto(false);
+    setVista('chat');
+  };
+
+  const seleccionarConversacion = async (id: string) => {
+    setCargandoConversacion(true);
+    setSidebarMovilAbierto(false);
+    setVista('chat');
+    const res = await cargarConversacion(id);
+    setCargandoConversacion(false);
+    if (!res.success || !res.data) {
+      alert(res.error || 'No se pudo cargar la conversación.');
+      return;
+    }
+    setTurnos(res.data.turnos);
+    setConversacionId(res.data.id);
+  };
+
+  const borrarConversacion = async (id: string) => {
+    const res = await eliminarConversacion(id);
+    if (!res.success) {
+      alert(res.error || 'No se pudo eliminar.');
+      return;
+    }
+    setConversaciones((prev) => prev.filter((c) => c.id !== id));
+    if (id === conversacionId) nuevaConversacion();
+  };
 
   const enviar = async (textoManual?: string) => {
     const texto = (textoManual ?? entrada).trim();
@@ -89,7 +107,12 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
     setCargando(true);
     setActividad(null);
 
-    const actualizarAsesor = (fn: (partes: Parte[]) => Parte[]) => {
+    // Variable local (no el estado de React) para no depender de un re-render
+    // dentro del mismo bucle de streaming — el evento 'conversacion' llega
+    // antes que cualquier 'informe', así que siempre está resuelta a tiempo.
+    let conversacionIdActual = conversacionId;
+
+    const actualizarAsesor = (fn: (partes: Turno['partes']) => Turno['partes']) => {
       setTurnos((prev) => {
         const copia = [...prev];
         const ultimo = copia[copia.length - 1];
@@ -113,6 +136,7 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mensajes: historial.map((t) => ({ rol: t.rol, texto: textoDeTurno(t) })),
+          conversacion_id: conversacionIdActual,
         }),
       });
 
@@ -137,31 +161,67 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
           if (!linea.trim()) continue;
           let evento: {
             tipo: string;
+            id?: string;
             texto?: string;
             nombre?: string;
             detalle?: string;
             mensaje?: string;
-            grafico?: GraficoSpec;
+            grafico?: any;
+            informe?: any;
           };
           try {
             evento = JSON.parse(linea);
           } catch {
             continue;
           }
-          if (evento.tipo === 'texto' && evento.texto) {
+
+          if (evento.tipo === 'conversacion' && evento.id) {
+            const esNueva = !conversacionIdActual;
+            conversacionIdActual = evento.id;
+            setConversacionId(evento.id);
+            const idEvento = evento.id;
+            setConversaciones((prev) => {
+              if (esNueva) {
+                return [{ id: idEvento, titulo: tituloDesde(texto), updated_at: new Date().toISOString() }, ...prev];
+              }
+              const idx = prev.findIndex((c) => c.id === idEvento);
+              if (idx <= 0) return prev;
+              const copia = [...prev];
+              const [item] = copia.splice(idx, 1);
+              return [{ ...item, updated_at: new Date().toISOString() }, ...copia];
+            });
+          } else if (evento.tipo === 'texto' && evento.texto) {
             setActividad(null);
             agregarTexto(evento.texto);
           } else if (evento.tipo === 'grafico' && evento.grafico) {
             setActividad(null);
             const grafico = evento.grafico;
             actualizarAsesor((partes) => [...partes, { tipo: 'grafico', grafico }]);
+          } else if (evento.tipo === 'informe' && evento.informe) {
+            setActividad(null);
+            const informe = evento.informe;
+            actualizarAsesor((partes) => [...partes, { tipo: 'informe', informe }]);
+            setInformes((prev) => [
+              {
+                id: informe.id,
+                tipo: informe.tipo,
+                titulo: informe.titulo,
+                resumen: informe.resumen ?? null,
+                created_at: informe.created_at,
+                conversacion_id: conversacionIdActual,
+                usuarios: { nombre_completo: nombreUsuario },
+              },
+              ...prev,
+            ]);
           } else if (evento.tipo === 'herramienta') {
             setActividad(
               evento.nombre === 'consultar_base_datos'
                 ? 'Consultando la base de datos de la app…'
                 : evento.nombre === 'mostrar_grafico'
                   ? 'Generando gráfico…'
-                  : `Consultando el ERP (${evento.detalle})…`
+                  : evento.nombre === 'generar_informe'
+                    ? 'Redactando informe…'
+                    : `Consultando el ERP (${evento.detalle})…`
             );
           } else if (evento.tipo === 'error') {
             agregarTexto(`\n\n⚠️ ${evento.mensaje}`);
@@ -181,116 +241,180 @@ export default function InteligenciaClient({ nombreUsuario }: { nombreUsuario: s
   return (
     <div style={styles.contenedor}>
       <div style={styles.encabezado}>
+        <button
+          className="inteligencia-sidebar-toggle"
+          style={styles.menuBtn}
+          onClick={() => setSidebarMovilAbierto(true)}
+          aria-label="Ver historial de conversaciones"
+        >
+          <Menu size={20} />
+        </button>
         <div style={styles.iconoTitulo}>
           <BrainCircuit size={26} color="var(--primary)" />
         </div>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={styles.titulo}>Arriendabot · Asesor BI</h1>
           <p style={styles.subtitulo}>
             Inteligencia comercial en vivo: citas, agenda, inventario, cartera y contratos.
           </p>
         </div>
+        <div style={styles.tabs}>
+          <button
+            style={{ ...styles.tabBtn, ...(vista === 'chat' ? styles.tabBtnActivo : {}) }}
+            onClick={() => setVista('chat')}
+          >
+            <MessagesSquare size={14} />
+            Chat
+          </button>
+          <button
+            style={{ ...styles.tabBtn, ...(vista === 'informes' ? styles.tabBtnActivo : {}) }}
+            onClick={() => setVista('informes')}
+          >
+            <LayoutList size={14} />
+            Informes
+            {informes.length > 0 && <span style={styles.tabContador}>{informes.length}</span>}
+          </button>
+        </div>
       </div>
 
-      <div style={styles.zonaChat}>
-        {vacio ? (
-          <div style={styles.estadoVacio}>
-            <Sparkles size={32} color="var(--primary)" style={{ opacity: 0.6 }} />
-            <p style={styles.saludo}>
-              Hola {nombreUsuario.split(' ')[0]}, pregúntame cómo va el negocio.
-            </p>
-            <div style={styles.sugerencias}>
-              {SUGERENCIAS.map((s) => (
-                <button key={s} style={styles.chip} onClick={() => enviar(s)} disabled={cargando}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div style={styles.mensajes}>
-            {turnos.map((t, i) => (
-              <div
-                key={i}
-                style={{
-                  ...styles.burbuja,
-                  ...(t.rol === 'usuario' ? styles.burbujaUsuario : styles.burbujaAsesor),
-                }}
-              >
-                {t.rol === 'asesor' && t.partes.length === 0 && cargando && i === turnos.length - 1 ? (
-                  <span style={styles.actividad}>
-                    <Loader2 size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                    {actividad ? (
-                      <>
-                        {actividad.includes('gráfico') ? (
-                          <BarChart3 size={14} />
-                        ) : actividad.includes('ERP') ? (
-                          <Cloud size={14} />
-                        ) : (
-                          <Database size={14} />
-                        )}
-                        {actividad}
-                      </>
-                    ) : (
-                      'Analizando…'
-                    )}
-                  </span>
+      <div
+        className={`sidebar-overlay ${sidebarMovilAbierto ? 'active' : ''}`}
+        onClick={() => setSidebarMovilAbierto(false)}
+      />
+
+      <div className="inteligencia-layout">
+        <div className={`inteligencia-sidebar ${sidebarMovilAbierto ? 'open' : ''}`}>
+          <ConversacionesSidebar
+            conversaciones={conversaciones}
+            activaId={conversacionId}
+            onSeleccionar={seleccionarConversacion}
+            onNueva={nuevaConversacion}
+            onEliminar={borrarConversacion}
+            deshabilitado={cargando || cargandoConversacion}
+          />
+        </div>
+
+        <div className="inteligencia-main">
+          {vista === 'informes' ? (
+            <InformesPanel
+              informes={informes}
+              onEliminado={(id) => setInformes((prev) => prev.filter((i) => i.id !== id))}
+              onVerConversacion={seleccionarConversacion}
+            />
+          ) : (
+            <>
+              <div style={styles.zonaChat}>
+                {cargandoConversacion ? (
+                  <div style={styles.estadoVacio}>
+                    <Loader2 size={24} className="animate-spin" color="var(--primary)" />
+                  </div>
+                ) : vacio ? (
+                  <div style={styles.estadoVacio}>
+                    <Sparkles size={32} color="var(--primary)" style={{ opacity: 0.6 }} />
+                    <p style={styles.saludo}>
+                      Hola {nombreUsuario.split(' ')[0]}, pregúntame cómo va el negocio.
+                    </p>
+                    <div style={styles.sugerencias}>
+                      {SUGERENCIAS.map((s) => (
+                        <button key={s} style={styles.chip} onClick={() => enviar(s)} disabled={cargando}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ) : (
-                  t.partes.map((p, j) =>
-                    p.tipo === 'texto' ? (
-                      <div key={j} style={styles.textoMensaje}>
-                        {renderTexto(p.texto)}
+                  <div style={styles.mensajes}>
+                    {turnos.map((t, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          ...styles.burbuja,
+                          ...(t.rol === 'usuario' ? styles.burbujaUsuario : styles.burbujaAsesor),
+                        }}
+                      >
+                        {t.rol === 'asesor' && t.partes.length === 0 && cargando && i === turnos.length - 1 ? (
+                          <span style={styles.actividad}>
+                            <Loader2 size={14} className="animate-spin" />
+                            {actividad ? (
+                              <>
+                                {actividad.includes('gráfico') ? (
+                                  <BarChart3 size={14} />
+                                ) : actividad.includes('informe') ? (
+                                  <FileText size={14} />
+                                ) : actividad.includes('ERP') ? (
+                                  <Cloud size={14} />
+                                ) : (
+                                  <Database size={14} />
+                                )}
+                                {actividad}
+                              </>
+                            ) : (
+                              'Analizando…'
+                            )}
+                          </span>
+                        ) : (
+                          t.partes.map((p, j) =>
+                            p.tipo === 'texto' ? (
+                              <div key={j} style={styles.textoMensaje}>
+                                {renderMarkdown(p.texto)}
+                              </div>
+                            ) : p.tipo === 'grafico' ? (
+                              <GraficoBI key={j} spec={p.grafico} />
+                            ) : (
+                              <InformeBI key={j} spec={p.informe} />
+                            )
+                          )
+                        )}
                       </div>
-                    ) : (
-                      <GraficoBI key={j} spec={p.grafico} />
-                    )
-                  )
+                    ))}
+                    {cargando && actividad && (turnos[turnos.length - 1]?.partes.length ?? 0) > 0 ? (
+                      <div style={{ ...styles.burbuja, ...styles.burbujaAsesor }}>
+                        <span style={styles.actividad}>
+                          {actividad.includes('gráfico') ? (
+                            <BarChart3 size={14} />
+                          ) : actividad.includes('informe') ? (
+                            <FileText size={14} />
+                          ) : actividad.includes('ERP') ? (
+                            <Cloud size={14} />
+                          ) : (
+                            <Database size={14} />
+                          )}
+                          {actividad}
+                        </span>
+                      </div>
+                    ) : null}
+                    <div ref={finRef} />
+                  </div>
                 )}
               </div>
-            ))}
-            {cargando && actividad && (turnos[turnos.length - 1]?.partes.length ?? 0) > 0 ? (
-              <div style={{ ...styles.burbuja, ...styles.burbujaAsesor }}>
-                <span style={styles.actividad}>
-                  {actividad.includes('gráfico') ? (
-                    <BarChart3 size={14} />
-                  ) : actividad.includes('ERP') ? (
-                    <Cloud size={14} />
-                  ) : (
-                    <Database size={14} />
-                  )}
-                  {actividad}
-                </span>
-              </div>
-            ) : null}
-            <div ref={finRef} />
-          </div>
-        )}
-      </div>
 
-      <div style={styles.zonaEntrada}>
-        <input
-          style={styles.entrada}
-          value={entrada}
-          onChange={(e) => setEntrada(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              enviar();
-            }
-          }}
-          placeholder="Pregunta sobre citas, inventario, cartera, contratos…"
-          disabled={cargando}
-        />
-        <button
-          style={{ ...styles.botonEnviar, opacity: cargando || !entrada.trim() ? 0.5 : 1 }}
-          onClick={() => enviar()}
-          disabled={cargando || !entrada.trim()}
-          title="Enviar"
-        >
-          {cargando ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={18} />}
-        </button>
+              <div style={styles.zonaEntrada}>
+                <input
+                  style={styles.entrada}
+                  value={entrada}
+                  onChange={(e) => setEntrada(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      enviar();
+                    }
+                  }}
+                  placeholder="Pregunta sobre citas, inventario, cartera, contratos…"
+                  disabled={cargando || cargandoConversacion}
+                />
+                <button
+                  style={{ ...styles.botonEnviar, opacity: cargando || !entrada.trim() ? 0.5 : 1 }}
+                  onClick={() => enviar()}
+                  disabled={cargando || !entrada.trim()}
+                  title="Enviar"
+                >
+                  {cargando ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -306,6 +430,18 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.9rem',
+  },
+  menuBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '36px',
+    height: '36px',
+    borderRadius: 'var(--border-radius-sm, 8px)',
+    border: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-surface)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    flexShrink: 0,
   },
   iconoTitulo: {
     width: '48px',
@@ -328,6 +464,43 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.85rem',
     color: 'var(--text-secondary)',
     margin: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  tabs: {
+    display: 'flex',
+    gap: '0.35rem',
+    flexShrink: 0,
+    backgroundColor: 'var(--bg-secondary)',
+    padding: '0.25rem',
+    borderRadius: 'var(--border-radius-sm, 8px)',
+  },
+  tabBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    padding: '0.4rem 0.75rem',
+    borderRadius: '6px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  tabBtnActivo: {
+    backgroundColor: 'var(--bg-surface)',
+    color: 'var(--primary)',
+    boxShadow: '0 1px 3px rgba(15, 23, 42, 0.08)',
+  },
+  tabContador: {
+    fontSize: '0.65rem',
+    fontWeight: 700,
+    backgroundColor: 'rgba(0, 171, 216, 0.12)',
+    color: 'var(--primary)',
+    borderRadius: '999px',
+    padding: '0.05rem 0.4rem',
   },
   zonaChat: {
     flex: 1,
