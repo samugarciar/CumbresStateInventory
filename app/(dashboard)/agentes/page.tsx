@@ -45,6 +45,7 @@ export default async function AgentesPage() {
   const [
     { data: configRows },
     { data: usoMes },
+    { data: usoComercialMes },
     { count: citas7 },
     { count: citas30 },
     { count: solicitudes30 },
@@ -54,6 +55,10 @@ export default async function AgentesPage() {
     supabase
       .from('bi_uso')
       .select('costo_usd, tokens_entrada, tokens_salida, tokens_cache_lectura, tokens_cache_escritura, created_at')
+      .gte('created_at', inicioMes),
+    supabase
+      .from('agente_comercial_uso')
+      .select('costo_usd, tokens_entrada, tokens_salida, tokens_cache, modelo, created_at')
       .gte('created_at', inicioMes),
     supabase
       .from('citas')
@@ -113,5 +118,24 @@ export default async function AgentesPage() {
     solicitudesPendientes: solicitudesPendientes || 0,
   };
 
-  return <AgentesClient config={config} bi={bi} n8n={n8n} />;
+  // Agregados del uso del agente comercial (mismo patrón que `bi` arriba).
+  // Hasta que la Fase 5 (cablear n8n al endpoint nuevo) esté lista, esto
+  // solo refleja pruebas directas — el tráfico real de WhatsApp sigue
+  // corriendo por el agente viejo en n8n mientras dura el canario.
+  const filasComercial = usoComercialMes || [];
+  const sumaComercial = (fn: (r: any) => number) => filasComercial.reduce((acc, r) => acc + fn(r), 0);
+  const filasComercialHoy = filasComercial.filter((r) => r.created_at >= inicioHoy);
+  const modelosComercial = Array.from(new Set(filasComercial.map((r) => r.modelo))).sort();
+  const comercial = {
+    modelos: modelosComercial.length > 0 ? modelosComercial.join(' + ') : 'gpt-4.1 + gpt-4o',
+    gastoMesUsd: sumaComercial((r) => Number(r.costo_usd || 0)),
+    gastoHoyUsd: filasComercialHoy.reduce((acc, r) => acc + Number(r.costo_usd || 0), 0),
+    peticionesMes: filasComercial.length,
+    peticionesHoy: filasComercialHoy.length,
+    tokensEntradaMes: sumaComercial((r) => r.tokens_entrada || 0),
+    tokensSalidaMes: sumaComercial((r) => r.tokens_salida || 0),
+    tokensCacheMes: sumaComercial((r) => r.tokens_cache || 0),
+  };
+
+  return <AgentesClient config={config} bi={bi} n8n={n8n} comercial={comercial} />;
 }

@@ -37,6 +37,16 @@ interface AgentesClientProps {
     solicitudes30: number;
     solicitudesPendientes: number;
   };
+  comercial: {
+    modelos: string;
+    gastoMesUsd: number;
+    gastoHoyUsd: number;
+    peticionesMes: number;
+    peticionesHoy: number;
+    tokensEntradaMes: number;
+    tokensSalidaMes: number;
+    tokensCacheMes: number;
+  };
 }
 
 function usd(v: number): string {
@@ -76,7 +86,7 @@ function Interruptor({
   );
 }
 
-export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
+export default function AgentesClient({ config, bi, n8n, comercial }: AgentesClientProps) {
   const router = useRouter();
   const [cambiando, setCambiando] = useState<AgenteId | null>(null);
   const [limiteInput, setLimiteInput] = useState(
@@ -300,12 +310,55 @@ export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
             </div>
           </div>
 
+          {/* Trazabilidad LLM del agente ya migrado a LangGraph (mismo formato que el Asesor BI) */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>
+              Consumo LLM · <code style={styles.codigo}>{comercial.modelos}</code>
+            </span>
+            <div style={styles.statsGrid}>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>
+                  <DollarSign size={12} style={{ verticalAlign: '-2px' }} /> Gasto este mes
+                </span>
+                <span style={styles.statValorGrande}>{usd(comercial.gastoMesUsd)}</span>
+                <span style={styles.statSub}>USD (API de OpenAI)</span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Gasto hoy</span>
+                <span style={styles.statValor}>{usd(comercial.gastoHoyUsd)}</span>
+                <span style={styles.statSub}>
+                  {comercial.peticionesHoy} petición{comercial.peticionesHoy !== 1 ? 'es' : ''}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Peticiones del mes</span>
+                <span style={styles.statValor}>{comercial.peticionesMes}</span>
+                <span style={styles.statSub}>al endpoint del agente</span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>
+                  <Zap size={12} style={{ verticalAlign: '-2px' }} /> Tokens del mes
+                </span>
+                <span style={styles.statValor}>
+                  {(comercial.tokensEntradaMes + comercial.tokensSalidaMes + comercial.tokensCacheMes).toLocaleString(
+                    'es-CO'
+                  )}
+                </span>
+                <span style={styles.statSub}>
+                  {comercial.tokensEntradaMes.toLocaleString('es-CO')} entrada ·{' '}
+                  {comercial.tokensSalidaMes.toLocaleString('es-CO')} salida ·{' '}
+                  {comercial.tokensCacheMes.toLocaleString('es-CO')} cache
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div style={styles.notaExterna}>
             <Info size={13} style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>
-              El presupuesto LLM de este agente se gestiona fuera de la app (workflow de n8n). Aquí se controla su
-              acceso a los datos: apagarlo bloquea al instante consultar disponibilidad, agendar, cancelar y registrar
-              solicitudes — sin tocar n8n.
+              {comercial.peticionesMes > 0
+                ? 'El agente ya corre en LangGraph dentro de esta app — el gasto de arriba es en tiempo real. Mientras el tráfico real de WhatsApp siga en n8n (canario en curso), estos números solo reflejan pruebas directas al endpoint, no clientes reales todavía.'
+                : 'El agente ya está migrado a LangGraph en esta app, pero el tráfico real de WhatsApp todavía corre por el workflow viejo en n8n (canario pendiente de cablear) — por eso el consumo de arriba está en $0. Apagar el switch bloquea al instante consultar disponibilidad, agendar, cancelar y registrar solicitudes, sin importar cuál de los dos esté respondiendo.'}
             </span>
           </div>
         </div>
