@@ -49,7 +49,16 @@ export function crearToolsAgenteComercial(
       if (args.precio_max != null) query = query.lte('precio', args.precio_max);
       if (args.tipo_inmueble) query = query.eq('tipo_inmueble', args.tipo_inmueble);
       if (args.tipo_transaccion) query = query.eq('tipo_transaccion', args.tipo_transaccion);
-      if (args.or) query = query.or(args.or);
+      if (args.texto) {
+        // Texto plano del modelo → sintaxis .or() la arma el código (pedirle
+        // al modelo sintaxis PostgREST cruda demostró ser frágil: mandaba
+        // "Mi Mundo" literal y la query moría con "failed to parse logic
+        // tree"). Se limpian los caracteres que rompen el parser (, ( ) %).
+        const t = args.texto.replace(/[(),%]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (t) {
+          query = query.or(`titulo.ilike.%${t}%,descripcion.ilike.%${t}%,unidad.ilike.%${t}%`);
+        }
+      }
 
       const { data, error } = await query.limit(30);
       const salida = error ? { error: error.message } : (data ?? []);
@@ -69,12 +78,13 @@ export function crearToolsAgenteComercial(
         precio_max: z.number().optional(),
         tipo_inmueble: TIPO_INMUEBLE.optional(),
         tipo_transaccion: TIPO_TRANSACCION.optional(),
-        or: z
+        texto: z
           .string()
           .optional()
           .describe(
-            'Filtro de respaldo de texto libre (solo si ciudad/barrio no aplican). Formato PostgREST exacto: ' +
-              "'(descripcion.ilike.%TEXTO%,titulo.ilike.%TEXTO%)' reemplazando TEXTO."
+            'Búsqueda por texto libre: nombre de la unidad/edificio o palabras del título/descripción ' +
+              '(ej. "Mi Mundo", "Vidanta"). Texto plano tal cual — SIN comillas, comodines ni sintaxis especial. ' +
+              'Busca en título, descripción y nombre de unidad a la vez.'
           ),
       }),
     }
