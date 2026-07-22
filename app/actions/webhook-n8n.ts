@@ -40,13 +40,40 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const precioRaw = formData.get('Precio(COP)') as string;
   const asesor = formData.get('Asesor') as string;
 
-  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor) {
+  // Campos nuevos de captación (todos obligatorios)
+  const tipoOperacion = formData.get('Tipo Operacion') as string;
+  const emailProp = formData.get('Email prop') as string;
+  const estratoRaw = formData.get('Estrato') as string;
+  const municipio = formData.get('Municipio') as string;
+
+  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio) {
     return { success: false, message: 'Por favor, completa todos los campos requeridos.' };
   }
 
   const precio = Number(precioRaw);
   if (isNaN(precio) || precio <= 0) {
     return { success: false, message: 'El precio debe ser un número positivo válido.' };
+  }
+
+  // Validar valores enumerados y formato para que lleguen a n8n exactamente como se espera
+  const tiposOperacionValidos = ['arriendo', 'venta', 'venta y arriendo'];
+  if (!tiposOperacionValidos.includes(tipoOperacion)) {
+    return { success: false, message: 'El tipo de operación seleccionado no es válido.' };
+  }
+
+  const municipiosValidos = ['Medellin', 'Bello', 'Sabaneta', 'Envigado'];
+  if (!municipiosValidos.includes(municipio)) {
+    return { success: false, message: 'El municipio seleccionado no es válido.' };
+  }
+
+  const estratoNum = Number(estratoRaw);
+  if (!Number.isInteger(estratoNum) || estratoNum < 1 || estratoNum > 6) {
+    return { success: false, message: 'El estrato debe ser un número entre 1 y 6.' };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(emailProp)) {
+    return { success: false, message: 'El email del propietario no tiene un formato válido.' };
   }
 
   // 4. Agrupar campos para guardar en el payload del log
@@ -118,6 +145,11 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     n8nFormData.append('Precio(COP)', precioRaw);
     n8nFormData.append('Asesor', asesor);
 
+    // Campos nuevos: viajan en el mismo body con las llaves exactas que espera n8n
+    n8nFormData.append('Tipo Operacion', tipoOperacion);
+    n8nFormData.append('Municipio', municipio);
+    n8nFormData.append('Estrato', String(estratoNum));
+
     n8nFormData.append('num de habitaciones', (formData.get('num de habitaciones') as string) || '0');
     n8nFormData.append('num de baños', (formData.get('num de baños') as string) || '0');
     // NOTA CRÍTICA: Mantener el espacio al final del nombre 'num de closet ' tal como lo tiene el código de n8n
@@ -145,6 +177,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     // Datos Propietario / Internos
     n8nFormData.append('Nombre prop', (formData.get('Nombre prop') as string) || 'Sin nombre');
     n8nFormData.append('Num Prop', (formData.get('Num Prop') as string) || 'Sin número');
+    n8nFormData.append('Email prop', emailProp);
     n8nFormData.append('Comision(portero)', (formData.get('Comision(portero)') as string) || 'n/a');
     n8nFormData.append('Observaciones', (formData.get('Observaciones') as string) || 'n/a');
 

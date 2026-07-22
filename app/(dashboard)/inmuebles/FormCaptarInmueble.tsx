@@ -299,13 +299,47 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Barrio *</label>
-                <input 
-                  type="text" 
-                  name="Barrio" 
-                  className="form-control" 
-                  placeholder="Ej. Robledo Pajarito" 
-                  required 
+                <input
+                  type="text"
+                  name="Barrio"
+                  className="form-control"
+                  placeholder="Ej. Robledo Pajarito"
+                  required
                 />
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Tipo de Operación *</label>
+                <select name="Tipo Operacion" className="form-select" required defaultValue="">
+                  <option value="" disabled>Selecciona una opción...</option>
+                  <option value="arriendo">Arriendo</option>
+                  <option value="venta">Venta</option>
+                  <option value="venta y arriendo">Venta y Arriendo</option>
+                </select>
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Municipio *</label>
+                <select name="Municipio" className="form-select" required defaultValue="">
+                  <option value="" disabled>Selecciona un municipio...</option>
+                  <option value="Medellin">Medellín</option>
+                  <option value="Bello">Bello</option>
+                  <option value="Sabaneta">Sabaneta</option>
+                  <option value="Envigado">Envigado</option>
+                </select>
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Estrato *</label>
+                <select name="Estrato" className="form-select" required defaultValue="">
+                  <option value="" disabled>Selecciona el estrato...</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                </select>
               </div>
 
               <div style={styles.fieldGroup}>
@@ -531,12 +565,23 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Teléfono del Propietario *</label>
-                <input 
-                  type="tel" 
-                  name="Num Prop" 
-                  className="form-control" 
-                  placeholder="Ej. 3012345678" 
-                  required 
+                <input
+                  type="tel"
+                  name="Num Prop"
+                  className="form-control"
+                  placeholder="Ej. 3012345678"
+                  required
+                />
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Email del Propietario *</label>
+                <input
+                  type="email"
+                  name="Email prop"
+                  className="form-control"
+                  placeholder="Ej. propietario@correo.com"
+                  required
                 />
               </div>
 
