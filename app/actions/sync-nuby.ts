@@ -10,6 +10,7 @@ export interface SyncResult {
   processed: number;
   imported: number;
   updated: number;
+  deactivated?: number;
   failed: number;
   details?: string[];
 }
@@ -271,6 +272,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   let processedCount = 0;
   let importedCount = 0;
   let updatedCount = 0;
+  let desactivadosCount = 0;
   let failedCount = 0;
 
   // Consultar inmuebles locales previamente sincronizados para distinguir entre "creación" y "actualización"
@@ -333,21 +335,51 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   for (const prop of allProperties) {
     processedCount++;
     
-    // Filtro de estados solicitado por el usuario:
-    // Solo disponibles (estado 1) y arrendados (estado 0)
-    // Se descartan inactivos (estado 3) y borradores (estado 5)
-    const isDisponible = prop.estado === 1 || prop.estado_texto?.toLowerCase().trim() === 'activa' || prop.estado_texto?.toLowerCase().trim() === 'desocupado';
-    const isArrendado = prop.estado === 0 || prop.estado_texto?.toLowerCase().trim() === 'arrendada' || prop.estado_texto?.toLowerCase().trim() === 'arrendado';
-    
+    // Estados en Nuby/Arrendasoft: 1 = Activa (disponible), 0 = Arrendada,
+    // 2 = Inactiva (retirada del mercado). Comparamos por número y por texto.
+    const estadoTexto = prop.estado_texto?.toLowerCase().trim();
+    const isDisponible = prop.estado === 1 || estadoTexto === 'activa' || estadoTexto === 'desocupado';
+    const isArrendado = prop.estado === 0 || estadoTexto === 'arrendada' || estadoTexto === 'arrendado';
+    const isInactivo = prop.estado === 2 || estadoTexto === 'inactiva' || estadoTexto === 'inactivo';
+
+    const arrendasoftId = String(prop.codigo);
+    const registroLocal = existingMap.get(arrendasoftId);
+    const isUpdate = !!registroLocal;
+
+    // BAJA DEL ERP: el inmueble está inactivo en Nuby (retirado del mercado).
+    // Antes se saltaba con `continue`, dejando el estado local congelado en su último
+    // valor (bug: un inmueble seguía "disponible" y lo ofertaba el agente aunque el ERP
+    // ya lo hubiera dado de baja). Ahora, si el inmueble YA existe localmente, reflejamos
+    // la baja: estado_erp='inactivo' y el estado EFECTIVO='inactivo', respetando el
+    // override local (soberano; el sync nunca lo pisa). Si NO existe localmente lo
+    // seguimos ignorando: no importamos el catálogo completo de inactivos del ERP.
+    if (isInactivo) {
+      if (registroLocal) {
+        try {
+          const { error: bajaErr } = await supabase
+            .from('inmuebles')
+            .update({
+              estado_erp: 'inactivo',
+              estado: registroLocal.estado_override || 'inactivo',
+            })
+            .eq('id', registroLocal.id);
+          if (bajaErr) throw new Error(bajaErr.message);
+          desactivadosCount++;
+        } catch (err: any) {
+          console.error(`Falla al marcar inactivo el código ${prop.codigo}:`, err.message);
+          failedCount++;
+          details.push(`Código ${prop.codigo}: Error al marcar inactivo (${err.message})`);
+        }
+      }
+      continue;
+    }
+
+    // Estados desconocidos (borradores u otros no contemplados): ignorar en silencio.
     if (!isDisponible && !isArrendado) {
-      // Ignorar inactivos/borradores de forma silenciosa
       continue;
     }
 
     try {
-      const arrendasoftId = String(prop.codigo);
-      const isUpdate = existingMap.has(arrendasoftId);
-
       // Mapear precio dinámicamente según transacción
       let precio = 0;
       if (prop.valor_arriendo1 && Number(prop.valor_arriendo1) > 0) {
@@ -504,7 +536,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
     details.push(`Se autocompletó la unidad de ${unidadInferidaCount} inmueble(s) a partir de la dirección (catálogo manual).`);
   }
 
-  details.push(`Sincronización completada. Nuevos: ${importedCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}.`);
+  details.push(`Sincronización completada. Nuevos: ${importedCount}, Actualizados: ${updatedCount}, Desactivados: ${desactivadosCount}, Fallidos: ${failedCount}.`);
 
   // 7. Revalidar vistas
   revalidatePath('/inmuebles');
@@ -512,10 +544,11 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
 
   return {
     success: true,
-    message: `Sincronización finalizada con éxito. Se importaron ${importedCount} propiedades nuevas y se actualizaron ${updatedCount} existentes.`,
+    message: `Sincronización finalizada con éxito. Se importaron ${importedCount} propiedades nuevas, se actualizaron ${updatedCount} y se desactivaron ${desactivadosCount} (dadas de baja en el ERP).`,
     processed: processedCount,
     imported: importedCount,
     updated: updatedCount,
+    deactivated: desactivadosCount,
     failed: failedCount,
     details
   };
