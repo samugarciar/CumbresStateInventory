@@ -12,18 +12,11 @@
 // POST body: { asunto?, html?, texto?, from?, inmobiliaria_id? }
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { correrCaptacion } from '@/lib/agente-captaciones/graph';
 import { registrarUso } from '@/lib/agente-captaciones/uso';
 import { extraerAnunciosDeCorreo, MAX_ANUNCIOS_POR_CORREO } from '@/lib/agente-captaciones/email/extraer';
-import { listingVacio, type FuenteCaptacion, type ListingCrudo } from '@/lib/agente-captaciones/tipos';
-import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from '@/lib/agente-captaciones/sources/mercadolibre';
+import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
 
 export const maxDuration = 300;
-
-// Cuántos anuncios se procesan a la vez. Cada uno son 2 llamadas al LLM; en
-// serie un digest de 20 no cabe en maxDuration, y todos a la vez arriesga
-// rate-limits.
-const CONCURRENCIA = 4;
 
 interface Cuerpo {
   asunto?: string;
@@ -33,13 +26,6 @@ interface Cuerpo {
   text?: string;
   from?: string;
   inmobiliaria_id?: string;
-}
-
-function inferirFuente(url: string | null): FuenteCaptacion {
-  if (!url) return 'otro';
-  if (esUrlMercadoLibre(url)) return 'mercadolibre';
-  if (/facebook\.com|fb\.com|fb\.me/i.test(url)) return 'facebook';
-  return 'otro';
 }
 
 export async function POST(request: Request) {
@@ -101,64 +87,25 @@ export async function POST(request: Request) {
     });
   }
 
-  // --- 2) Cada anuncio por el grafo (en tandas) ---
-  const resumen = { creados: 0, duplicados: 0, descartados: 0, fallidos: 0 };
-  const detalle: Array<{ titulo: string; resultado: string; prospecto_id: string | null; motivo: string | null }> = [];
-
-  const procesar = async (a: (typeof extraccion.anuncios)[number]) => {
-    try {
-      const fuente = inferirFuente(a.url);
-      let listing: ListingCrudo = listingVacio(fuente);
-
-      // Mercado Libre: los datos oficiales le ganan a lo que diga el correo.
-      if (fuente === 'mercadolibre' && a.url) {
-        const itemId = extraerItemId(a.url);
-        if (itemId) {
-          try {
-            listing = await enriquecerItem(supabase, inmobiliariaId, itemId);
-          } catch (e) {
-            console.warn('[Captaciones/email] No se pudo enriquecer con ML:', e);
-          }
-        }
-      }
-
-      listing.url = a.url ?? listing.url;
-      listing.fuente_id = listing.fuente_id ?? a.url ?? null;
-      listing.titulo = listing.titulo || a.titulo;
-      listing.precio = listing.precio ?? a.precio;
-      listing.ciudad = listing.ciudad ?? a.ciudad;
-      listing.barrio = listing.barrio ?? a.barrio;
-      listing.area_m2 = listing.area_m2 ?? a.area_m2;
-      listing.habitaciones = listing.habitaciones ?? a.habitaciones;
-      listing.contacto_telefono = listing.contacto_telefono ?? a.contacto_telefono;
-      listing.contacto_nombre = listing.contacto_nombre ?? a.contacto_nombre;
-      // El texto del correo se conserva: trae las señales de "dueño directo"
-      // (o de agencia) que el nodo de calificación necesita.
-      if (a.detalles) listing.descripcion = `${listing.descripcion}\n${a.detalles}`.trim();
-
-      const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
-      await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
-
-      if (salida.resultado === 'creado') resumen.creados++;
-      else if (salida.resultado === 'duplicado') resumen.duplicados++;
-      else resumen.descartados++;
-
-      detalle.push({
-        titulo: a.titulo,
-        resultado: salida.resultado,
-        prospecto_id: salida.prospecto_id,
-        motivo: salida.motivo,
-      });
-    } catch (e) {
-      resumen.fallidos++;
-      console.error('[Captaciones/email] Falló un anuncio:', a.titulo, e);
-      detalle.push({ titulo: a.titulo, resultado: 'error', prospecto_id: null, motivo: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  for (let i = 0; i < extraccion.anuncios.length; i += CONCURRENCIA) {
-    await Promise.all(extraccion.anuncios.slice(i, i + CONCURRENCIA).map(procesar));
-  }
+  // --- 2) Cada anuncio por el grafo (lógica compartida con el intake por lote) ---
+  const resumen = await procesarAnuncios(
+    supabase,
+    inmobiliariaId,
+    extraccion.anuncios.map((a) => ({
+      url: a.url,
+      titulo: a.titulo,
+      precio: a.precio,
+      ciudad: a.ciudad,
+      barrio: a.barrio,
+      area_m2: a.area_m2,
+      habitaciones: a.habitaciones,
+      contacto_telefono: a.contacto_telefono,
+      contacto_nombre: a.contacto_nombre,
+      // El texto del correo trae las señales de "dueño directo" (o de agencia)
+      // que el nodo de calificación necesita.
+      descripcion: a.detalles,
+    }))
+  );
 
   return Response.json({
     estado: 'ok',
@@ -171,6 +118,5 @@ export async function POST(request: Request) {
         ? `El correo traía más de ${MAX_ANUNCIOS_POR_CORREO} anuncios; ${extraccion.recortados} quedaron sin procesar.`
         : undefined,
     ...resumen,
-    detalle,
   });
 }

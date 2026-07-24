@@ -14,7 +14,8 @@ export const PROMPT_CALIFICAR = `Analizas anuncios de inmuebles en Colombia (Med
 Tu tarea es clasificar el anuncio:
 
 1. **es_dueno_directo**: ¿publica el PROPIETARIO (particular, "dueño directo", FSBO) o una AGENCIA/inmobiliaria/asesor/constructora?
-   - Señales de AGENCIA: menciona inmobiliaria o constructora, se firma como asesor, incluye códigos de inmueble ("Cod. 1234", "Ref. AB-12"), lenguaje corporativo o de portafolio, ofrece varias propiedades, menciona comisión o administración.
+   - Señales de AGENCIA: menciona inmobiliaria o constructora, se firma como asesor, incluye códigos de inmueble ("Cod. 1234", "Ref. AB-12"), lenguaje corporativo o de portafolio, ofrece varias propiedades, ofrece servicios adicionales (avalúos, asesoría jurídica//contable, trámites), o invita a "contactarnos" en plural.
+   - Señal FUERTE de agencia — REPUTACIÓN DEL VENDEDOR: si la ficha menciona que quien publica acumula muchas calificaciones o reseñas como vendedor (aprox. 20 o más), distintivos tipo "Calificación alta en Marketplace", o que publica varios inmuebles, trátalo como PROFESIONAL, no como dueño. Un propietario particular vende su vivienda una sola vez: no acumula decenas de calificaciones vendiendo inmuebles. Esto pesa MÁS que el hecho de que el texto esté escrito en primera persona.
    - Señales de PARTICULAR: habla en primera persona de SU vivienda ("vendo mi apartamento"), dice "dueño directo", "sin intermediarios", "no agencias", da su celular personal.
    - Si hay ambigüedad real, marca es_dueno_directo=false y baja la confianza: prefiere dudar antes que contactar a una agencia como si fuera dueño.
 

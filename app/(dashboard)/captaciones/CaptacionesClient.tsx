@@ -232,8 +232,14 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
                   </div>
                 </div>
                 <div style={styles.pBadges}>
-                  {p.es_dueno_directo && (
+                  {p.es_dueno_directo === true && (
                     <span style={styles.badgeDueno}><UserCheck size={11} /> Dueño directo</span>
+                  )}
+                  {/* Sin la advertencia explícita, un anuncio de agencia se ve
+                      igual que uno bueno salvo por la ausencia de la insignia
+                      verde — demasiado sutil para una cola que se revisa rápido. */}
+                  {p.es_dueno_directo === false && (
+                    <span style={styles.badgeAgencia}><AlertTriangle size={11} /> Posible agencia</span>
                   )}
                   {p.score != null && (
                     <span style={styles.badgeScore}>{Math.round(p.score * 100)}%</span>
@@ -399,6 +405,10 @@ const styles: Record<string, React.CSSProperties> = {
   pBadges: { display: 'flex', gap: '0.35rem', flexShrink: 0, alignItems: 'center' },
   badgeDueno: {
     fontSize: '0.66rem', fontWeight: 700, color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    borderRadius: '999px', padding: '0.15rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+  },
+  badgeAgencia: {
+    fontSize: '0.66rem', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245, 158, 11, 0.15)',
     borderRadius: '999px', padding: '0.15rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
   },
   badgeScore: {
