@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { revalidatePath } from 'next/cache';
 
-export type AgenteId = 'arriendabot_bi' | 'comercial_whatsapp';
+export type AgenteId = 'arriendabot_bi' | 'comercial_whatsapp' | 'captaciones';
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -38,6 +38,41 @@ export async function toggleAgente(agente: AgenteId, activo: boolean) {
   if (error) {
     console.error('[Agentes] Error al cambiar estado:', error.message);
     return { success: false, error: 'No se pudo cambiar el estado del agente.' };
+  }
+
+  revalidatePath('/agentes');
+  return { success: true as const };
+}
+
+/**
+ * Guarda el prompt de redacción del agente de captaciones (el estilo del primer
+ * mensaje al propietario), editable en caliente sin redeploy. Vacío = volver al
+ * default de código (lib/agente-captaciones/prompt.ts).
+ *
+ * Solo se expone el de captaciones a propósito: el prompt del agente comercial
+ * viene de n8n y editarlo desde aquí sin más contexto sería riesgoso.
+ */
+export async function guardarPromptCaptaciones(prompt: string) {
+  const user = await requireAdmin();
+  if (!user) return { success: false, error: 'Solo los administradores pueden editar el prompt.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('agentes_config')
+    .upsert(
+      {
+        inmobiliaria_id: user.profile.inmobiliaria_id,
+        agente: 'captaciones',
+        prompt_sistema: prompt.trim() || null,
+        updated_at: new Date().toISOString(),
+        updated_by: user.profile.id,
+      },
+      { onConflict: 'inmobiliaria_id,agente' }
+    );
+
+  if (error) {
+    console.error('[Agentes] Error al guardar el prompt de captaciones:', error.message);
+    return { success: false, error: 'No se pudo guardar el prompt.' };
   }
 
   revalidatePath('/agentes');

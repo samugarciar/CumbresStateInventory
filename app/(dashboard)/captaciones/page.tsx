@@ -26,7 +26,7 @@ const CAMPOS = `
 export default async function CaptacionesPage() {
   const user = await getCurrentUser();
   if (!user?.profile) redirect('/login');
-  // La aprobación de contactos es una decisión de administración.
+  // Captaciones es un módulo de administración: solo admins.
   if (user.profile.rol !== 'admin') redirect('/dashboard');
 
   const supabase = await createClient();

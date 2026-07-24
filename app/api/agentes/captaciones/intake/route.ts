@@ -18,6 +18,7 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { correrCaptacion } from '@/lib/agente-captaciones/graph';
+import { registrarUso } from '@/lib/agente-captaciones/uso';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from '@/lib/agente-captaciones/tipos';
 import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from '@/lib/agente-captaciones/sources/mercadolibre';
 
@@ -135,6 +136,7 @@ export async function POST(request: Request) {
   // --- correr el grafo ---
   try {
     const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
+    await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
     return Response.json({ estado: 'ok', enriquecido, ...salida });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

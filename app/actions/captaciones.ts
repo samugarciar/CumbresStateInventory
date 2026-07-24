@@ -8,6 +8,7 @@ import { correrCaptacion } from '@/lib/agente-captaciones/graph';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from '@/lib/agente-captaciones/tipos';
 import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from '@/lib/agente-captaciones/sources/mercadolibre';
 import { DIAS_PRIMER_SEGUIMIENTO } from '@/lib/agente-captaciones/config';
+import { registrarUso } from '@/lib/agente-captaciones/uso';
 
 // Estados del pipeline a los que se puede mover un prospecto desde la bandeja.
 export type EstadoProspecto =
@@ -19,6 +20,8 @@ async function requireAdmin() {
   if (!user?.profile || user.profile.rol !== 'admin') return null;
   return user;
 }
+
+// Captaciones es un módulo de administración: todas las acciones exigen admin.
 
 // Fecha en Bogotá (el servidor de Vercel corre en UTC). Colombia es UTC-5 fijo.
 function hoyBogota(): string {
@@ -99,6 +102,7 @@ export async function agregarProspecto(datos: {
 
   try {
     const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
+    await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
     revalidatePath('/captaciones');
     const mensajes: Record<string, string> = {
       creado: 'Prospecto calificado y listo para aprobar.',
