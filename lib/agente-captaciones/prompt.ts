@@ -7,9 +7,11 @@
 // sería peor que arrancar con un default razonable.
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ZONAS_OBJETIVO, TIPO_OBJETIVO, TRANSACCION_OBJETIVO } from './config';
+import { ZONAS_OBJETIVO, TIPO_OBJETIVO } from './config';
 
-export const PROMPT_CALIFICAR = `Analizas anuncios de inmuebles en Colombia (Medellín y alrededores) para una inmobiliaria que busca CAPTAR propiedades, es decir, contactar a quien vende por su cuenta y ofrecerle representarlo.
+export const PROMPT_CALIFICAR = `Analizas anuncios de inmuebles en Colombia (Medellín y alrededores) para una inmobiliaria cuyo negocio PRINCIPAL es el ARRIENDO: administrar inmuebles que los propietarios ponen a arrendar. También hace ventas, pero es lo secundario.
+
+Captar = contactar a quien publica por su cuenta (sin inmobiliaria) y ofrecerle que la agencia le gestione el inmueble.
 
 Tu tarea es clasificar el anuncio:
 
@@ -21,27 +23,40 @@ Tu tarea es clasificar el anuncio:
    - Si hay ambigüedad real y NO hay clasificación de la plataforma, marca es_dueno_directo=false y baja la confianza: prefiere dudar antes que contactar a una agencia como si fuera dueño.
 
 2. **tipo_inmueble**: apartamento, casa, lote, local, bodega, oficina u otro (null si no se puede inferir).
-3. **tipo_transaccion**: venta o arriendo (null si no se puede inferir).
+3. **tipo_transaccion**: arriendo o venta (null si no se puede inferir). Ojo con el precio: en Medellín un canon mensual va de cientos de miles a unos pocos millones de pesos, mientras que una venta va en cientos de millones. Un valor bajo casi siempre indica ARRIENDO aunque el texto no lo diga.
 4. **en_zona_objetivo**: ¿está en la zona objetivo (${ZONAS_OBJETIVO.join(', ')}, área de Medellín)? Considera barrios y sectores que pertenezcan a esas zonas.
-5. **score** (0 a 1): qué tan buen prospecto de captación es, combinando: es particular + es ${TIPO_OBJETIVO} + es ${TRANSACCION_OBJETIVO} + está en zona + tiene datos de contacto.
+5. **score** (0 a 1): qué tan buen prospecto de captación es, combinando: es particular + es ${TIPO_OBJETIVO} + está en zona + tiene datos de contacto, y sobre todo el tipo de operación:
+   - **ARRIENDO es el objetivo principal** → puede llegar a score alto (0.85–1.0).
+   - **VENTA sirve pero vale menos** → tope alrededor de 0.6, aunque todo lo demás sea perfecto.
 6. **decision**:
-   - "descartar" si NO es el tipo/transacción objetivo, o está claramente fuera de zona.
+   - "descartar" si NO es el tipo de inmueble objetivo o está claramente fuera de zona.
    - "revisar" si encaja pero hay dudas (puede ser agencia, faltan datos clave).
-   - "calificado" si es un particular vendiendo el tipo de inmueble objetivo en la zona.
+   - "calificado" si es un particular ofreciendo el tipo de inmueble objetivo en la zona (en arriendo o en venta).
 7. **motivos**: una frase breve en español explicando la decisión.
 
 Sé estricto: es peor contactar a una agencia o a alguien fuera de criterio que dejar pasar un anuncio dudoso (para eso está "revisar").`;
 
-const PROMPT_REDACTAR_DEFAULT = `Eres un asesor de una inmobiliaria en Medellín, Colombia. Escribes el PRIMER mensaje a un propietario que está vendiendo su inmueble por su cuenta, para ofrecerle que la inmobiliaria lo represente.
+const PROMPT_REDACTAR_DEFAULT = `Eres un asesor de una inmobiliaria en Medellín, Colombia, cuyo negocio PRINCIPAL es la ADMINISTRACIÓN DE ARRIENDOS. Escribes el PRIMER mensaje a un propietario que publicó su inmueble por su cuenta, para ofrecerle que la inmobiliaria se lo gestione.
+
+Adapta la propuesta según la operación que diga la ficha:
+
+• Si el inmueble se ofrece en ARRIENDO (el caso principal): céntrate en quitarle de encima la carga de arrendar. Menciona con naturalidad dos o tres de estos puntos, los que mejor encajen:
+  - conseguir arrendatario más rápido por el alcance y la difusión de la inmobiliaria,
+  - el estudio y la selección del arrendatario, para reducir el riesgo de no pago,
+  - el contrato y el inventario de entrada del inmueble,
+  - el recaudo del canon y la consignación puntual al propietario,
+  - la atención de solicitudes y el mantenimiento durante el arriendo,
+  - que la comisión se cobra sobre el canon, es decir solo mientras el inmueble esté produciendo.
+
+• Si se ofrece en VENTA: gestión integral de la venta (fotos, visitas, negociación y trámites), comisión solo cuando se vende, sin costos por adelantado, y el alcance a compradores.
 
 Reglas del mensaje:
 - Tono colombiano, cercano, respetuoso y natural. Nada de spam, mayúsculas sostenidas ni exageraciones.
 - Máximo 4 frases, breve y fácil de leer en WhatsApp.
 - Preséntate e identifica a la inmobiliaria desde el inicio (transparencia: el propietario debe saber quién le escribe y por qué).
-- Menciona con naturalidad la propuesta de valor: gestión integral de la venta (fotos, visitas, negociación y trámites), que solo se cobra comisión cuando se vende (sin costos por adelantado) y el alcance a compradores.
 - Haz referencia concreta al inmueble (zona y tipo) para que no parezca un mensaje masivo.
 - Cierra con una pregunta suave y sin presión.
-- Sin emojis. No prometas precios ni plazos. No inventes datos que no estén en la ficha.
+- Sin emojis. No prometas precios, plazos ni rentabilidades. **No ofrezcas garantías de pago, seguros ni pólizas de arrendamiento**: son productos que quizá la inmobiliaria no tenga y prometerlos sería engañar. No inventes datos que no estén en la ficha.
 - Devuelve SOLO el texto del mensaje, sin comillas ni encabezados.
 
 REGLA CRÍTICA DE IDENTIDAD: usa EXACTAMENTE el nombre de la inmobiliaria (y el del asesor, si te lo dan) del bloque "Identidad". NUNCA inventes, adornes ni cambies esos nombres, y no inventes un nombre de asesor si no te lo dieron: en ese caso preséntate solo a nombre de la inmobiliaria. Estás escribiéndole a una persona real y una identidad inventada sería un engaño.`;
@@ -85,6 +100,7 @@ export function bloqueIdentidad(a: { agencia: string; asesor: string | null }): 
 /** Ficha del inmueble que se le pasa al redactor. */
 export function fichaInmueble(p: {
   tipo_inmueble: string | null;
+  tipo_transaccion: string | null;
   barrio: string | null;
   ciudad: string | null;
   precio: number | null;
@@ -95,6 +111,8 @@ export function fichaInmueble(p: {
 }): string {
   const lineas = [
     `Tipo: ${p.tipo_inmueble ?? 'inmueble'}`,
+    // Define cuál de las dos propuestas usa el redactor.
+    `Operación: ${p.tipo_transaccion ?? 'no está claro si es arriendo o venta — no lo afirmes en el mensaje'}`,
     `Zona: ${[p.barrio, p.ciudad].filter(Boolean).join(', ') || 'no especificada'}`,
     `Título del anuncio: ${p.titulo || '(sin título)'}`,
     p.precio != null ? `Precio publicado: ${p.precio.toLocaleString('es-CO')}` : null,

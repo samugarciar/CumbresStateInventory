@@ -7,10 +7,16 @@
 export const MODELO_CALIFICAR = process.env.CAPTACIONES_MODELO_CALIFICAR || 'gpt-4.1-mini';
 export const MODELO_REDACTAR = process.env.CAPTACIONES_MODELO_REDACTAR || 'gpt-4.1';
 
-// Criterio de captación v1: apartamentos en venta en Bello y Robledo (Medellín).
+// Criterio de captación: apartamentos en Bello y Robledo (Medellín).
+//
+// El negocio principal de la inmobiliaria es el ARRIENDO (administrar
+// inmuebles arrendados), así que ese es el objetivo prioritario de captación.
+// Las ventas se aceptan pero valen menos: entran a la bandeja con score más
+// bajo, no se descartan.
 export const ZONAS_OBJETIVO = ['bello', 'robledo'];
 export const TIPO_OBJETIVO = 'apartamento';
-export const TRANSACCION_OBJETIVO = 'venta';
+export const TRANSACCION_OBJETIVO = 'arriendo';
+export const ACEPTAR_TAMBIEN_VENTA = true;
 
 // Prioridad del canal de contacto según lo que exponga cada anuncio.
 export const CANAL_PRIORIDAD = ['whatsapp', 'telefono', 'messenger'] as const;

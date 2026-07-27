@@ -179,6 +179,7 @@ export async function correrCaptacion(params: {
 
     const ficha = fichaInmueble({
       tipo_inmueble: c?.tipo_inmueble ?? l.tipo_inmueble,
+      tipo_transaccion: c?.tipo_transaccion ?? l.tipo_transaccion,
       barrio: l.barrio,
       ciudad: l.ciudad,
       precio: l.precio,
