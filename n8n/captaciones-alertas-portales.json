@@ -1,0 +1,122 @@
+{
+  "name": "Captaciones — alertas de portales",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 15,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "labelIds": [],
+          "q": "from:(mercadolibre.com OR fincaraiz.com.co OR metrocuadrado.com OR ciencuadras.com OR properati.com.co) newer_than:2d"
+        },
+        "options": {}
+      },
+      "id": "trigger-correo",
+      "name": "Alertas de portales (Gmail)",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "notes": "Dispara con cada correo nuevo de los portales. Alternativa: nodo 'Email Trigger (IMAP)' si el buzón no es Gmail — en ese caso ajusta el mapeo del nodo siguiente (ver README)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cumbres-state-inventory.vercel.app/api/agentes/captaciones/intake-email",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-token",
+              "value": "={{ $env.CAPTACIONES_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ asunto: $json.subject, html: $json.html || $json.textHtml || '', texto: $json.text || $json.textPlain || '', from: $json.from }) }}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "enviar-a-captaciones",
+      "name": "Enviar el correo al agente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "notes": "n8n solo hace de cartero: manda el correo crudo. La extracción de los anuncios y la calificación viven en la app (versionadas y testeables). Timeout alto porque un digest con muchos anuncios tarda."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "hubo-creados",
+              "leftValue": "={{ $json.creados }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hubo-prospectos",
+      "name": "¿Entraron prospectos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [780, 300],
+      "notes": "Solo para avisar. Si es un correo que no era alerta, el endpoint responde es_alerta:false y creados:0, y aquí se corta sin ruido."
+    },
+    {
+      "parameters": {
+        "sendTo": "CAMBIAR@tu-correo.com",
+        "subject": "={{ $json.creados }} prospecto(s) nuevo(s) en Captaciones",
+        "emailType": "text",
+        "message": "=Entraron {{ $json.creados }} prospecto(s) nuevo(s) a la bandeja de Captaciones.\n\nDetectados en el correo: {{ $json.anuncios_detectados }}\nDuplicados: {{ $json.duplicados }}\nDescartados: {{ $json.descartados }}\nFallidos: {{ $json.fallidos }}{{ $json.aviso_recorte ? '\\n\\nAVISO: ' + $json.aviso_recorte : '' }}\n\nRevisalos en https://cumbres-state-inventory.vercel.app/captaciones",
+        "options": {}
+      },
+      "id": "avisar",
+      "name": "Avisar que hay prospectos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1040, 220],
+      "notes": "Cambia el destinatario. Opcional: reemplázalo por el nodo que ya uses para notificar (Slack, WhatsApp, etc.)."
+    }
+  ],
+  "connections": {
+    "Alertas de portales (Gmail)": {
+      "main": [[{ "node": "Enviar el correo al agente", "type": "main", "index": 0 }]]
+    },
+    "Enviar el correo al agente": {
+      "main": [[{ "node": "¿Entraron prospectos?", "type": "main", "index": 0 }]]
+    },
+    "¿Entraron prospectos?": {
+      "main": [[{ "node": "Avisar que hay prospectos", "type": "main", "index": 0 }], []]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
