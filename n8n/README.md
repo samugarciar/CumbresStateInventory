@@ -27,12 +27,16 @@ El endpoint exige la cabecera `x-webhook-token`. Genera un token y guárdalo:
 openssl rand -hex 32
 ```
 
-- **Vercel** → Project → Settings → Environment Variables → `CAPTACIONES_WEBHOOK_TOKEN` (Production) → **redespliega**.
-- **n8n** → Settings → Variables (o variable de entorno del contenedor) → `CAPTACIONES_WEBHOOK_TOKEN`, el mismo valor.
+- **Vercel** → Project → Settings → Environment Variables → `CAPTACIONES_WEBHOOK_TOKEN` (Production) → **redespliega** (Vercel no toma la variable sin redesplegar).
+- **n8n** → credencial **Header Auth** (mismo patrón que los otros webhooks del proyecto):
+  - Credentials → New → busca **“Header Auth”**
+  - **Name**: `x-webhook-token` · **Value**: el token
+  - Guárdala como, p. ej., *“Captaciones webhook token”*
+  - En el nodo *Enviar el correo al agente*: Authentication → **Generic Credential Type** → **Header Auth** → selecciónala
 
-> Si tu n8n no soporta `$env`, reemplaza en el nodo HTTP el valor
-> `={{ $env.CAPTACIONES_WEBHOOK_TOKEN }}` por el token literal, o usa una
-> credencial **Header Auth** (mismo patrón que los otros webhooks del proyecto).
+> Se usa Header Auth y no `$env` a propósito: las **Variables de n8n son una función
+> de pago**, mientras que las credenciales están en todos los planes, quedan cifradas
+> y no viajan en el export del workflow.
 
 ## 2. Búsquedas guardadas en los portales
 
