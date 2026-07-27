@@ -13,7 +13,12 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { registrarUso } from '@/lib/agente-captaciones/uso';
-import { extraerAnunciosDeCorreo, MAX_ANUNCIOS_POR_CORREO } from '@/lib/agente-captaciones/email/extraer';
+import {
+  extraerAnunciosDeCorreo,
+  cuerpoDesdePayloadGmail,
+  asuntoDesdePayloadGmail,
+  MAX_ANUNCIOS_POR_CORREO,
+} from '@/lib/agente-captaciones/email/extraer';
 import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
 
 export const maxDuration = 300;
@@ -22,9 +27,14 @@ interface Cuerpo {
   asunto?: string;
   subject?: string;
   html?: string;
+  textHtml?: string;
   texto?: string;
   text?: string;
+  textPlain?: string;
+  snippet?: string;
   from?: string;
+  /** Estructura cruda de la API de Gmail (lo que reenvía n8n sin mapear nada). */
+  payload?: unknown;
   inmobiliaria_id?: string;
 }
 
@@ -45,11 +55,26 @@ export async function POST(request: Request) {
     return Response.json({ estado: 'error', error: 'Falta inmobiliaria_id' }, { status: 400 });
   }
 
-  const asunto = cuerpo.asunto ?? cuerpo.subject;
-  const html = cuerpo.html;
-  const texto = cuerpo.texto ?? cuerpo.text;
+  // Se acepta el correo en cualquiera de las formas que entregan los distintos
+  // triggers de n8n (Gmail simplificado, IMAP, o el payload crudo de la API de
+  // Gmail). Así el workflow puede reenviar el objeto tal cual, sin mapear nada.
+  const delPayload = cuerpo.payload ? cuerpoDesdePayloadGmail(cuerpo.payload) : { html: '', texto: '' };
+  const asunto = cuerpo.asunto ?? cuerpo.subject ?? asuntoDesdePayloadGmail(cuerpo.payload);
+  const html = cuerpo.html || cuerpo.textHtml || delPayload.html || undefined;
+  const texto = cuerpo.texto || cuerpo.text || cuerpo.textPlain || delPayload.texto || cuerpo.snippet || undefined;
+
   if (!html && !texto) {
-    return Response.json({ estado: 'error', error: 'Manda el html o el texto del correo.' }, { status: 400 });
+    return Response.json(
+      {
+        estado: 'error',
+        error:
+          'No encontré el cuerpo del correo. Manda `html`, `texto`, o el objeto `payload` crudo de Gmail ' +
+          '(en n8n basta con reenviar el item completo).',
+        // Ayuda a depurar el mapeo desde n8n sin exponer contenido sensible.
+        campos_recibidos: Object.keys(cuerpo),
+      },
+      { status: 400 }
+    );
   }
 
   const supabase = createAdminClient();

@@ -88,6 +88,50 @@ export function htmlATextoConEnlaces(html: string): string {
     .trim();
 }
 
+/**
+ * Saca el cuerpo de un mensaje con la forma que devuelve la API de Gmail
+ * (`payload` con `parts` anidadas y `body.data` en base64url).
+ *
+ * POR QUÉ: el trigger de Gmail de n8n entrega el correo con esta estructura y
+ * los nombres de campo cambian según la versión y la opción "Simplify".
+ * Adivinar el mapeo en el workflow es la causa más común de que el flujo no
+ * funcione, así que n8n reenvía el objeto COMPLETO y lo desciframos acá.
+ */
+export function cuerpoDesdePayloadGmail(payload: unknown): { html: string; texto: string } {
+  let html = '';
+  let texto = '';
+
+  const decodificar = (data: string): string => {
+    try {
+      return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    } catch {
+      return '';
+    }
+  };
+
+  const recorrer = (p: any, profundidad = 0) => {
+    if (!p || typeof p !== 'object' || profundidad > 12) return;
+    const mime: string = p.mimeType ?? '';
+    const data: string | undefined = p.body?.data;
+    if (data) {
+      if (mime.includes('html') && !html) html = decodificar(data);
+      else if (mime.includes('plain') && !texto) texto = decodificar(data);
+    }
+    for (const hijo of p.parts ?? []) recorrer(hijo, profundidad + 1);
+  };
+
+  recorrer(payload);
+  return { html, texto };
+}
+
+/** Asunto desde los headers de un payload de Gmail. */
+export function asuntoDesdePayloadGmail(payload: unknown): string | undefined {
+  const headers = (payload as any)?.headers;
+  if (!Array.isArray(headers)) return undefined;
+  const h = headers.find((x) => String(x?.name).toLowerCase() === 'subject');
+  return h?.value;
+}
+
 /** Quita parámetros de tracking (utm_*, etc.) para que el dedup por URL funcione. */
 export function limpiarUrl(url: string): string {
   try {

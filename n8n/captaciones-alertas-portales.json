@@ -41,7 +41,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ asunto: $json.subject, html: $json.html || $json.textHtml || '', texto: $json.text || $json.textPlain || '', from: $json.from }) }}",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
           "timeout": 300000,
           "response": {
@@ -56,7 +56,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [520, 300],
-      "notes": "n8n solo hace de cartero: manda el correo crudo. La extracción de los anuncios y la calificación viven en la app (versionadas y testeables). Timeout alto porque un digest con muchos anuncios tarda."
+      "notes": "n8n solo hace de cartero: reenvía el item COMPLETO tal cual (JSON.stringify($json)) sin mapear campos. El endpoint entiende las tres formas: Gmail simplificado, IMAP (textHtml/textPlain) y el payload crudo de la API de Gmail (que viene en base64 anidado). Así no hay que adivinar nombres de campo, que es donde más falla este tipo de flujo. Timeout alto porque un digest con muchos anuncios tarda."
     },
     {
       "parameters": {
