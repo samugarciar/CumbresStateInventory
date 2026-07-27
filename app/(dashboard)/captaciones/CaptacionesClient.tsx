@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   agregarProspecto, aprobarContacto, rechazarProspecto,
-  cambiarEstadoProspecto, registrarSeguimiento, type EstadoProspecto,
+  cambiarEstadoProspecto, registrarSeguimiento, guardarTelefono, type EstadoProspecto,
 } from '@/app/actions/captaciones';
 
 export interface Prospecto {
@@ -83,6 +83,7 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [mensajes, setMensajes] = useState<Record<string, string>>({});
   const [procesando, setProcesando] = useState<string | null>(null);
+  const [telefonos, setTelefonos] = useState<Record<string, string>>({});
 
   const mensajeDe = (p: Prospecto) => mensajes[p.id] ?? p.mensaje_borrador ?? '';
 
@@ -109,6 +110,16 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
     if (!mensaje) { alert('El mensaje no puede quedar vacío.'); return; }
     setProcesando(p.id);
     const r = await aprobarContacto({ prospecto_id: p.id, mensaje_final: mensaje });
+    setProcesando(null);
+    if (!r.success) { alert(r.error); return; }
+    router.refresh();
+  };
+
+  const anadirTelefono = async (p: Prospecto) => {
+    const tel = (telefonos[p.id] ?? '').trim();
+    if (!tel) return;
+    setProcesando(p.id);
+    const r = await guardarTelefono({ prospecto_id: p.id, telefono: tel });
     setProcesando(null);
     if (!r.success) { alert(r.error); return; }
     router.refresh();
@@ -269,12 +280,30 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
                     <Link2 size={12} /> ver anuncio <ExternalLink size={10} />
                   </a>
                 )}
-                {!p.contacto_telefono && !p.contacto_perfil && (
-                  <span style={styles.sinContacto}>
-                    <AlertTriangle size={12} /> sin datos de contacto — revísalo a mano
-                  </span>
-                )}
               </div>
+
+              {/* En Mercado Libre el número está detrás de un reCAPTCHA: no se
+                  puede extraer automáticamente. Se abre el anuncio, se revela
+                  con un clic y se pega aquí. */}
+              {!p.contacto_telefono && (
+                <div style={styles.telefonoFila}>
+                  <span style={styles.telefonoHint}>
+                    <AlertTriangle size={12} /> Sin teléfono. Ábrelo en el anuncio (“Ver teléfono”) y pégalo aquí:
+                  </span>
+                  <input
+                    className="form-input"
+                    style={styles.telefonoInput}
+                    placeholder="300 000 0000"
+                    value={telefonos[p.id] ?? ''}
+                    onChange={(e) => setTelefonos({ ...telefonos, [p.id]: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') anadirTelefono(p); }}
+                    disabled={ocupado}
+                  />
+                  <button className="btn btn-secondary" style={styles.btn} onClick={() => anadirTelefono(p)} disabled={ocupado}>
+                    <Phone size={13} /> Guardar
+                  </button>
+                </div>
+              )}
 
               <textarea
                 className="form-input"
@@ -443,6 +472,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   link: { color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' },
   sinContacto: { color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 },
+  telefonoFila: {
+    display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap',
+    padding: '0.5rem 0.65rem', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    border: '1px dashed rgba(245, 158, 11, 0.4)',
+  },
+  telefonoHint: { fontSize: '0.74rem', color: '#b45309', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
+  telefonoInput: { width: '150px', fontSize: '0.82rem', padding: '0.35rem 0.55rem' },
   mensajeArea: { width: '100%', fontSize: '0.83rem', padding: '0.55rem 0.7rem', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 },
   acciones: { display: 'flex', gap: '0.45rem', flexWrap: 'wrap' },
   nota: { fontSize: '0.7rem', color: 'var(--text-muted)' },

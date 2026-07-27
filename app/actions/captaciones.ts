@@ -134,6 +134,38 @@ export async function aprobarContacto(datos: { prospecto_id: string; mensaje_fin
   return { success: true as const, message: 'Marcado como contactado. Seguimiento programado.' };
 }
 
+/**
+ * Guarda el teléfono del propietario a mano.
+ *
+ * Por qué existe: en Mercado Libre el número está detrás de un reCAPTCHA, así
+ * que NO se puede extraer automáticamente (ni se intenta). El asesor lo revela
+ * con un clic en el anuncio y lo pega aquí; con eso el prospecto pasa a canal
+ * whatsapp y queda listo para contactar desde la bandeja.
+ */
+export async function guardarTelefono(datos: { prospecto_id: string; telefono: string }) {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden editar prospectos.' };
+
+  const digitos = (datos.telefono || '').replace(/\D/g, '');
+  if (digitos.length < 7) {
+    return { success: false as const, error: 'Ese número no parece válido.' };
+  }
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('captacion_prospectos')
+    .update({ contacto_telefono: digitos, canal: 'whatsapp', updated_at: new Date().toISOString() })
+    .eq('id', datos.prospecto_id)
+    .eq('inmobiliaria_id', user.profile.inmobiliaria_id);
+
+  if (error) {
+    console.error('[Captaciones] Error guardando el teléfono:', error.message);
+    return { success: false as const, error: 'No se pudo guardar el teléfono.' };
+  }
+  revalidatePath('/captaciones');
+  return { success: true as const, message: 'Teléfono guardado. Ya puedes abrir WhatsApp.' };
+}
+
 /** Descarta un prospecto (no se contacta). */
 export async function rechazarProspecto(datos: { prospecto_id: string; motivo?: string }) {
   const user = await requireAdmin();
