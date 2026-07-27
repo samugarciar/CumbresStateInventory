@@ -31,8 +31,12 @@ export default async function CaptacionesPage() {
 
   const supabase = await createClient();
 
-  const [{ data: porAprobar }, { data: enSeguimiento }, { count: captados }, { count: descartados }] =
-    await Promise.all([
+  const [
+    { data: porAprobar, error: errPorAprobar },
+    { data: enSeguimiento, error: errSeguimiento },
+    { count: captados },
+    { count: descartados },
+  ] = await Promise.all([
       supabase
         .from('captacion_prospectos')
         .select(CAMPOS)
@@ -56,6 +60,14 @@ export default async function CaptacionesPage() {
         .eq('estado', 'descartado'),
     ]);
 
+  // Un error de consulta NO puede parecerse a "no hay prospectos": se propaga a
+  // la UI. (Pasó de verdad: faltaba la columna fecha_contacto y la bandeja se
+  // veía vacía teniendo prospectos guardados.)
+  const errorCarga = errPorAprobar?.message ?? errSeguimiento?.message ?? null;
+  if (errorCarga) {
+    console.error('[Captaciones] Error cargando la bandeja:', errorCarga);
+  }
+
   return (
     <CaptacionesClient
       porAprobar={porAprobar ?? []}
@@ -63,6 +75,7 @@ export default async function CaptacionesPage() {
       captados={captados ?? 0}
       descartados={descartados ?? 0}
       hoy={hoyBogota()}
+      errorCarga={errorCarga}
     />
   );
 }

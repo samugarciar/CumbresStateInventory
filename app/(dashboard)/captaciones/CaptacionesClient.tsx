@@ -45,6 +45,8 @@ interface Props {
   captados: number;
   descartados: number;
   hoy: string;
+  /** Mensaje si la consulta falló: sin esto, un error se ve igual que "no hay prospectos". */
+  errorCarga?: string | null;
 }
 
 /**
@@ -72,7 +74,7 @@ const ETIQUETA_ESTADO: Record<string, string> = {
   descartado: 'Descartado',
 };
 
-export default function CaptacionesClient({ porAprobar, enSeguimiento, captados, descartados, hoy }: Props) {
+export default function CaptacionesClient({ porAprobar, enSeguimiento, captados, descartados, hoy, errorCarga }: Props) {
   const router = useRouter();
   const [url, setUrl] = useState('');
   const [texto, setTexto] = useState('');
@@ -150,6 +152,16 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
           </p>
         </div>
       </div>
+
+      {errorCarga && (
+        <div className="glass-card" style={styles.errorBanner}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <span>
+            <strong>No se pudieron cargar los prospectos.</strong> La bandeja puede verse vacía aunque haya
+            prospectos guardados. Detalle: <code>{errorCarga}</code>
+          </span>
+        </div>
+      )}
 
       {/* ============ Agregar anuncio ============ */}
       <div className="glass-card" style={styles.card}>
@@ -395,6 +407,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   seccionTitulo: { fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', margin: '1.5rem 0 0.75rem' },
   vacio: { padding: '1.5rem', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' },
+  errorBanner: {
+    display: 'flex', gap: '0.5rem', alignItems: 'flex-start', padding: '0.85rem 1rem', marginBottom: '1rem',
+    fontSize: '0.82rem', color: '#b91c1c', border: '1px solid rgba(239, 68, 68, 0.35)',
+    backgroundColor: 'rgba(239, 68, 68, 0.07)', lineHeight: 1.5,
+  },
   prospecto: { padding: '1rem 1.15rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.85rem' },
   pHeader: { display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flexWrap: 'wrap' },
   pTitulo: { fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' },
