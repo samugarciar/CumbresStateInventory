@@ -117,6 +117,9 @@ export async function correrCaptacion(params: {
       l.tipo_inmueble ? `Tipo declarado por la fuente: ${l.tipo_inmueble}` : null,
       l.tipo_transaccion ? `Operación declarada por la fuente: ${l.tipo_transaccion}` : null,
       l.contacto_nombre ? `Publica: ${l.contacto_nombre}` : null,
+      l.fuente_marca_dueno_directo === true
+        ? 'CLASIFICACIÓN DE LA PROPIA PLATAFORMA: este anuncio aparece bajo su filtro oficial de "dueño directo" (lo publicó el propietario, no una inmobiliaria).'
+        : null,
       Object.keys(l.atributos).length ? `Atributos: ${JSON.stringify(l.atributos)}` : null,
       `Fuente: ${l.fuente}`,
     ]

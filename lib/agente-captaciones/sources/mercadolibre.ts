@@ -1,15 +1,21 @@
-// Fuente Mercado Libre — ENRIQUECEDOR (no buscador).
+// Fuente Mercado Libre — ENRIQUECEDOR de descripción.
 //
-// ⚠️ IMPORTANTE: Mercado Libre CERRÓ la búsqueda pública. `GET /sites/{site}/search`
-// devuelve 403 forbidden en todas sus variantes (incluso filtrando por el
-// seller_id propio) pese a token OAuth válido y scopes correctos — política de
-// ML desde ~abril 2025, verificado en vivo el 22/jul/2026. Por eso este módulo
-// NO descubre listings: el descubrimiento se hace por navegador supervisado o
-// intake asistido (pegar URL).
+// ⚠️ QUÉ PERMITE HOY LA API DE ML (verificado en vivo el 27/jul/2026 con token
+// válido y scopes read + offline_access):
 //
-// Lo que SÍ sigue abierto y usamos aquí: consultar un ítem por id
-// (`/items/{id}`, `/items?ids=`), que devuelve datos oficiales y estructurados
-// (precio, ubicación, atributos, vendedor) — mucho mejor que leer el HTML.
+//   GET /users/me ................................. 200  (el token sirve)
+//   GET /sites/MCO/search ......................... 403  búsqueda pública CERRADA
+//   GET /items/{id}  con id INEXISTENTE ........... 404  ← engaña: el 404 se
+//                                                   evalúa ANTES del permiso
+//   GET /items/{id}  con id REAL de otro vendedor .. 403  access_denied
+//   GET /items?ids={id}  (multiget) ................ 200 con {"code":403} adentro
+//   GET /items/{id}/description ................... 200  ✅ SÍ funciona
+//
+// O sea: ML bloquea los METADATOS de publicaciones ajenas, pero entrega su
+// DESCRIPCIÓN. Por eso este módulo ya no intenta traer precio/ubicación/
+// atributos por API (daría 403 siempre): esos datos los aporta quien descubre
+// el anuncio (navegador supervisado o correo de alerta), y aquí solo sumamos la
+// descripción — que es justo donde viven las señales de "dueño directo".
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { obtenerAccessTokenValido } from '../mercadolibre/oauth';
@@ -50,48 +56,25 @@ function numeroDe(v: unknown): number | null {
 }
 
 /**
- * Trae un ítem de Mercado Libre por id y lo mapea a ListingCrudo.
- * La descripción va en un endpoint aparte y es best-effort (si falla, se omite).
+ * Trae la DESCRIPCIÓN oficial de una publicación de Mercado Libre.
+ * Devuelve null si no se puede (sin conexión de ML, o si algún día cierran
+ * también este endpoint): es best-effort, nunca debe tumbar la captación.
+ *
+ * No intenta traer precio/ubicación/atributos: `GET /items/{id}` responde 403
+ * para publicaciones de otros vendedores (ver el bloque de arriba).
  */
-export async function enriquecerItem(
+export async function obtenerDescripcion(
   supabaseAdmin: SupabaseClient,
   inmobiliariaId: string,
   itemId: string
-): Promise<ListingCrudo> {
-  const token = await obtenerAccessTokenValido(supabaseAdmin, inmobiliariaId);
-  const item = await get(`${API}/items/${itemId}`, token);
-
-  let descripcion = '';
+): Promise<string | null> {
   try {
+    const token = await obtenerAccessTokenValido(supabaseAdmin, inmobiliariaId);
     const d = await get(`${API}/items/${itemId}/description`, token);
-    descripcion = d?.plain_text ?? d?.text ?? '';
-  } catch {
-    // sin descripción: el grafo califica igual con título + atributos
+    const texto = (d?.plain_text ?? d?.text ?? '').trim();
+    return texto || null;
+  } catch (e) {
+    console.warn('[Captaciones/ML] No se pudo traer la descripción de', itemId, e);
+    return null;
   }
-
-  const attrs: Record<string, string> = {};
-  for (const a of item?.attributes ?? []) {
-    if (a?.id) attrs[a.id] = a?.value_name ?? a?.value_id ?? '';
-  }
-
-  const loc = item?.location ?? item?.seller_address ?? {};
-  const listing = listingVacio('mercadolibre');
-  listing.fuente_id = String(item?.id ?? itemId);
-  listing.url = item?.permalink ?? null;
-  listing.titulo = item?.title ?? '';
-  listing.descripcion = descripcion;
-  listing.precio = numeroDe(item?.price);
-  listing.moneda = item?.currency_id ?? null;
-  listing.ciudad = loc?.city?.name ?? loc?.city ?? null;
-  listing.barrio = loc?.neighborhood?.name ?? loc?.neighborhood ?? null;
-  listing.direccion = loc?.address_line ?? null;
-  listing.area_m2 = numeroDe(attrs.COVERED_AREA ?? attrs.TOTAL_AREA);
-  listing.habitaciones = numeroDe(attrs.BEDROOMS ?? attrs.ROOMS);
-  listing.banos = numeroDe(attrs.FULL_BATHROOMS ?? attrs.BATHROOMS);
-  listing.tipo_inmueble = attrs.PROPERTY_TYPE ?? null;
-  listing.tipo_transaccion = attrs.OPERATION ?? null;
-  listing.atributos = attrs;
-  listing.crudo = item;
-
-  return listing;
 }

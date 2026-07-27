@@ -17,10 +17,8 @@
 
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { correrCaptacion } from '@/lib/agente-captaciones/graph';
-import { registrarUso } from '@/lib/agente-captaciones/uso';
-import { listingVacio, type FuenteCaptacion, type ListingCrudo } from '@/lib/agente-captaciones/tipos';
-import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from '@/lib/agente-captaciones/sources/mercadolibre';
+import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
+import type { FuenteCaptacion } from '@/lib/agente-captaciones/tipos';
 
 export const maxDuration = 300;
 
@@ -40,13 +38,6 @@ interface Cuerpo {
   contacto_telefono?: string;
   contacto_perfil?: string;
   inmobiliaria_id?: string;
-}
-
-function inferirFuente(url: string | undefined): FuenteCaptacion {
-  if (!url) return 'otro';
-  if (esUrlMercadoLibre(url)) return 'mercadolibre';
-  if (/facebook\.com|fb\.com|fb\.me/i.test(url)) return 'facebook';
-  return 'otro';
 }
 
 export async function POST(request: Request) {
@@ -99,45 +90,30 @@ export async function POST(request: Request) {
     return Response.json({ estado: 'pausado', error: 'El agente de captaciones está pausado.' }, { status: 409 });
   }
 
-  // --- construir el ListingCrudo ---
-  const fuente = cuerpo.fuente ?? inferirFuente(url);
-  let listing: ListingCrudo = listingVacio(fuente);
-  let enriquecido = false;
-
-  if (fuente === 'mercadolibre' && url) {
-    const itemId = extraerItemId(url);
-    if (itemId) {
-      try {
-        listing = await enriquecerItem(supabase, inmobiliariaId, itemId);
-        enriquecido = true;
-      } catch (e) {
-        // Sin enriquecer se sigue con lo que haya mandado el usuario: es mejor
-        // registrar el prospecto con datos parciales que perder el anuncio.
-        console.warn('[Captaciones] No se pudo enriquecer con la API de ML:', e);
-      }
-    }
-  }
-
-  // Lo que venga explícito en el body pisa a lo enriquecido (el humano manda).
-  listing.url = url ?? listing.url;
-  listing.titulo = cuerpo.titulo ?? listing.titulo;
-  listing.descripcion = cuerpo.descripcion ?? texto ?? listing.descripcion;
-  listing.precio = cuerpo.precio ?? listing.precio;
-  listing.ciudad = cuerpo.ciudad ?? listing.ciudad;
-  listing.barrio = cuerpo.barrio ?? listing.barrio;
-  listing.area_m2 = cuerpo.area_m2 ?? listing.area_m2;
-  listing.habitaciones = cuerpo.habitaciones ?? listing.habitaciones;
-  listing.banos = cuerpo.banos ?? listing.banos;
-  listing.contacto_nombre = cuerpo.contacto_nombre ?? listing.contacto_nombre;
-  listing.contacto_telefono = cuerpo.contacto_telefono ?? listing.contacto_telefono;
-  listing.contacto_perfil = cuerpo.contacto_perfil ?? listing.contacto_perfil;
-  if (!listing.fuente_id && url) listing.fuente_id = url; // dedup por URL si no hay id propio
-
-  // --- correr el grafo ---
+  // Misma tubería que el intake por correo y por lote (una sola implementación).
   try {
-    const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
-    await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
-    return Response.json({ estado: 'ok', enriquecido, ...salida });
+    const resumen = await procesarAnuncios(supabase, inmobiliariaId, [
+      {
+        url: url ?? null,
+        fuente: cuerpo.fuente,
+        titulo: cuerpo.titulo ?? (texto ? texto.slice(0, 120) : (url ?? '')),
+        descripcion: cuerpo.descripcion ?? texto ?? null,
+        precio: cuerpo.precio ?? null,
+        ciudad: cuerpo.ciudad ?? null,
+        barrio: cuerpo.barrio ?? null,
+        area_m2: cuerpo.area_m2 ?? null,
+        habitaciones: cuerpo.habitaciones ?? null,
+        banos: cuerpo.banos ?? null,
+        contacto_nombre: cuerpo.contacto_nombre ?? null,
+        contacto_telefono: cuerpo.contacto_telefono ?? null,
+        contacto_perfil: cuerpo.contacto_perfil ?? null,
+      },
+    ]);
+    const item = resumen.detalle[0];
+    if (!item || item.resultado === 'error') {
+      return Response.json({ estado: 'error', error: item?.motivo ?? 'No se pudo procesar el anuncio.' }, { status: 422 });
+    }
+    return Response.json({ estado: 'ok', ...item });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[Captaciones] Error corriendo el grafo:', msg);

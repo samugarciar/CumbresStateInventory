@@ -26,6 +26,14 @@ export interface ListingCrudo {
   contacto_telefono: string | null;
   contacto_perfil: string | null; // perfil de FB u otro
   atributos: Record<string, string>;
+  /**
+   * true cuando la PLATAFORMA de origen ya clasificó el anuncio como de dueño
+   * directo (p. ej. el filtro oficial "dueño directo" de Mercado Libre). Es
+   * evidencia mucho más fuerte que cualquier heurística sobre el texto, y sin
+   * pasarla el calificador marca como dudosos anuncios que la fuente ya
+   * certificó.
+   */
+  fuente_marca_dueno_directo: boolean | null;
   crudo: unknown; // payload original, por si se necesita más
 }
 
@@ -50,6 +58,7 @@ export function listingVacio(fuente: FuenteCaptacion): ListingCrudo {
     contacto_telefono: null,
     contacto_perfil: null,
     atributos: {},
+    fuente_marca_dueno_directo: null,
     crudo: null,
   };
 }

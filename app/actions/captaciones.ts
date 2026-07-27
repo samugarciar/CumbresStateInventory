@@ -4,11 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { revalidatePath } from 'next/cache';
 
-import { correrCaptacion } from '@/lib/agente-captaciones/graph';
-import { listingVacio, type FuenteCaptacion, type ListingCrudo } from '@/lib/agente-captaciones/tipos';
-import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from '@/lib/agente-captaciones/sources/mercadolibre';
+import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
 import { DIAS_PRIMER_SEGUIMIENTO } from '@/lib/agente-captaciones/config';
-import { registrarUso } from '@/lib/agente-captaciones/uso';
 
 // Estados del pipeline a los que se puede mover un prospecto desde la bandeja.
 export type EstadoProspecto =
@@ -32,12 +29,6 @@ function fechaBogotaMasDias(dias: number): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(
     new Date(Date.now() + dias * 864e5)
   );
-}
-
-function inferirFuente(url: string): FuenteCaptacion {
-  if (esUrlMercadoLibre(url)) return 'mercadolibre';
-  if (/facebook\.com|fb\.com|fb\.me/i.test(url)) return 'facebook';
-  return 'otro';
 }
 
 /**
@@ -77,39 +68,30 @@ export async function agregarProspecto(datos: {
     return { success: false as const, error: 'El agente de captaciones está pausado. Actívalo en Agentes.' };
   }
 
-  const fuente: FuenteCaptacion = url ? inferirFuente(url) : 'otro';
-  let listing: ListingCrudo = listingVacio(fuente);
-
-  // Mercado Libre: enriquecer con la API oficial (/items/{id}). Su búsqueda
-  // pública está cerrada (403), pero la consulta por id sigue disponible.
-  if (fuente === 'mercadolibre' && url) {
-    const itemId = extraerItemId(url);
-    if (itemId) {
-      try {
-        listing = await enriquecerItem(supabase, inmobiliariaId, itemId);
-      } catch (e) {
-        console.warn('[Captaciones] No se pudo enriquecer con la API de ML:', e);
-      }
-    }
-  }
-
-  listing.url = url ?? listing.url;
-  if (texto) listing.descripcion = `${listing.descripcion}\n${texto}`.trim();
-  if (!listing.titulo && texto) listing.titulo = texto.slice(0, 120);
-  listing.contacto_telefono = datos.contacto_telefono?.trim() || listing.contacto_telefono;
-  listing.contacto_nombre = datos.contacto_nombre?.trim() || listing.contacto_nombre;
-  if (!listing.fuente_id && url) listing.fuente_id = url;
-
+  // Misma tubería que el intake por correo y por lote (enriquecer + calificar +
+  // dedupe + redactar), para no tener tres implementaciones distintas.
   try {
-    const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
-    await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
+    const resumen = await procesarAnuncios(supabase, inmobiliariaId, [
+      {
+        url: url ?? null,
+        titulo: texto ? texto.slice(0, 120) : (url ?? ''),
+        descripcion: texto ?? null,
+        contacto_telefono: datos.contacto_telefono?.trim() || null,
+        contacto_nombre: datos.contacto_nombre?.trim() || null,
+      },
+    ]);
     revalidatePath('/captaciones');
+
+    const item = resumen.detalle[0];
     const mensajes: Record<string, string> = {
       creado: 'Prospecto calificado y listo para aprobar.',
       duplicado: 'Ese anuncio ya estaba en la bandeja.',
-      descartado: `Descartado: ${salida.motivo ?? 'no cumple el criterio de captación.'}`,
+      descartado: `Descartado: ${item?.motivo ?? 'no cumple el criterio de captación.'}`,
     };
-    return { success: true as const, resultado: salida.resultado, message: mensajes[salida.resultado] };
+    if (!item || item.resultado === 'error') {
+      return { success: false as const, error: item?.motivo ?? 'No se pudo procesar el anuncio.' };
+    }
+    return { success: true as const, resultado: item.resultado, message: mensajes[item.resultado] };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[Captaciones] Error agregando prospecto:', msg);

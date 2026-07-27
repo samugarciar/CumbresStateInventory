@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { correrCaptacion } from './graph';
 import { registrarUso } from './uso';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from './tipos';
-import { enriquecerItem, extraerItemId, esUrlMercadoLibre } from './sources/mercadolibre';
+import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre } from './sources/mercadolibre';
 
 // Cuántos anuncios se procesan a la vez. Cada uno son 2 llamadas al LLM: en
 // serie un lote grande no cabe en maxDuration, y todos a la vez arriesga
@@ -29,6 +29,11 @@ export interface AnuncioEntrante {
   contacto_telefono?: string | null;
   contacto_perfil?: string | null;
   fuente?: FuenteCaptacion;
+  /**
+   * true si el anuncio viene de un listado que la plataforma ya filtró por
+   * "dueño directo" (p. ej. .../directo/ en Mercado Libre). Ver ListingCrudo.
+   */
+  fuente_marca_dueno_directo?: boolean | null;
 }
 
 export interface ResumenLote {
@@ -61,17 +66,32 @@ export async function procesarAnuncios(
   const procesar = async (a: AnuncioEntrante) => {
     try {
       const fuente = a.fuente ?? inferirFuente(a.url);
-      let listing: ListingCrudo = listingVacio(fuente);
+      const listing: ListingCrudo = listingVacio(fuente);
 
-      // Mercado Libre: los datos oficiales le ganan a lo que se haya extraído.
+      // Sin contenido real no se puede calificar nada: calificar una ficha
+      // vacía siempre da "descartar", y peor aún, deja una fila 'descartado'
+      // que luego el dedup toma por vista y bloquea el reintento. Pasó de
+      // verdad: 11 anuncios reales de ML quedaron descartados porque el
+      // enriquecimiento falló y se procesaron con el título de relleno.
+      const tieneContenido = Boolean((a.titulo && a.titulo.trim().length > 3) || a.descripcion?.trim());
+      if (!tieneContenido) {
+        resumen.fallidos++;
+        resumen.detalle.push({
+          titulo: a.titulo || '(sin título)',
+          resultado: 'error',
+          prospecto_id: null,
+          motivo: 'El anuncio llegó sin título ni descripción utilizables; no se califica para no ensuciar el CRM.',
+        });
+        return;
+      }
+
+      // Mercado Libre: la API solo entrega la DESCRIPCIÓN de publicaciones
+      // ajenas (el resto da 403). Los datos estructurados los trae el caller.
       if (fuente === 'mercadolibre' && a.url) {
         const itemId = extraerItemId(a.url);
         if (itemId) {
-          try {
-            listing = await enriquecerItem(supabase, inmobiliariaId, itemId);
-          } catch (e) {
-            console.warn('[Captaciones] No se pudo enriquecer con ML:', e);
-          }
+          const desc = await obtenerDescripcion(supabase, inmobiliariaId, itemId);
+          if (desc) listing.descripcion = desc;
         }
       }
 
@@ -87,6 +107,7 @@ export async function procesarAnuncios(
       listing.contacto_nombre = listing.contacto_nombre ?? a.contacto_nombre ?? null;
       listing.contacto_telefono = listing.contacto_telefono ?? a.contacto_telefono ?? null;
       listing.contacto_perfil = listing.contacto_perfil ?? a.contacto_perfil ?? null;
+      listing.fuente_marca_dueno_directo = a.fuente_marca_dueno_directo ?? null;
       // La descripción es donde viven las señales de "dueño directo" (o de
       // agencia): se conserva completa, no se resume.
       if (a.descripcion) listing.descripcion = `${listing.descripcion}\n${a.descripcion}`.trim();
