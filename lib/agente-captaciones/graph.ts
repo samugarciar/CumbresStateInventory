@@ -261,14 +261,18 @@ export async function correrCaptacion(params: {
   // ---- ruteo ----
   /**
    * Solo entran a la bandeja los anuncios con probabilidad suficiente de ser de
-   * dueño directo. Se exige que el modelo lo afirme Y que el número lo respalde:
-   * si ambos no coinciden se descarta, porque contactar a una agencia creyendo
-   * que es el propietario es peor que dejar pasar un anuncio dudoso.
+   * dueño directo.
+   *
+   * El filtro mira SOLO la probabilidad, no el booleano. Exigir además
+   * `es_dueno_directo === true` metía una segunda compuerta que se contradecía
+   * con la primera: un anuncio sin descripción queda en ~0.5 (incertidumbre
+   * legítima) pero el modelo tendía a marcar el booleano en false, y así se
+   * descartaba todo lo capturado desde una lista aunque superara el umbral.
    */
   function pasaFiltroDueno(c: Calificacion | null): boolean {
     if (!c) return false;
     const p = typeof c.probabilidad_dueno_directo === 'number' ? c.probabilidad_dueno_directo : 0;
-    return c.es_dueno_directo === true && p >= UMBRAL_DUENO_DIRECTO;
+    return p >= UMBRAL_DUENO_DIRECTO;
   }
 
   function trasCalificar(estado: Estado): 'descartar' | 'seguir' {
