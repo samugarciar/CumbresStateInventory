@@ -22,7 +22,14 @@ export const ACEPTAR_TAMBIEN_VENTA = true;
 // probabilidad de ser de DUEÑO DIRECTO. Los que no llegan se guardan como
 // descartados (para trazabilidad y para no reprocesarlos), pero no se les
 // redacta mensaje ni aparecen en la cola de aprobación.
-export const UMBRAL_DUENO_DIRECTO = 0.5;
+//
+// POR QUÉ 0.35 Y NO 0.5: cuando un anuncio llega sin descripción —el caso
+// típico del modo lista de Facebook— el modelo no tiene con qué juzgar y se
+// queda alrededor de 0.4 por prudencia. Con el umbral en 0.5 se perdía
+// prácticamente todo lo capturado desde una lista (34 de 52 en una revisión
+// real), no por ser agencias sino por falta de evidencia. En 0.35 pasan los
+// "no sé" y se filtra lo que sí muestra señales de agencia (0.3 o menos).
+export const UMBRAL_DUENO_DIRECTO = 0.35;
 
 // Prioridad del canal de contacto según lo que exponga cada anuncio.
 export const CANAL_PRIORIDAD = ['whatsapp', 'telefono', 'messenger'] as const;
