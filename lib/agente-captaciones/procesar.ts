@@ -46,6 +46,10 @@ export interface ResumenLote {
     resultado: string;
     prospecto_id: string | null;
     motivo: string | null;
+    /** Veredicto del calificador, para poder mostrarlo al importar. */
+    es_dueno_directo?: boolean | null;
+    confianza?: number | null;
+    score?: number | null;
   }>;
 }
 
@@ -124,6 +128,9 @@ export async function procesarAnuncios(
         resultado: salida.resultado,
         prospecto_id: salida.prospecto_id,
         motivo: salida.motivo,
+        es_dueno_directo: salida.calificacion?.es_dueno_directo ?? null,
+        confianza: salida.calificacion?.confianza ?? null,
+        score: salida.calificacion?.score ?? null,
       });
     } catch (e) {
       resumen.fallidos++;

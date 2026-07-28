@@ -218,6 +218,9 @@ export async function correrCaptacion(params: {
       habitaciones: l.habitaciones,
       banos: l.banos,
       es_dueno_directo: c?.es_dueno_directo ?? null,
+      // Qué tan seguro está el modelo de la clasificación particular/agencia
+      // (distinto del score, que mide la calidad global del prospecto).
+      confianza_particular: c?.confianza ?? null,
       score: c?.score ?? null,
       motivos: c?.motivos ?? null,
       contacto_nombre: l.contacto_nombre,

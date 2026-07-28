@@ -30,11 +30,27 @@ de dejar un token dentro del marcador.
 | Dónde estás | Qué hace |
 |---|---|
 | **Una publicación** de Facebook Marketplace o Mercado Libre | Captura **esa**, con descripción y vendedor → modo preciso |
-| **Una lista de resultados** (búsqueda con filtros) | Captura las visibles (hasta 25): título, precio, habitaciones, m² → modo rápido |
+| **Una lista de resultados** | **Baja la página cargando más resultados**, y captura en tandas de 25 **sin repetir** lo ya enviado |
 
-Al hacer clic se abre una pestaña en `/captaciones/importar` con lo recolectado.
-Revisas y confirmas; el agente califica, descarta lo que no encaja y redacta el
-mensaje de los que sirven.
+Aparece un panel abajo a la derecha con lo que encontró y un botón para enviar.
+Al confirmar se abre `/captaciones/importar`; revisas y el agente califica,
+descarta lo que no encaja y redacta el mensaje de los que sirven — mostrándote
+**qué tan seguro está** de si es dueño directo o agencia.
+
+### Es iterativo: haz clic varias veces
+
+Cada anuncio enviado queda anotado en el `localStorage` del sitio. En la
+siguiente pasada se saltan los ya enviados, así que **hacer clic de nuevo avanza
+por el inventario** en vez de recapturar lo mismo:
+
+```
+clic 1 → "25 nuevos · quedan 18 para el siguiente clic"
+clic 2 → "18 nuevos · 25 ya enviados antes"
+clic 3 → "Nada nuevo por acá"   ← con botón para olvidar el historial
+```
+
+El servidor igual deduplica, pero sin esta memoria se gastaba LLM de más y la
+vista previa salía llena de repetidos.
 
 ### Cuál modo usar
 
@@ -50,7 +66,26 @@ mensaje de los que sirven.
 - **No es autónomo**: hay que abrir la página y hacer clic. No hay nada corriendo solo.
 - **No trae el teléfono**: en Mercado Libre está detrás de un reCAPTCHA y en
   Facebook no se expone. Se pega a mano en la bandeja.
-- **Tope de 25 anuncios** por clic en modo lista.
+- **Tope de 25 anuncios** por clic (el servidor también corta ahí).
+- **La ciudad de Facebook no es de fiar**: el `aria-label` trae la del vendedor o
+  la de la búsqueda, no siempre la del inmueble (hay anuncios titulados
+  *"¡EN BELLO!"* rotulados como Medellín). El calificador la contrasta con el
+  título y la descripción.
+- **Desde la lista no hay descripción**, y en Facebook el título engaña. Para
+  anuncios que importen, ábrelos y usa el modo preciso.
+
+## Detalles de implementación que costaron una prueba
+
+- **Detección de tarjeta**: buscar `li` o `.andes-card` funciona en Mercado Libre
+  pero **no en Facebook** (el padre del enlace viene sin texto): así se perdía un
+  tercio de los anuncios — 19 de 30 en una prueba real. Ahora se sube por el DOM
+  hasta el ancestro más pequeño que ya parezca tarjeta.
+- **Título y precio en Facebook** salen del `aria-label` del enlace, que viene
+  estructurado (`"Título, $ 1.300.000, Medellín, publicación 250426…"`). Parsear
+  el texto fallaba porque ahí el precio va **antes** del título, al revés que en
+  Mercado Libre.
+- **El envío va en un botón**, no automático: `window.open` solo funciona dentro
+  del gesto del usuario; tras el `await` del scroll el navegador lo bloquearía.
 
 ## Mantenimiento
 

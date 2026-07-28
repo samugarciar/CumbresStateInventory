@@ -86,6 +86,7 @@ export type ResultadoCaptacion = 'creado' | 'duplicado' | 'descartado';
 export interface SalidaCaptacion {
   resultado: ResultadoCaptacion;
   prospecto_id: string | null;
+  /** Incluye es_dueno_directo, confianza (0-1), score, motivos… */
   calificacion: Calificacion | null;
   mensaje_borrador: string | null;
   canal: string | null;

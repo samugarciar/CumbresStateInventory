@@ -18,7 +18,7 @@ function hoyBogota(): string {
 // las columnas (devuelve GenericStringError[]).
 const CAMPOS = `
   id, fuente, url, titulo, tipo_inmueble, tipo_transaccion, ciudad, barrio, precio, area_m2,
-  habitaciones, banos, es_dueno_directo, score, motivos, contacto_nombre, contacto_telefono,
+  habitaciones, banos, es_dueno_directo, confianza_particular, score, motivos, contacto_nombre, contacto_telefono,
   contacto_perfil, canal, mensaje_borrador, estado, proximo_seguimiento, n_seguimientos,
   fecha_contacto, created_at
 `;

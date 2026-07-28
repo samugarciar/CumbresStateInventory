@@ -12,7 +12,18 @@ interface Resultado {
   descartados: number;
   fallidos: number;
   recortados?: number;
-  detalle: Array<{ titulo: string; resultado: string; motivo: string | null }>;
+  detalle: Array<{
+    titulo: string;
+    resultado: string;
+    motivo: string | null;
+    es_dueno_directo?: boolean | null;
+    confianza?: number | null;
+    score?: number | null;
+  }>;
+}
+
+function pct(v: number | null | undefined): string | null {
+  return v == null ? null : `${Math.round(v * 100)}%`;
 }
 
 export default function ImportarClient() {
@@ -105,6 +116,16 @@ export default function ImportarClient() {
                 <div style={styles.itemTitulo}>
                   {d.resultado === 'creado' ? '✅' : d.resultado === 'duplicado' ? '↩️' : '🚫'} {d.titulo}
                 </div>
+                {/* El veredicto del calificador: por qué decidió lo que decidió */}
+                {d.es_dueno_directo != null && (
+                  <div style={styles.itemMeta}>
+                    <span style={d.es_dueno_directo ? styles.ok : styles.warn}>
+                      {d.es_dueno_directo ? 'Dueño directo' : 'Posible agencia'}
+                      {pct(d.confianza) ? ` · ${pct(d.confianza)} de confianza` : ''}
+                    </span>
+                    {pct(d.score) && <span>prospecto {pct(d.score)}</span>}
+                  </div>
+                )}
                 {d.motivo && <div style={styles.itemMeta}>{d.motivo}</div>}
               </div>
             ))}
