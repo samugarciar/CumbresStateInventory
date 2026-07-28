@@ -208,6 +208,37 @@ export async function guardarTelefono(datos: { prospecto_id: string; telefono: s
   return { success: true as const, message: 'Teléfono guardado. Ya puedes abrir WhatsApp.' };
 }
 
+/**
+ * Marca que el propietario NO quiere ser contactado (Habeas Data, Ley 1581).
+ *
+ * Además de descartarlo, deja `opt_out` en true: el nodo de deduplicación
+ * encuentra esa fila por teléfono o por URL en futuras corridas, así que el
+ * mismo propietario no vuelve a entrar a la bandeja aunque republique.
+ */
+export async function marcarNoContactar(datos: { prospecto_id: string; motivo?: string }) {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden hacer esto.' };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('captacion_prospectos')
+    .update({
+      opt_out: true,
+      estado: 'descartado',
+      notas: datos.motivo?.trim() || 'El propietario pidió no ser contactado.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', datos.prospecto_id)
+    .eq('inmobiliaria_id', user.profile.inmobiliaria_id);
+
+  if (error) {
+    console.error('[Captaciones] Error marcando opt-out:', error.message);
+    return { success: false as const, error: 'No se pudo registrar la solicitud.' };
+  }
+  revalidatePath('/captaciones');
+  return { success: true as const, message: 'Registrado: no se volverá a contactar a este propietario.' };
+}
+
 /** Descarta un prospecto (no se contacta). */
 export async function rechazarProspecto(datos: { prospecto_id: string; motivo?: string }) {
   const user = await requireAdmin();

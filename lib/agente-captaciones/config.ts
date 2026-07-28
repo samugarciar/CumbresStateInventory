@@ -15,8 +15,9 @@ export const MODELO_REDACTAR = process.env.CAPTACIONES_MODELO_REDACTAR || 'gpt-4
 // bajo, no se descartan.
 export const ZONAS_OBJETIVO = ['bello', 'robledo'];
 export const TIPO_OBJETIVO = 'apartamento';
-export const TRANSACCION_OBJETIVO = 'arriendo';
-export const ACEPTAR_TAMBIEN_VENTA = true;
+// La prioridad arriendo > venta vive en el prompt del calificador (prompt.ts),
+// que es donde se aplica de verdad: tenerla además como constante aquí era
+// duplicar el criterio en dos sitios que podían desincronizarse.
 
 // Umbral de entrada a la bandeja: solo pasan los anuncios con al menos esta
 // probabilidad de ser de DUEÑO DIRECTO. Los que no llegan se guardan como
@@ -30,9 +31,6 @@ export const ACEPTAR_TAMBIEN_VENTA = true;
 // real), no por ser agencias sino por falta de evidencia. En 0.35 pasan los
 // "no sé" y se filtra lo que sí muestra señales de agencia (0.3 o menos).
 export const UMBRAL_DUENO_DIRECTO = 0.35;
-
-// Prioridad del canal de contacto según lo que exponga cada anuncio.
-export const CANAL_PRIORIDAD = ['whatsapp', 'telefono', 'messenger'] as const;
 
 // Días hasta el primer seguimiento tras contactar.
 export const DIAS_PRIMER_SEGUIMIENTO = 3;

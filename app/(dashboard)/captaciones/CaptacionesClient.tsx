@@ -4,11 +4,12 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Handshake, Plus, Loader2, Check, X, MessageCircle, Phone, MapPin, Link2,
-  UserCheck, AlertTriangle, Clock, ExternalLink, Send,
+  UserCheck, AlertTriangle, Clock, ExternalLink, Send, Ban,
 } from 'lucide-react';
 import {
   agregarProspecto, aprobarContacto, rechazarProspecto,
-  cambiarEstadoProspecto, registrarSeguimiento, guardarTelefono, type EstadoProspecto,
+  cambiarEstadoProspecto, registrarSeguimiento, guardarTelefono, marcarNoContactar,
+  type EstadoProspecto,
 } from '@/app/actions/captaciones';
 
 export interface Prospecto {
@@ -130,6 +131,15 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
     if (!confirm('¿Descartar este prospecto? No se contactará.')) return;
     setProcesando(p.id);
     const r = await rechazarProspecto({ prospecto_id: p.id });
+    setProcesando(null);
+    if (!r.success) { alert(r.error); return; }
+    router.refresh();
+  };
+
+  const noContactar = async (p: Prospecto) => {
+    if (!confirm('¿El propietario pidió no ser contactado?\n\nQuedará excluido para siempre: no volverá a entrar a la bandeja aunque publique otro inmueble.')) return;
+    setProcesando(p.id);
+    const r = await marcarNoContactar({ prospecto_id: p.id });
     setProcesando(null);
     if (!r.success) { alert(r.error); return; }
     router.refresh();
@@ -345,6 +355,17 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
                 </button>
                 <button className="btn btn-danger" style={styles.btn} onClick={() => rechazar(p)} disabled={ocupado}>
                   <X size={14} /> Descartar
+                </button>
+                {/* Habeas Data: distinto de descartar. Excluye al propietario
+                    para siempre, aunque vuelva a publicar. */}
+                <button
+                  className="btn btn-secondary"
+                  style={styles.btn}
+                  onClick={() => noContactar(p)}
+                  disabled={ocupado}
+                  title="El propietario pidió no ser contactado (queda excluido para siempre)"
+                >
+                  <Ban size={14} /> No contactar
                 </button>
               </div>
               <div style={styles.nota}>

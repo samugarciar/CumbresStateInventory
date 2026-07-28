@@ -81,6 +81,8 @@ const EstadoCaptacion = Annotation.Root({
   calificacion: Annotation<Calificacion | null>({ reducer: (_a, b) => b, default: () => null }),
   canal: Annotation<string>({ reducer: (_a, b) => b, default: () => 'revisar_manual' }),
   duplicadoDe: Annotation<string | null>({ reducer: (_a, b) => b, default: () => null }),
+  /** El propietario pidió no ser contactado (Habeas Data). */
+  optOut: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
   mensaje: Annotation<string>({ reducer: (_a, b) => b, default: () => '' }),
   prospectoId: Annotation<string | null>({ reducer: (_a, b) => b, default: () => null }),
   resultado: Annotation<SalidaCaptacion['resultado'] | null>({ reducer: (_a, b) => b, default: () => null }),
@@ -120,7 +122,6 @@ export async function correrCaptacion(params: {
       l.fuente_marca_dueno_directo === true
         ? 'CLASIFICACIÓN DE LA PROPIA PLATAFORMA: este anuncio aparece bajo su filtro oficial de "dueño directo" (lo publicó el propietario, no una inmobiliaria).'
         : null,
-      Object.keys(l.atributos).length ? `Atributos: ${JSON.stringify(l.atributos)}` : null,
       `Fuente: ${l.fuente}`,
     ]
       .filter(Boolean)
@@ -140,22 +141,24 @@ export async function correrCaptacion(params: {
     if (l.fuente_id) {
       const { data } = await supabase
         .from('captacion_prospectos')
-        .select('id')
+        .select('id, opt_out')
         .eq('inmobiliaria_id', inmobiliariaId)
         .eq('fuente', l.fuente)
         .eq('fuente_id', l.fuente_id)
         .maybeSingle();
-      if (data?.id) return { duplicadoDe: data.id };
+      if (data?.id) return { duplicadoDe: data.id, optOut: Boolean(data.opt_out) };
     }
-    // 2) mismo teléfono (el mismo dueño republicando en otra fuente)
+    // 2) mismo teléfono (el mismo dueño republicando en otra fuente). Es lo que
+    // hace efectivo el opt-out: si pidió no ser contactado, no vuelve a entrar
+    // aunque publique otro inmueble.
     if (l.contacto_telefono) {
       const { data } = await supabase
         .from('captacion_prospectos')
-        .select('id')
+        .select('id, opt_out')
         .eq('inmobiliaria_id', inmobiliariaId)
         .eq('contacto_telefono', l.contacto_telefono)
         .maybeSingle();
-      if (data?.id) return { duplicadoDe: data.id };
+      if (data?.id) return { duplicadoDe: data.id, optOut: Boolean(data.opt_out) };
     }
     return { duplicadoDe: null };
   }
@@ -315,7 +318,9 @@ export async function correrCaptacion(params: {
     canal: final.canal,
     motivo:
       final.resultado === 'duplicado'
-        ? `Ya existe el prospecto ${final.duplicadoDe}`
+        ? final.optOut
+          ? 'Este propietario pidió no ser contactado; no vuelve a la bandeja.'
+          : `Ya existe el prospecto ${final.duplicadoDe}`
         : final.calificacion?.motivos ?? null,
     uso: final.uso,
   };

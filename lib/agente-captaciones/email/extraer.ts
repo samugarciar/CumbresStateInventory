@@ -41,7 +41,7 @@ const EsquemaCorreo = z.object({
   ),
 });
 
-export type AnuncioDeCorreo = z.infer<typeof EsquemaCorreo>['anuncios'][number];
+type AnuncioDeCorreo = z.infer<typeof EsquemaCorreo>['anuncios'][number];
 
 const PROMPT = `Extraes anuncios de inmuebles de los correos de alerta que envían los portales inmobiliarios colombianos (Mercado Libre, FincaRaíz, Metrocuadrado, Ciencuadras, Properati, OLX) cuando hay publicaciones nuevas para una búsqueda guardada.
 
@@ -66,7 +66,7 @@ Instrucciones:
  * Normaliza el cuerpo del correo a texto plano CONSERVANDO los enlaces, para
  * que el modelo pueda asociar cada anuncio con su URL.
  */
-export function htmlATextoConEnlaces(html: string): string {
+function htmlATextoConEnlaces(html: string): string {
   return html
     // <a href="X">texto</a>  →  texto [X]
     .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, txt) => {
@@ -133,7 +133,7 @@ export function asuntoDesdePayloadGmail(payload: unknown): string | undefined {
 }
 
 /** Quita parámetros de tracking (utm_*, etc.) para que el dedup por URL funcione. */
-export function limpiarUrl(url: string): string {
+function limpiarUrl(url: string): string {
   try {
     const u = new URL(url);
     for (const p of [...u.searchParams.keys()]) {
@@ -145,7 +145,7 @@ export function limpiarUrl(url: string): string {
   }
 }
 
-export interface ResultadoExtraccion {
+interface ResultadoExtraccion {
   esAlerta: boolean;
   anuncios: AnuncioDeCorreo[];
   recortados: number; // cuántos se dejaron fuera por el tope

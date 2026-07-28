@@ -13,7 +13,7 @@ import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre } from './sources/
 // Cuántos anuncios se procesan a la vez. Cada uno son 2 llamadas al LLM: en
 // serie un lote grande no cabe en maxDuration, y todos a la vez arriesga
 // rate-limits.
-export const CONCURRENCIA = 4;
+const CONCURRENCIA = 4;
 
 export interface AnuncioEntrante {
   url: string | null;
@@ -36,7 +36,7 @@ export interface AnuncioEntrante {
   fuente_marca_dueno_directo?: boolean | null;
 }
 
-export interface ResumenLote {
+interface ResumenLote {
   creados: number;
   duplicados: number;
   descartados: number;
@@ -54,7 +54,7 @@ export interface ResumenLote {
   }>;
 }
 
-export function inferirFuente(url: string | null | undefined): FuenteCaptacion {
+function inferirFuente(url: string | null | undefined): FuenteCaptacion {
   if (!url) return 'otro';
   if (esUrlMercadoLibre(url)) return 'mercadolibre';
   if (/facebook\.com|fb\.com|fb\.me/i.test(url)) return 'facebook';

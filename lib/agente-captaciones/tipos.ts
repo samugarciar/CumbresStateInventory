@@ -13,7 +13,6 @@ export interface ListingCrudo {
   titulo: string;
   descripcion: string;
   precio: number | null;
-  moneda: string | null;
   ciudad: string | null;
   barrio: string | null;
   direccion: string | null;
@@ -25,7 +24,6 @@ export interface ListingCrudo {
   contacto_nombre: string | null;
   contacto_telefono: string | null;
   contacto_perfil: string | null; // perfil de FB u otro
-  atributos: Record<string, string>;
   /**
    * true cuando la PLATAFORMA de origen ya clasificó el anuncio como de dueño
    * directo (p. ej. el filtro oficial "dueño directo" de Mercado Libre). Es
@@ -34,7 +32,6 @@ export interface ListingCrudo {
    * certificó.
    */
   fuente_marca_dueno_directo: boolean | null;
-  crudo: unknown; // payload original, por si se necesita más
 }
 
 export function listingVacio(fuente: FuenteCaptacion): ListingCrudo {
@@ -45,7 +42,6 @@ export function listingVacio(fuente: FuenteCaptacion): ListingCrudo {
     titulo: '',
     descripcion: '',
     precio: null,
-    moneda: null,
     ciudad: null,
     barrio: null,
     direccion: null,
@@ -57,9 +53,7 @@ export function listingVacio(fuente: FuenteCaptacion): ListingCrudo {
     contacto_nombre: null,
     contacto_telefono: null,
     contacto_perfil: null,
-    atributos: {},
     fuente_marca_dueno_directo: null,
-    crudo: null,
   };
 }
 
@@ -89,12 +83,12 @@ export interface UsoRegistrado {
   cache: number;
 }
 
-export type ResultadoCaptacion = 'creado' | 'duplicado' | 'descartado';
+type ResultadoCaptacion = 'creado' | 'duplicado' | 'descartado';
 
 export interface SalidaCaptacion {
   resultado: ResultadoCaptacion;
   prospecto_id: string | null;
-  /** Incluye es_dueno_directo, confianza (0-1), score, motivos… */
+  /** Incluye es_dueno_directo, probabilidad_dueno_directo, score y motivos. */
   calificacion: Calificacion | null;
   mensaje_borrador: string | null;
   canal: string | null;

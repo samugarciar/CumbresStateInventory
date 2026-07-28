@@ -14,7 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const AUTH_HOST = 'https://auth.mercadolibre.com.co';
 const TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
 
-export interface TokensML {
+interface TokensML {
   access_token: string;
   refresh_token: string;
   expires_in: number; // segundos
@@ -71,7 +71,7 @@ export function intercambiarCodigo(params: { code: string; redirectUri: string }
   });
 }
 
-export function refrescarToken(refreshToken: string): Promise<TokensML> {
+function refrescarToken(refreshToken: string): Promise<TokensML> {
   const { clientId, clientSecret } = credenciales();
   return pedirToken({
     grant_type: 'refresh_token',
