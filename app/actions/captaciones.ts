@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { revalidatePath } from 'next/cache';
 
-import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
+import { procesarAnuncios, type AnuncioEntrante } from '@/lib/agente-captaciones/procesar';
 import { DIAS_PRIMER_SEGUIMIENTO } from '@/lib/agente-captaciones/config';
 
 // Estados del pipeline a los que se puede mover un prospecto desde la bandeja.
@@ -132,6 +132,48 @@ export async function aprobarContacto(datos: { prospecto_id: string; mensaje_fin
   }
   revalidatePath('/captaciones');
   return { success: true as const, message: 'Marcado como contactado. Seguimiento programado.' };
+}
+
+/**
+ * Importa varios anuncios recolectados por el bookmarklet desde el navegador.
+ *
+ * Por qué existe: Facebook y Mercado Libre tienen CSP estricta, así que un
+ * bookmarklet NO puede hacer fetch a esta app desde sus páginas. En vez de eso
+ * abre /captaciones/importar con los datos en el fragmento de la URL, y esa
+ * página llama a esta acción con la sesión del admin — sin exponer ningún token.
+ */
+export async function importarAnuncios(anuncios: AnuncioEntrante[]) {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden importar anuncios.' };
+  if (!Array.isArray(anuncios) || anuncios.length === 0) {
+    return { success: false as const, error: 'No llegó ningún anuncio.' };
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return { success: false as const, error: 'Falta configurar OPENAI_API_KEY.' };
+  }
+
+  const inmobiliariaId = user.profile.inmobiliaria_id;
+  const supabase = createAdminClient();
+
+  const { data: config } = await supabase
+    .from('agentes_config')
+    .select('activo')
+    .eq('inmobiliaria_id', inmobiliariaId)
+    .eq('agente', 'captaciones')
+    .maybeSingle();
+  if (config && !config.activo) {
+    return { success: false as const, error: 'El agente de captaciones está pausado. Actívalo en Agentes.' };
+  }
+
+  try {
+    const resumen = await procesarAnuncios(supabase, inmobiliariaId, anuncios.slice(0, 25));
+    revalidatePath('/captaciones');
+    return { success: true as const, ...resumen, recortados: Math.max(0, anuncios.length - 25) };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[Captaciones] Error importando:', msg);
+    return { success: false as const, error: msg };
+  }
 }
 
 /**
