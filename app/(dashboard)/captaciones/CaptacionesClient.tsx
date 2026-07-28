@@ -256,19 +256,21 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
                   </div>
                 </div>
                 <div style={styles.pBadges}>
+                  {/* Los que no llegan al umbral ya no entran a la bandeja, así
+                      que aquí prácticamente todo es dueño directo; se muestra el
+                      porcentaje para poder priorizar dentro de la cola. */}
                   {p.es_dueno_directo === true && (
                     <span style={styles.badgeDueno}>
-                      <UserCheck size={11} /> Dueño directo
-                      {p.confianza_particular != null && ` ${Math.round(p.confianza_particular * 100)}%`}
+                      <UserCheck size={11} />
+                      {p.confianza_particular != null
+                        ? ` ${Math.round(p.confianza_particular * 100)}% dueño directo`
+                        : ' Dueño directo'}
                     </span>
                   )}
-                  {/* Sin la advertencia explícita, un anuncio de agencia se ve
-                      igual que uno bueno salvo por la ausencia de la insignia
-                      verde — demasiado sutil para una cola que se revisa rápido. */}
                   {p.es_dueno_directo === false && (
                     <span style={styles.badgeAgencia}>
                       <AlertTriangle size={11} /> Posible agencia
-                      {p.confianza_particular != null && ` ${Math.round(p.confianza_particular * 100)}%`}
+                      {p.confianza_particular != null && ` (${Math.round(p.confianza_particular * 100)}%)`}
                     </span>
                   )}
                   {p.score != null && (

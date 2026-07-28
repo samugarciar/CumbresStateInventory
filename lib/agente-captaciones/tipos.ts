@@ -65,7 +65,15 @@ export function listingVacio(fuente: FuenteCaptacion): ListingCrudo {
 
 export interface Calificacion {
   es_dueno_directo: boolean;
-  confianza: number; // 0-1
+  /**
+   * Probabilidad (0-1) de que quien publica sea el DUEÑO DIRECTO.
+   *
+   * OJO: antes este campo era "confianza en la clasificación", que se presta a
+   * un error grave — un "es agencia, 90% de confianza" habría pasado un filtro
+   * de `>= 0.5`. Ahora la escala es siempre la misma: 1 = seguro dueño,
+   * 0 = seguro agencia.
+   */
+  probabilidad_dueno_directo: number;
   tipo_inmueble: string | null;
   tipo_transaccion: string | null;
   en_zona_objetivo: boolean;

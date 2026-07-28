@@ -18,7 +18,7 @@ import { SystemMessage, HumanMessage, type BaseMessage, type AIMessage } from '@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { MODELO_CALIFICAR, MODELO_REDACTAR, BASE_TRATAMIENTO } from './config';
+import { MODELO_CALIFICAR, MODELO_REDACTAR, BASE_TRATAMIENTO, UMBRAL_DUENO_DIRECTO } from './config';
 import { PROMPT_CALIFICAR, cargarPromptRedaccion, fichaInmueble, bloqueIdentidad } from './prompt';
 import type { Calificacion, ListingCrudo, SalidaCaptacion, UsoRegistrado } from './tipos';
 
@@ -28,7 +28,7 @@ import type { Calificacion, ListingCrudo, SalidaCaptacion, UsoRegistrado } from 
 // lección ya aprendida en lib/agente-comercial/graph.ts.
 const EsquemaCalificacion = z.object({
   es_dueno_directo: z.boolean(),
-  confianza: z.number(),
+  probabilidad_dueno_directo: z.number(),
   tipo_inmueble: z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']).nullable(),
   tipo_transaccion: z.enum(['venta', 'arriendo']).nullable(),
   en_zona_objetivo: z.boolean(),
@@ -200,7 +200,15 @@ export async function correrCaptacion(params: {
   async function persistir(estado: Estado): Promise<Partial<Estado>> {
     const l = estado.listing;
     const c = estado.calificacion;
-    const descartado = c?.decision === 'descartar';
+    // Se descarta por criterio (zona/tipo) o por no alcanzar el umbral de
+    // dueño directo. Igual se guarda la fila, para trazabilidad y para que el
+    // dedup no lo vuelva a procesar.
+    const noPasaUmbral = c?.decision !== 'descartar' && !pasaFiltroDueno(c);
+    const descartado = c?.decision === 'descartar' || noPasaUmbral;
+    const pct = c?.probabilidad_dueno_directo != null
+      ? `${Math.round(c.probabilidad_dueno_directo * 100)}%`
+      : 'sin dato';
+    const motivoUmbral = `Probabilidad de dueño directo ${pct}, por debajo del mínimo de ${Math.round(UMBRAL_DUENO_DIRECTO * 100)}%. ${c?.motivos ?? ''}`.trim();
 
     const fila = {
       inmobiliaria_id: inmobiliariaId,
@@ -218,11 +226,11 @@ export async function correrCaptacion(params: {
       habitaciones: l.habitaciones,
       banos: l.banos,
       es_dueno_directo: c?.es_dueno_directo ?? null,
-      // Qué tan seguro está el modelo de la clasificación particular/agencia
-      // (distinto del score, que mide la calidad global del prospecto).
-      confianza_particular: c?.confianza ?? null,
+      // Probabilidad (0-1) de que sea el dueño directo — 1 = seguro dueño,
+      // 0 = seguro agencia. Distinto del score, que mide la calidad global.
+      confianza_particular: c?.probabilidad_dueno_directo ?? null,
       score: c?.score ?? null,
-      motivos: c?.motivos ?? null,
+      motivos: noPasaUmbral ? motivoUmbral : (c?.motivos ?? null),
       contacto_nombre: l.contacto_nombre,
       contacto_telefono: l.contacto_telefono,
       contacto_perfil: l.contacto_perfil,
@@ -251,8 +259,21 @@ export async function correrCaptacion(params: {
   }
 
   // ---- ruteo ----
+  /**
+   * Solo entran a la bandeja los anuncios con probabilidad suficiente de ser de
+   * dueño directo. Se exige que el modelo lo afirme Y que el número lo respalde:
+   * si ambos no coinciden se descarta, porque contactar a una agencia creyendo
+   * que es el propietario es peor que dejar pasar un anuncio dudoso.
+   */
+  function pasaFiltroDueno(c: Calificacion | null): boolean {
+    if (!c) return false;
+    const p = typeof c.probabilidad_dueno_directo === 'number' ? c.probabilidad_dueno_directo : 0;
+    return c.es_dueno_directo === true && p >= UMBRAL_DUENO_DIRECTO;
+  }
+
   function trasCalificar(estado: Estado): 'descartar' | 'seguir' {
-    return estado.calificacion?.decision === 'descartar' ? 'descartar' : 'seguir';
+    if (estado.calificacion?.decision === 'descartar') return 'descartar';
+    return pasaFiltroDueno(estado.calificacion) ? 'seguir' : 'descartar';
   }
   function trasDeduplicar(estado: Estado): 'duplicado' | 'nuevo' {
     return estado.duplicadoDe ? 'duplicado' : 'nuevo';

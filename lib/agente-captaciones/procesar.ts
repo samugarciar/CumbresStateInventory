@@ -48,7 +48,8 @@ export interface ResumenLote {
     motivo: string | null;
     /** Veredicto del calificador, para poder mostrarlo al importar. */
     es_dueno_directo?: boolean | null;
-    confianza?: number | null;
+    /** 1 = seguro dueño directo · 0 = seguro agencia. */
+    probabilidad_dueno_directo?: number | null;
     score?: number | null;
   }>;
 }
@@ -129,7 +130,7 @@ export async function procesarAnuncios(
         prospecto_id: salida.prospecto_id,
         motivo: salida.motivo,
         es_dueno_directo: salida.calificacion?.es_dueno_directo ?? null,
-        confianza: salida.calificacion?.confianza ?? null,
+        probabilidad_dueno_directo: salida.calificacion?.probabilidad_dueno_directo ?? null,
         score: salida.calificacion?.score ?? null,
       });
     } catch (e) {

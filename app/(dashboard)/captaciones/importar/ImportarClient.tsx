@@ -17,7 +17,7 @@ interface Resultado {
     resultado: string;
     motivo: string | null;
     es_dueno_directo?: boolean | null;
-    confianza?: number | null;
+    probabilidad_dueno_directo?: number | null;
     score?: number | null;
   }>;
 }
@@ -120,8 +120,9 @@ export default function ImportarClient() {
                 {d.es_dueno_directo != null && (
                   <div style={styles.itemMeta}>
                     <span style={d.es_dueno_directo ? styles.ok : styles.warn}>
-                      {d.es_dueno_directo ? 'Dueño directo' : 'Posible agencia'}
-                      {pct(d.confianza) ? ` · ${pct(d.confianza)} de confianza` : ''}
+                      {pct(d.probabilidad_dueno_directo)
+                        ? `${pct(d.probabilidad_dueno_directo)} dueño directo`
+                        : d.es_dueno_directo ? 'Dueño directo' : 'Posible agencia'}
                     </span>
                     {pct(d.score) && <span>prospecto {pct(d.score)}</span>}
                   </div>

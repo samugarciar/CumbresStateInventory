@@ -18,6 +18,12 @@ export const TIPO_OBJETIVO = 'apartamento';
 export const TRANSACCION_OBJETIVO = 'arriendo';
 export const ACEPTAR_TAMBIEN_VENTA = true;
 
+// Umbral de entrada a la bandeja: solo pasan los anuncios con al menos esta
+// probabilidad de ser de DUEÑO DIRECTO. Los que no llegan se guardan como
+// descartados (para trazabilidad y para no reprocesarlos), pero no se les
+// redacta mensaje ni aparecen en la cola de aprobación.
+export const UMBRAL_DUENO_DIRECTO = 0.5;
+
 // Prioridad del canal de contacto según lo que exponga cada anuncio.
 export const CANAL_PRIORIDAD = ['whatsapp', 'telefono', 'messenger'] as const;
 
