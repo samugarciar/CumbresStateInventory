@@ -85,17 +85,25 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     }
   });
 
-  // 5. Procesar archivos (Fotos) y calcular pesos
-  const fotos = formData.getAll('Fotos') as File[];
-  let totalSizeBytes = 0;
-  const validFiles: File[] = [];
-
-  for (const foto of fotos) {
-    if (foto && foto.size > 0) {
-      totalSizeBytes += foto.size;
-      validFiles.push(foto);
-    }
+  // 5. Fotos: ahora llegan como URLs (el navegador las sube directo a Supabase
+  // Storage), no como binarios. Así el body del Server Action es pequeño y no
+  // choca con el tope de ~4.5 MB de Vercel para funciones serverless.
+  let fotoUrls: string[] = [];
+  try {
+    const raw = formData.get('Fotos_URLs') as string | null;
+    if (raw) fotoUrls = JSON.parse(raw);
+  } catch {
+    fotoUrls = [];
   }
+  fotoUrls = Array.isArray(fotoUrls)
+    ? fotoUrls.filter((u) => typeof u === 'string' && u.length > 0)
+    : [];
+
+  if (fotoUrls.length === 0) {
+    return { success: false, message: 'No se recibió ninguna foto. Vuelve a intentarlo.' };
+  }
+
+  const totalSizeBytes = Number(formData.get('Fotos_size_bytes')) || 0;
 
   // 6. Insertar registro inicial en public.webhook_logs en estado 'enviando'
   const { data: logRecord, error: logInsertError } = await supabase
@@ -108,7 +116,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
       precio: precio,
       estado: 'enviando',
       payload: payloadJson,
-      files_count: validFiles.length,
+      files_count: fotoUrls.length,
       files_size_bytes: totalSizeBytes
     })
     .select('id')
@@ -181,19 +189,13 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     n8nFormData.append('Comision(portero)', (formData.get('Comision(portero)') as string) || 'n/a');
     n8nFormData.append('Observaciones', (formData.get('Observaciones') as string) || 'n/a');
 
-    // Mapear archivos como fotos binarias individuales con prefijos secuenciales para n8n
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i];
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      // Creamos un Blob a partir del Buffer en el servidor
-      const fileBlob = new Blob([buffer], { type: file.type });
-      
-      // Adjuntar como Fotos_N para emular el comportamiento del disparador de formularios n8n
-      n8nFormData.append(`Fotos_${i}`, fileBlob, file.name);
-    }
+    // Fotos: enviamos las URLs públicas (n8n las descarga). Antes se mandaban los
+    // binarios como Fotos_N; ese payload era el cuello de botella del tope de Vercel.
+    // CONTRATO n8n: 'Fotos_URLs' = arreglo JSON de URLs; 'Fotos_count' = cantidad.
+    n8nFormData.append('Fotos_URLs', JSON.stringify(fotoUrls));
+    n8nFormData.append('Fotos_count', String(fotoUrls.length));
 
-    console.log(`[Webhook] Retransmitiendo captación a n8n: POST ${n8nWebhookUrl} con ${validFiles.length} fotos (${(totalSizeBytes / (1024 * 1024)).toFixed(2)} MB)...`);
+    console.log(`[Webhook] Retransmitiendo captación a n8n: POST ${n8nWebhookUrl} con ${fotoUrls.length} foto(s) por URL...`);
 
     // Hacer la petición POST a n8n
     const response = await fetch(n8nWebhookUrl, {

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useTransition } from 'react';
 import { enviarCaptacionWebhook } from '@/app/actions/webhook-n8n';
+import { createClient } from '@/lib/supabase/client';
 import { 
   Building2, 
   MapPin, 
@@ -28,6 +29,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -123,16 +125,37 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
     }
 
     const formData = new FormData(e.currentTarget);
-    
-    // Adjuntar archivos validados
-    files.forEach(file => {
-      formData.append('Fotos', file);
-    });
 
     startTransition(async () => {
       try {
+        // 1. Subir las fotos DIRECTO a Supabase Storage (navegador → Supabase,
+        // sin pasar por la función serverless de Vercel y su tope de ~4.5 MB).
+        const supabase = createClient();
+        const urls: string[] = [];
+        let totalBytes = 0;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setUploadMsg(`Subiendo foto ${i + 1} de ${files.length}...`);
+          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+          const path = `${crypto.randomUUID()}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from('captaciones')
+            .upload(path, file, { contentType: file.type, upsert: false });
+          if (upErr) {
+            throw new Error(`No se pudo subir la foto "${file.name}": ${upErr.message}`);
+          }
+          const { data: pub } = supabase.storage.from('captaciones').getPublicUrl(path);
+          urls.push(pub.publicUrl);
+          totalBytes += file.size;
+        }
+
+        // 2. Enviar SOLO las URLs (sin binarios) al server action → n8n.
+        formData.append('Fotos_URLs', JSON.stringify(urls));
+        formData.append('Fotos_size_bytes', String(totalBytes));
+        setUploadMsg('Enviando captación...');
+
         const result = await enviarCaptacionWebhook(null, formData);
-        
+
         if (result.success) {
           setStatus({ success: true, message: result.message });
           setFiles([]);
@@ -142,7 +165,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
           setStatus({ success: false, message: result.message });
         }
       } catch (err: any) {
-        setStatus({ success: false, message: 'Ocurrió un error inesperado al conectar con el servidor.' });
+        setStatus({ success: false, message: err?.message || 'Ocurrió un error inesperado al conectar con el servidor.' });
+      } finally {
+        setUploadMsg(null);
       }
     });
   };
@@ -714,7 +739,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                 {isPending ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div className="spinner-loader" style={styles.btnSpinner} />
-                    <span>Retransmitiendo a n8n...</span>
+                    <span>{uploadMsg || 'Enviando...'}</span>
                   </div>
                 ) : (
                   <span>¡Disparar Captación a n8n!</span>
@@ -728,7 +753,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                   <div className="progress-bar-anim" style={styles.progressBarFill} />
                 </div>
                 <p style={styles.progressText}>
-                  Transmitiendo archivos binarios al servidor... Por favor, no cierres la ventana.
+                  {uploadMsg || 'Procesando...'} Por favor, no cierres la ventana.
                 </p>
               </div>
             )}
