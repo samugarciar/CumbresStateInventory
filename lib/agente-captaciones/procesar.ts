@@ -6,7 +6,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { correrCaptacion } from './graph';
-import { registrarUso } from './uso';
+import { registrarUso, estadoPresupuesto } from './uso';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from './tipos';
 import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre } from './sources/mercadolibre';
 
@@ -41,6 +41,8 @@ interface ResumenLote {
   duplicados: number;
   descartados: number;
   fallidos: number;
+  /** true si no se procesó nada por haber alcanzado el techo de gasto del mes. */
+  presupuestoAgotado?: boolean;
   detalle: Array<{
     titulo: string;
     resultado: string;
@@ -67,6 +69,25 @@ export async function procesarAnuncios(
   anuncios: AnuncioEntrante[]
 ): Promise<ResumenLote> {
   const resumen: ResumenLote = { creados: 0, duplicados: 0, descartados: 0, fallidos: 0, detalle: [] };
+
+  // Techo de gasto: se comprueba UNA vez por lote, antes de llamar al modelo.
+  // Va aquí y no en cada ruta para que valga por igual en el intake por correo
+  // (que corre solo), el bookmarklet y cualquier automatización futura.
+  const presupuesto = await estadoPresupuesto(supabase, inmobiliariaId);
+  if (presupuesto.agotado) {
+    console.warn('[Captaciones] Presupuesto mensual agotado; no se procesa el lote.');
+    resumen.presupuestoAgotado = true;
+    for (const a of anuncios) {
+      resumen.fallidos++;
+      resumen.detalle.push({
+        titulo: a.titulo || '(sin título)',
+        resultado: 'error',
+        prospecto_id: null,
+        motivo: `Presupuesto mensual agotado (US$${presupuesto.gastadoUsd.toFixed(2)} de US$${presupuesto.limiteUsd?.toFixed(2)}). Ajusta el límite en Agentes.`,
+      });
+    }
+    return resumen;
+  }
 
   const procesar = async (a: AnuncioEntrante) => {
     try {

@@ -25,9 +25,10 @@ interface AgentesClientProps {
   config: {
     arriendabot_bi: { activo: boolean; limite_mensual_usd: number | null };
     comercial_whatsapp: { activo: boolean };
-    captaciones: { activo: boolean; prompt_sistema: string };
+    captaciones: { activo: boolean; prompt_sistema: string; limite_mensual_usd: number | null };
   };
   captaciones: {
+    limiteMensualUsd: number | null;
     modelos: string;
     gastoMesUsd: number;
     gastoHoyUsd: number;
@@ -109,6 +110,10 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
   const [cambiando, setCambiando] = useState<AgenteId | null>(null);
   const [promptCap, setPromptCap] = useState(captaciones.promptSistema);
   const [guardandoPrompt, setGuardandoPrompt] = useState(false);
+  const [limiteCap, setLimiteCap] = useState(
+    captaciones.limiteMensualUsd !== null ? String(captaciones.limiteMensualUsd) : ''
+  );
+  const [guardandoLimiteCap, setGuardandoLimiteCap] = useState(false);
   const [limiteInput, setLimiteInput] = useState(
     config.arriendabot_bi.limite_mensual_usd !== null ? String(config.arriendabot_bi.limite_mensual_usd) : ''
   );
@@ -161,6 +166,23 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
     setGuardandoPrompt(false);
     if (!res.success) {
       alert(res.error || 'No se pudo guardar el prompt.');
+      return;
+    }
+    router.refresh();
+  };
+
+  const guardarLimiteCaptaciones = async () => {
+    const texto = limiteCap.trim();
+    const valor = texto === '' ? null : Number(texto);
+    if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
+      alert('Ingresa un monto en USD mayor a 0, o deja vacío para quitar el límite.');
+      return;
+    }
+    setGuardandoLimiteCap(true);
+    const res = await guardarLimiteMensual(valor, 'captaciones');
+    setGuardandoLimiteCap(false);
+    if (!res.success) {
+      alert(res.error || 'No se pudo guardar el límite.');
       return;
     }
     router.refresh();
@@ -453,6 +475,50 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
                 {captaciones.tokensMes.toLocaleString('es-CO')} tokens
               </span>
             </div>
+          </div>
+
+          {/* Tope de gasto: crítico porque este agente corre solo desde n8n */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>Límite de gasto mensual (USD)</span>
+            {captaciones.limiteMensualUsd !== null && (
+              <div style={styles.barraWrap}>
+                <div style={styles.barraFondo}>
+                  <div
+                    style={{
+                      ...styles.barraRelleno,
+                      width: `${Math.min(100, (captaciones.gastoMesUsd / captaciones.limiteMensualUsd) * 100)}%`,
+                      backgroundColor:
+                        captaciones.gastoMesUsd >= captaciones.limiteMensualUsd ? '#ef4444'
+                          : captaciones.gastoMesUsd / captaciones.limiteMensualUsd >= 0.8 ? '#f59e0b' : '#22c55e',
+                    }}
+                  />
+                </div>
+                <span style={styles.barraTexto}>
+                  {usd(captaciones.gastoMesUsd)} de {usd(captaciones.limiteMensualUsd)}
+                  {captaciones.gastoMesUsd >= captaciones.limiteMensualUsd && ' — alcanzado: no se procesan anuncios nuevos'}
+                </span>
+              </div>
+            )}
+            <div style={styles.limiteFila}>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Sin límite"
+                className="form-input"
+                style={styles.limiteInput}
+                value={limiteCap}
+                onChange={(e) => setLimiteCap(e.target.value)}
+                disabled={guardandoLimiteCap}
+              />
+              <button className="btn btn-secondary" style={styles.limiteBtn} onClick={guardarLimiteCaptaciones} disabled={guardandoLimiteCap}>
+                {guardandoLimiteCap ? <Loader2 size={14} className="animate-spin" /> : 'Guardar'}
+              </button>
+            </div>
+            <span style={styles.limiteNota}>
+              Este agente <strong>corre solo</strong> (n8n le manda las alertas de los portales), así que el techo de
+              gasto es su principal red de seguridad. Al alcanzarlo deja de procesar anuncios hasta el mes siguiente.
+            </span>
           </div>
 
           {/* Conexión con Mercado Libre */}

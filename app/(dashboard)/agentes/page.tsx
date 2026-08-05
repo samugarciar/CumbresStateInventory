@@ -113,7 +113,7 @@ export default async function AgentesPage() {
   const config = {
     arriendabot_bi: { activo: true, limite_mensual_usd: null as number | null },
     comercial_whatsapp: { activo: true },
-    captaciones: { activo: true, prompt_sistema: '' as string },
+    captaciones: { activo: true, prompt_sistema: '' as string, limite_mensual_usd: null as number | null },
   };
   for (const row of configRows || []) {
     if (row.agente === 'arriendabot_bi') {
@@ -124,7 +124,11 @@ export default async function AgentesPage() {
     } else if (row.agente === 'comercial_whatsapp') {
       config.comercial_whatsapp = { activo: row.activo };
     } else if (row.agente === 'captaciones') {
-      config.captaciones = { activo: row.activo, prompt_sistema: row.prompt_sistema ?? '' };
+      config.captaciones = {
+        activo: row.activo,
+        prompt_sistema: row.prompt_sistema ?? '',
+        limite_mensual_usd: row.limite_mensual_usd !== null ? Number(row.limite_mensual_usd) : null,
+      };
     }
   }
 
@@ -183,6 +187,7 @@ export default async function AgentesPage() {
     contactados30: prospectosContactados30 || 0,
     captados: prospectosCaptados || 0,
     promptSistema: config.captaciones.prompt_sistema,
+    limiteMensualUsd: config.captaciones.limite_mensual_usd,
     ml,
   };
 
