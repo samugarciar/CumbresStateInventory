@@ -45,8 +45,9 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const emailProp = formData.get('Email prop') as string;
   const estratoRaw = formData.get('Estrato') as string;
   const municipio = formData.get('Municipio') as string;
+  const barrioIdRaw = formData.get('Barrio_id') as string;
 
-  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio) {
+  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio || !barrioIdRaw) {
     return { success: false, message: 'Por favor, completa todos los campos requeridos.' };
   }
 
@@ -69,6 +70,11 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const estratoNum = Number(estratoRaw);
   if (!Number.isInteger(estratoNum) || estratoNum < 1 || estratoNum > 6) {
     return { success: false, message: 'El estrato debe ser un número entre 1 y 6.' };
+  }
+
+  const barrioIdNum = Number(barrioIdRaw);
+  if (!Number.isInteger(barrioIdNum) || barrioIdNum <= 0) {
+    return { success: false, message: 'El barrio seleccionado no es válido.' };
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -150,6 +156,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     n8nFormData.append('Direccion', direccion);
     n8nFormData.append('Apartamento', (formData.get('Apartamento') as string) || 'n/a');
     n8nFormData.append('Barrio', barrio);
+    n8nFormData.append('Barrio_id', String(barrioIdNum));
     n8nFormData.append('Precio(COP)', precioRaw);
     n8nFormData.append('Asesor', asesor);
 

@@ -1,0 +1,1204 @@
+{
+ "_fuente": "Nuby/Arrendasoft GET /service/v2/public/masters/locations/neighborhoods",
+ "_uso": "value del <option> = id (se envia como Barrio_id); label = barrio",
+ "_municipios": {
+  "Medellin": 1,
+  "Bello": 19,
+  "Sabaneta": 88,
+  "Envigado": 47
+ },
+ "barrios": {
+  "Medellin": [
+   {
+    "id": 257,
+    "barrio": "Aguacatala"
+   },
+   {
+    "id": 52,
+    "barrio": "Alfonso Lopez"
+   },
+   {
+    "id": 54,
+    "barrio": "Almeria"
+   },
+   {
+    "id": 8,
+    "barrio": "America"
+   },
+   {
+    "id": 882,
+    "barrio": "ANDALUCIA"
+   },
+   {
+    "id": 100,
+    "barrio": "Aranjuez"
+   },
+   {
+    "id": 747,
+    "barrio": "Av Oriental / Sucre"
+   },
+   {
+    "id": 843,
+    "barrio": "Barrio Colombia"
+   },
+   {
+    "id": 11,
+    "barrio": "Barrio Cristobal"
+   },
+   {
+    "id": 12,
+    "barrio": "Belen"
+   },
+   {
+    "id": 22,
+    "barrio": "Belen Alameda"
+   },
+   {
+    "id": 851,
+    "barrio": "Belen Aliadas"
+   },
+   {
+    "id": 842,
+    "barrio": "Belen el Nogal"
+   },
+   {
+    "id": 24,
+    "barrio": "Belen Fatima"
+   },
+   {
+    "id": 77,
+    "barrio": "Belen Granada"
+   },
+   {
+    "id": 65,
+    "barrio": "Belen La Nubia"
+   },
+   {
+    "id": 26,
+    "barrio": "Belen La Palma"
+   },
+   {
+    "id": 837,
+    "barrio": "Belen Las Mercedes"
+   },
+   {
+    "id": 66,
+    "barrio": "Belen Las Playas"
+   },
+   {
+    "id": 845,
+    "barrio": "BELEN LAS VIOLETAS"
+   },
+   {
+    "id": 43,
+    "barrio": "Belen Los Alpes"
+   },
+   {
+    "id": 69,
+    "barrio": "Belen Los Alpes"
+   },
+   {
+    "id": 81,
+    "barrio": "Belen Malibu"
+   },
+   {
+    "id": 82,
+    "barrio": "Belen Rincon"
+   },
+   {
+    "id": 30,
+    "barrio": "Belen Rosales"
+   },
+   {
+    "id": 894,
+    "barrio": "BELEN SAN BERBARDO"
+   },
+   {
+    "id": 9,
+    "barrio": "Belen San Bernardo"
+   },
+   {
+    "id": 1,
+    "barrio": "Bolivariana"
+   },
+   {
+    "id": 29,
+    "barrio": "Boston"
+   },
+   {
+    "id": 13,
+    "barrio": "Buenos Aires"
+   },
+   {
+    "id": 848,
+    "barrio": "Caicedo"
+   },
+   {
+    "id": 10,
+    "barrio": "Calasanz"
+   },
+   {
+    "id": 72,
+    "barrio": "Calazania"
+   },
+   {
+    "id": 745,
+    "barrio": "Calle Colombia"
+   },
+   {
+    "id": 844,
+    "barrio": "Campo Amor"
+   },
+   {
+    "id": 741,
+    "barrio": "Campo Valdes"
+   },
+   {
+    "id": 60,
+    "barrio": "Carlos C Restrepo"
+   },
+   {
+    "id": 14,
+    "barrio": "Castellana"
+   },
+   {
+    "id": 36,
+    "barrio": "Castilla"
+   },
+   {
+    "id": 25,
+    "barrio": "Centro"
+   },
+   {
+    "id": 841,
+    "barrio": "CIUDAD DEL RIO"
+   },
+   {
+    "id": 900,
+    "barrio": "colombia"
+   },
+   {
+    "id": 2,
+    "barrio": "Conquistadores"
+   },
+   {
+    "id": 68,
+    "barrio": "Cordoba"
+   },
+   {
+    "id": 97,
+    "barrio": "Cristo Rey"
+   },
+   {
+    "id": 826,
+    "barrio": "El Cortijon"
+   },
+   {
+    "id": 835,
+    "barrio": "El Nogal"
+   },
+   {
+    "id": 908,
+    "barrio": "EL PESEBRE "
+   },
+   {
+    "id": 38,
+    "barrio": "El Pinal"
+   },
+   {
+    "id": 61,
+    "barrio": "El Salvador"
+   },
+   {
+    "id": 3,
+    "barrio": "Estadio"
+   },
+   {
+    "id": 101,
+    "barrio": "Florencia"
+   },
+   {
+    "id": 15,
+    "barrio": "Floresta"
+   },
+   {
+    "id": 742,
+    "barrio": "Florida Blanca"
+   },
+   {
+    "id": 4,
+    "barrio": "Florida Nueva"
+   },
+   {
+    "id": 47,
+    "barrio": "Guayabal"
+   },
+   {
+    "id": 78,
+    "barrio": "Jesus Nazareno"
+   },
+   {
+    "id": 916,
+    "barrio": "LA AURORA"
+   },
+   {
+    "id": 16,
+    "barrio": "La Mota"
+   },
+   {
+    "id": 31,
+    "barrio": "La Playa"
+   },
+   {
+    "id": 48,
+    "barrio": "Las Palmas"
+   },
+   {
+    "id": 5,
+    "barrio": "Laureles"
+   },
+   {
+    "id": 28,
+    "barrio": "Loma De Los Bernal"
+   },
+   {
+    "id": 33,
+    "barrio": "Lopez De Mesa"
+   },
+   {
+    "id": 839,
+    "barrio": "Loreto"
+   },
+   {
+    "id": 45,
+    "barrio": "Los Angeles"
+   },
+   {
+    "id": 7,
+    "barrio": "Los Colores"
+   },
+   {
+    "id": 820,
+    "barrio": "Lucia la Santa"
+   },
+   {
+    "id": 93,
+    "barrio": "Manrique"
+   },
+   {
+    "id": 49,
+    "barrio": "Manzanares"
+   },
+   {
+    "id": 98,
+    "barrio": "Mayorca"
+   },
+   {
+    "id": 40,
+    "barrio": "Milagrosa"
+   },
+   {
+    "id": 99,
+    "barrio": "Naranjal"
+   },
+   {
+    "id": 51,
+    "barrio": "Nueva Villa Del Aburra"
+   },
+   {
+    "id": 746,
+    "barrio": "Parque Berrio"
+   },
+   {
+    "id": 234,
+    "barrio": "Parque Bolivar"
+   },
+   {
+    "id": 63,
+    "barrio": "Pedregal"
+   },
+   {
+    "id": 94,
+    "barrio": "Pilarica"
+   },
+   {
+    "id": 35,
+    "barrio": "Plaza Flores"
+   },
+   {
+    "id": 17,
+    "barrio": "Poblado"
+   },
+   {
+    "id": 39,
+    "barrio": "Prado Centro"
+   },
+   {
+    "id": 821,
+    "barrio": "Ratón pelado"
+   },
+   {
+    "id": 18,
+    "barrio": "Robledo"
+   },
+   {
+    "id": 915,
+    "barrio": "Robledo Altamira"
+   },
+   {
+    "id": 893,
+    "barrio": "Robledo el Diamante"
+   },
+   {
+    "id": 743,
+    "barrio": "Robledo Kennedy"
+   },
+   {
+    "id": 836,
+    "barrio": "Robledo La Aurora"
+   },
+   {
+    "id": 744,
+    "barrio": "Robledo La Pola"
+   },
+   {
+    "id": 846,
+    "barrio": "Robledo Pajarito"
+   },
+   {
+    "id": 917,
+    "barrio": "ROBLEDO PALENQUE"
+   },
+   {
+    "id": 911,
+    "barrio": "Robledo San German "
+   },
+   {
+    "id": 96,
+    "barrio": "Rodeo"
+   },
+   {
+    "id": 67,
+    "barrio": "San Antonio De Prado"
+   },
+   {
+    "id": 19,
+    "barrio": "San Cristobal"
+   },
+   {
+    "id": 20,
+    "barrio": "San Diego"
+   },
+   {
+    "id": 921,
+    "barrio": "San German"
+   },
+   {
+    "id": 42,
+    "barrio": "San Javier"
+   },
+   {
+    "id": 41,
+    "barrio": "San Joaquin"
+   },
+   {
+    "id": 825,
+    "barrio": "San Joselito"
+   },
+   {
+    "id": 275,
+    "barrio": "San Juan"
+   },
+   {
+    "id": 864,
+    "barrio": "SAN LUCAS"
+   },
+   {
+    "id": 88,
+    "barrio": "San Pablo"
+   },
+   {
+    "id": 23,
+    "barrio": "Santa Fe"
+   },
+   {
+    "id": 803,
+    "barrio": "Santa Lucia"
+   },
+   {
+    "id": 896,
+    "barrio": "SANTA MARGARITA"
+   },
+   {
+    "id": 878,
+    "barrio": "SANTA MARIA LOS ANGELES"
+   },
+   {
+    "id": 46,
+    "barrio": "Santa Monica"
+   },
+   {
+    "id": 884,
+    "barrio": "SANTANDER"
+   },
+   {
+    "id": 37,
+    "barrio": "Sevilla"
+   },
+   {
+    "id": 21,
+    "barrio": "Simon Bolivar"
+   },
+   {
+    "id": 50,
+    "barrio": "Suramericana"
+   },
+   {
+    "id": 740,
+    "barrio": "Tricentenario"
+   },
+   {
+    "id": 27,
+    "barrio": "Trinidad"
+   },
+   {
+    "id": 6,
+    "barrio": "Velodromo"
+   },
+   {
+    "id": 91,
+    "barrio": "Vereda La Verde"
+   },
+   {
+    "id": 70,
+    "barrio": "Villa De La Aburra"
+   },
+   {
+    "id": 44,
+    "barrio": "Villa Hermosa"
+   }
+  ],
+  "Bello": [
+   {
+    "id": 875,
+    "barrio": "ALTAVISTA"
+   },
+   {
+    "id": 880,
+    "barrio": "AMAZONIA"
+   },
+   {
+    "id": 883,
+    "barrio": "andalucia "
+   },
+   {
+    "id": 887,
+    "barrio": "BUCAROS"
+   },
+   {
+    "id": 892,
+    "barrio": "CABAÑAS"
+   },
+   {
+    "id": 53,
+    "barrio": "Cabañitas"
+   },
+   {
+    "id": 899,
+    "barrio": "Camacol "
+   },
+   {
+    "id": 850,
+    "barrio": "Congolo"
+   },
+   {
+    "id": 922,
+    "barrio": "El Carmelo"
+   },
+   {
+    "id": 855,
+    "barrio": "El Mirador"
+   },
+   {
+    "id": 873,
+    "barrio": "el paraiso"
+   },
+   {
+    "id": 920,
+    "barrio": "Fabricato"
+   },
+   {
+    "id": 897,
+    "barrio": "FONTIDUEÑO "
+   },
+   {
+    "id": 885,
+    "barrio": "GRAN AVENIDA"
+   },
+   {
+    "id": 903,
+    "barrio": "HATO NUEVO "
+   },
+   {
+    "id": 865,
+    "barrio": "HATO VIEJO"
+   },
+   {
+    "id": 874,
+    "barrio": "LA CAMILA"
+   },
+   {
+    "id": 853,
+    "barrio": "La Gabriela"
+   },
+   {
+    "id": 913,
+    "barrio": "La maruchanga"
+   },
+   {
+    "id": 889,
+    "barrio": "MACHADO"
+   },
+   {
+    "id": 861,
+    "barrio": "MADERA"
+   },
+   {
+    "id": 886,
+    "barrio": "MANCHESTER"
+   },
+   {
+    "id": 914,
+    "barrio": "MARUCHENGA"
+   },
+   {
+    "id": 857,
+    "barrio": "MESA"
+   },
+   {
+    "id": 860,
+    "barrio": "MIRADOR"
+   },
+   {
+    "id": 919,
+    "barrio": "MIRASOL"
+   },
+   {
+    "id": 867,
+    "barrio": "molinares"
+   },
+   {
+    "id": 838,
+    "barrio": "NAVARRA"
+   },
+   {
+    "id": 62,
+    "barrio": "Niquia"
+   },
+   {
+    "id": 890,
+    "barrio": "NORTEAMERICA"
+   },
+   {
+    "id": 859,
+    "barrio": "obrero"
+   },
+   {
+    "id": 862,
+    "barrio": "PACHELY"
+   },
+   {
+    "id": 901,
+    "barrio": "Panamericano "
+   },
+   {
+    "id": 858,
+    "barrio": "PARIS"
+   },
+   {
+    "id": 856,
+    "barrio": "PARQUE"
+   },
+   {
+    "id": 895,
+    "barrio": "Perez"
+   },
+   {
+    "id": 877,
+    "barrio": "PLAYA RICA"
+   },
+   {
+    "id": 888,
+    "barrio": "QUITASOL"
+   },
+   {
+    "id": 876,
+    "barrio": "RINCON SANTOS"
+   },
+   {
+    "id": 902,
+    "barrio": "Rosario"
+   },
+   {
+    "id": 868,
+    "barrio": "SAN GABRIEL"
+   },
+   {
+    "id": 881,
+    "barrio": "SAN SIMON"
+   },
+   {
+    "id": 852,
+    "barrio": "SANTA ANA"
+   },
+   {
+    "id": 891,
+    "barrio": "SERRAMONTE"
+   },
+   {
+    "id": 909,
+    "barrio": "SERRAVENTO"
+   },
+   {
+    "id": 907,
+    "barrio": "terranova"
+   },
+   {
+    "id": 898,
+    "barrio": "Trapiche "
+   },
+   {
+    "id": 863,
+    "barrio": "valadares"
+   },
+   {
+    "id": 879,
+    "barrio": "VILLAS DE COMFENALCO"
+   },
+   {
+    "id": 840,
+    "barrio": "Villas del Sol"
+   }
+  ],
+  "Sabaneta": [
+   {
+    "id": 174,
+    "barrio": "Aliadas"
+   },
+   {
+    "id": 95,
+    "barrio": "Aves Maria"
+   },
+   {
+    "id": 274,
+    "barrio": "Aves Marias"
+   },
+   {
+    "id": 172,
+    "barrio": "Betania"
+   },
+   {
+    "id": 171,
+    "barrio": "Calle Del Banco"
+   },
+   {
+    "id": 168,
+    "barrio": "Calle Larga"
+   },
+   {
+    "id": 872,
+    "barrio": "cañaveralejo"
+   },
+   {
+    "id": 248,
+    "barrio": "Ces"
+   },
+   {
+    "id": 183,
+    "barrio": "El Carmelo"
+   },
+   {
+    "id": 92,
+    "barrio": "El Embarcadero"
+   },
+   {
+    "id": 170,
+    "barrio": "Entregamigos"
+   },
+   {
+    "id": 258,
+    "barrio": "Gravetal"
+   },
+   {
+    "id": 169,
+    "barrio": "Holanda"
+   },
+   {
+    "id": 177,
+    "barrio": "La Florida"
+   },
+   {
+    "id": 910,
+    "barrio": "las flores"
+   },
+   {
+    "id": 178,
+    "barrio": "Manuel Restrepo"
+   },
+   {
+    "id": 181,
+    "barrio": "María Auxiliadora"
+   },
+   {
+    "id": 284,
+    "barrio": "Metropolitano"
+   },
+   {
+    "id": 286,
+    "barrio": "Paso Ancho"
+   },
+   {
+    "id": 182,
+    "barrio": "Playas De María"
+   },
+   {
+    "id": 166,
+    "barrio": "Prados De Sabaneta"
+   },
+   {
+    "id": 176,
+    "barrio": "Restrepo Narango"
+   },
+   {
+    "id": 246,
+    "barrio": "Sabaneta"
+   },
+   {
+    "id": 173,
+    "barrio": "San Joaquin"
+   },
+   {
+    "id": 175,
+    "barrio": "Santa Ana"
+   },
+   {
+    "id": 167,
+    "barrio": "Tres Esquinas"
+   },
+   {
+    "id": 180,
+    "barrio": "Villas Del Carmen"
+   },
+   {
+    "id": 179,
+    "barrio": "Virgen Del Carmen"
+   }
+  ],
+  "Envigado": [
+   {
+    "id": 75,
+    "barrio": "Abadia"
+   },
+   {
+    "id": 214,
+    "barrio": "Alcalá"
+   },
+   {
+    "id": 282,
+    "barrio": "Aldea San Lucas"
+   },
+   {
+    "id": 288,
+    "barrio": "Alto De Las Flores"
+   },
+   {
+    "id": 193,
+    "barrio": "Alto De Misael"
+   },
+   {
+    "id": 251,
+    "barrio": "Andalucia"
+   },
+   {
+    "id": 249,
+    "barrio": "Bandera Roja"
+   },
+   {
+    "id": 236,
+    "barrio": "Barrio Mesa"
+   },
+   {
+    "id": 198,
+    "barrio": "Bosques De Zuñiga"
+   },
+   {
+    "id": 221,
+    "barrio": "Bucarest"
+   },
+   {
+    "id": 266,
+    "barrio": "Calle Basura"
+   },
+   {
+    "id": 227,
+    "barrio": "Camino Verde"
+   },
+   {
+    "id": 283,
+    "barrio": "Canalización"
+   },
+   {
+    "id": 269,
+    "barrio": "Cervantes"
+   },
+   {
+    "id": 290,
+    "barrio": "Chingui"
+   },
+   {
+    "id": 241,
+    "barrio": "Clinica La Policia"
+   },
+   {
+    "id": 279,
+    "barrio": "Cumbres"
+   },
+   {
+    "id": 203,
+    "barrio": "El Chinguí"
+   },
+   {
+    "id": 201,
+    "barrio": "El Chocho"
+   },
+   {
+    "id": 231,
+    "barrio": "El Consuelo"
+   },
+   {
+    "id": 215,
+    "barrio": "El Dorado"
+   },
+   {
+    "id": 267,
+    "barrio": "El Embrujo"
+   },
+   {
+    "id": 195,
+    "barrio": "El Esmeraldal"
+   },
+   {
+    "id": 271,
+    "barrio": "El Farolito"
+   },
+   {
+    "id": 262,
+    "barrio": "El Oasis"
+   },
+   {
+    "id": 185,
+    "barrio": "El Portal"
+   },
+   {
+    "id": 204,
+    "barrio": "El Salado"
+   },
+   {
+    "id": 208,
+    "barrio": "El Trianón"
+   },
+   {
+    "id": 58,
+    "barrio": "Envigado"
+   },
+   {
+    "id": 254,
+    "barrio": "Envigado Centro"
+   },
+   {
+    "id": 287,
+    "barrio": "Escobero"
+   },
+   {
+    "id": 256,
+    "barrio": "Esmeraldal"
+   },
+   {
+    "id": 273,
+    "barrio": "Florida"
+   },
+   {
+    "id": 259,
+    "barrio": "Gascuña"
+   },
+   {
+    "id": 250,
+    "barrio": "Guadalcanal"
+   },
+   {
+    "id": 224,
+    "barrio": "Guaimaro"
+   },
+   {
+    "id": 233,
+    "barrio": "Gualandayes"
+   },
+   {
+    "id": 235,
+    "barrio": "Guanteros"
+   },
+   {
+    "id": 230,
+    "barrio": "Hospital"
+   },
+   {
+    "id": 188,
+    "barrio": "Jardines"
+   },
+   {
+    "id": 228,
+    "barrio": "Jose Felix"
+   },
+   {
+    "id": 265,
+    "barrio": "La Abadia"
+   },
+   {
+    "id": 226,
+    "barrio": "La Canalizacion"
+   },
+   {
+    "id": 272,
+    "barrio": "La Casona"
+   },
+   {
+    "id": 242,
+    "barrio": "La Catedral"
+   },
+   {
+    "id": 276,
+    "barrio": "La Cuadrita"
+   },
+   {
+    "id": 847,
+    "barrio": "LA CUENCA"
+   },
+   {
+    "id": 289,
+    "barrio": "La Fe"
+   },
+   {
+    "id": 71,
+    "barrio": "La Frontera"
+   },
+   {
+    "id": 202,
+    "barrio": "La Inmaculada"
+   },
+   {
+    "id": 280,
+    "barrio": "La Intermedia"
+   },
+   {
+    "id": 222,
+    "barrio": "La Magnolia"
+   },
+   {
+    "id": 205,
+    "barrio": "La Mina"
+   },
+   {
+    "id": 225,
+    "barrio": "La Paloma"
+   },
+   {
+    "id": 210,
+    "barrio": "La Paz"
+   },
+   {
+    "id": 739,
+    "barrio": "La Paz"
+   },
+   {
+    "id": 200,
+    "barrio": "La Pradera"
+   },
+   {
+    "id": 190,
+    "barrio": "La Sebastiana"
+   },
+   {
+    "id": 207,
+    "barrio": "Las Antillas"
+   },
+   {
+    "id": 261,
+    "barrio": "Las Brujas"
+   },
+   {
+    "id": 211,
+    "barrio": "Las Casitas"
+   },
+   {
+    "id": 229,
+    "barrio": "Las Cometas"
+   },
+   {
+    "id": 59,
+    "barrio": "Las Flores"
+   },
+   {
+    "id": 191,
+    "barrio": "Las Flores"
+   },
+   {
+    "id": 194,
+    "barrio": "Las Orquídeas"
+   },
+   {
+    "id": 184,
+    "barrio": "Las Vegas"
+   },
+   {
+    "id": 199,
+    "barrio": "Loma De Las Brujas"
+   },
+   {
+    "id": 209,
+    "barrio": "Loma Del Barro"
+   },
+   {
+    "id": 264,
+    "barrio": "Loma Del Campestre"
+   },
+   {
+    "id": 252,
+    "barrio": "Loma Del Chocho"
+   },
+   {
+    "id": 223,
+    "barrio": "Loma Del Escobero"
+   },
+   {
+    "id": 196,
+    "barrio": "Loma El Atravezado"
+   },
+   {
+    "id": 217,
+    "barrio": "Los Naranjos"
+   },
+   {
+    "id": 243,
+    "barrio": "Mangazul"
+   },
+   {
+    "id": 270,
+    "barrio": "Margaritas"
+   },
+   {
+    "id": 218,
+    "barrio": "Mesa"
+   },
+   {
+    "id": 213,
+    "barrio": "Milán-vallejuelos"
+   },
+   {
+    "id": 277,
+    "barrio": "Montego"
+   },
+   {
+    "id": 220,
+    "barrio": "Obrero"
+   },
+   {
+    "id": 239,
+    "barrio": "Otra Parte"
+   },
+   {
+    "id": 285,
+    "barrio": "Pio Xll"
+   },
+   {
+    "id": 187,
+    "barrio": "Pontevedra"
+   },
+   {
+    "id": 212,
+    "barrio": "Primavera"
+   },
+   {
+    "id": 237,
+    "barrio": "Rosellon"
+   },
+   {
+    "id": 216,
+    "barrio": "San José"
+   },
+   {
+    "id": 245,
+    "barrio": "San Lucas"
+   },
+   {
+    "id": 74,
+    "barrio": "San Marcos"
+   },
+   {
+    "id": 247,
+    "barrio": "San Mateo"
+   },
+   {
+    "id": 206,
+    "barrio": "San Rafael"
+   },
+   {
+    "id": 253,
+    "barrio": "Santa Barbara"
+   },
+   {
+    "id": 268,
+    "barrio": "Santa Gertrudis"
+   },
+   {
+    "id": 240,
+    "barrio": "Señorial"
+   },
+   {
+    "id": 192,
+    "barrio": "Uribe Ángel"
+   },
+   {
+    "id": 260,
+    "barrio": "Vallejuelos"
+   },
+   {
+    "id": 263,
+    "barrio": "Via Sabaneta"
+   },
+   {
+    "id": 912,
+    "barrio": "Villa Isa Tamarindo "
+   },
+   {
+    "id": 189,
+    "barrio": "Villagrande"
+   },
+   {
+    "id": 281,
+    "barrio": "Vistalegre"
+   },
+   {
+    "id": 219,
+    "barrio": "Zona Centro"
+   },
+   {
+    "id": 197,
+    "barrio": "Zuñiga"
+   },
+   {
+    "id": 79,
+    "barrio": "Zuñiga Alto"
+   }
+  ]
+ }
+}

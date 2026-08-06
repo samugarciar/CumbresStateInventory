@@ -3,6 +3,7 @@
 import React, { useState, useRef, useTransition } from 'react';
 import { enviarCaptacionWebhook } from '@/app/actions/webhook-n8n';
 import { createClient } from '@/lib/supabase/client';
+import { BARRIOS_POR_MUNICIPIO } from '@/lib/captacion/barrios';
 import { 
   Building2, 
   MapPin, 
@@ -30,6 +31,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   const [fileError, setFileError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  // Municipio y Barrio son controlados: Barrio es un desplegable dependiente de Municipio.
+  const [municipio, setMunicipio] = useState('');
+  const [barrioId, setBarrioId] = useState('');
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -160,6 +164,8 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
           setStatus({ success: true, message: result.message });
           setFiles([]);
           formRef.current?.reset();
+          setMunicipio('');
+          setBarrioId('');
           setActiveTab('general');
         } else {
           setStatus({ success: false, message: result.message });
@@ -184,6 +190,10 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   const currentStepNumber = currentStepIndex + 1;
   const progressPercent = (currentStepNumber / tabs.length) * 100;
   const currentStepLabel = tabs[currentStepIndex].label.replace(/^\d+\.\s*/, '');
+
+  // Barrios del municipio seleccionado + nombre del barrio elegido (se envía como `Barrio`).
+  const barriosDelMunicipio = BARRIOS_POR_MUNICIPIO[municipio] || [];
+  const barrioNombre = barriosDelMunicipio.find((b) => String(b.id) === barrioId)?.barrio || '';
 
   return (
     <div style={styles.formContainer}>
@@ -323,17 +333,6 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </div>
 
               <div style={styles.fieldGroup}>
-                <label style={styles.label}>Barrio *</label>
-                <input
-                  type="text"
-                  name="Barrio"
-                  className="form-control"
-                  placeholder="Ej. Robledo Pajarito"
-                  required
-                />
-              </div>
-
-              <div style={styles.fieldGroup}>
                 <label style={styles.label}>Tipo de Operación *</label>
                 <select name="Tipo Operacion" className="form-select" required defaultValue="">
                   <option value="" disabled>Selecciona una opción...</option>
@@ -345,13 +344,40 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Municipio *</label>
-                <select name="Municipio" className="form-select" required defaultValue="">
+                <select
+                  name="Municipio"
+                  className="form-select"
+                  required
+                  value={municipio}
+                  onChange={(e) => { setMunicipio(e.target.value); setBarrioId(''); }}
+                >
                   <option value="" disabled>Selecciona un municipio...</option>
                   <option value="Medellin">Medellín</option>
                   <option value="Bello">Bello</option>
                   <option value="Sabaneta">Sabaneta</option>
                   <option value="Envigado">Envigado</option>
                 </select>
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Barrio *</label>
+                <select
+                  name="Barrio_id"
+                  className="form-select"
+                  required
+                  disabled={!municipio}
+                  value={barrioId}
+                  onChange={(e) => setBarrioId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    {municipio ? 'Selecciona un barrio...' : 'Primero elige el municipio'}
+                  </option>
+                  {barriosDelMunicipio.map((b) => (
+                    <option key={b.id} value={b.id}>{b.barrio}</option>
+                  ))}
+                </select>
+                {/* El nombre del barrio se sigue enviando como `Barrio` (hoja/doc/post de n8n) */}
+                <input type="hidden" name="Barrio" value={barrioNombre} />
               </div>
 
               <div style={styles.fieldGroup}>
