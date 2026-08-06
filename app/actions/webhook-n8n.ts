@@ -152,7 +152,10 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
 
     // Mapear campos EXACTAMENTE como los espera el flujo n8n, incluyendo espacios al final de las llaves
     n8nFormData.append('Titulo Captacion', tituloCaptacion);
-    n8nFormData.append('Unidad', (formData.get('Unidad') as string) || 'n/a');
+    // Guardia: si aun así llega un sí/no como nombre de unidad, se descarta (n/a).
+    const unidadRaw = ((formData.get('Unidad') as string) || 'n/a').trim();
+    const unidadLimpia = /^(si|sí|no)$/i.test(unidadRaw) ? 'n/a' : (unidadRaw || 'n/a');
+    n8nFormData.append('Unidad', unidadLimpia);
     n8nFormData.append('Direccion', direccion);
     n8nFormData.append('Apartamento', (formData.get('Apartamento') as string) || 'n/a');
     n8nFormData.append('Barrio', barrio);

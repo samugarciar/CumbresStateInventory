@@ -21,11 +21,12 @@ import {
 
 interface FormCaptarInmuebleProps {
   isAdmin: boolean;
+  unidades: string[];
 }
 
 type TabType = 'general' | 'caracteristicas' | 'comodidades' | 'propietario' | 'fotos';
 
-export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps) {
+export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmuebleProps) {
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -34,6 +35,10 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   // Municipio y Barrio son controlados: Barrio es un desplegable dependiente de Municipio.
   const [municipio, setMunicipio] = useState('');
   const [barrioId, setBarrioId] = useState('');
+  // Unidad cerrada: toggle sí/no + selector de unidades existentes (con "agregar nueva").
+  const [enUnidad, setEnUnidad] = useState(false);
+  const [unidadSel, setUnidadSel] = useState('');
+  const [unidadNueva, setUnidadNueva] = useState('');
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -166,6 +171,9 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
           formRef.current?.reset();
           setMunicipio('');
           setBarrioId('');
+          setEnUnidad(false);
+          setUnidadSel('');
+          setUnidadNueva('');
           setActiveTab('general');
         } else {
           setStatus({ success: false, message: result.message });
@@ -195,9 +203,53 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   const barriosDelMunicipio = BARRIOS_POR_MUNICIPIO[municipio] || [];
   const barrioNombre = barriosDelMunicipio.find((b) => String(b.id) === barrioId)?.barrio || '';
 
+  // `Unidad` = nombre del edificio (n/a si no aplica); `Unidad Cerrada` = sí/no del toggle.
+  const unidadValue = !enUnidad ? 'n/a' : (unidadSel === '__otra__' ? unidadNueva.trim() : unidadSel);
+  const unidadCerradaValue = enUnidad ? 'Si' : 'No';
+
   return (
     <div style={styles.formContainer}>
       <style>{`
+        .toggle-switch {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.6rem;
+          cursor: pointer;
+          margin-top: 0.35rem;
+        }
+        .toggle-switch input {
+          position: absolute;
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .toggle-track {
+          width: 42px;
+          height: 24px;
+          background: var(--border-color);
+          border-radius: 999px;
+          position: relative;
+          transition: background var(--transition-fast);
+          flex-shrink: 0;
+        }
+        .toggle-track::after {
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 20px;
+          height: 20px;
+          background: #ffffff;
+          border-radius: 50%;
+          transition: transform var(--transition-fast);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        .toggle-switch input:checked + .toggle-track {
+          background: var(--primary);
+        }
+        .toggle-switch input:checked + .toggle-track::after {
+          transform: translateX(18px);
+        }
         @media (max-width: 767px) {
           .field-grid-responsive {
             grid-template-columns: 1fr !important;
@@ -393,15 +445,53 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                 </select>
               </div>
 
-              <div style={styles.fieldGroup}>
+              <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1' }}>
                 <label style={styles.label}>Unidad Cerrada / Edificio</label>
-                <input 
-                  type="text" 
-                  name="Unidad" 
-                  className="form-control" 
-                  placeholder="Ej. Luna del Mar (n/a si no aplica)" 
-                  defaultValue="n/a"
-                />
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={enUnidad}
+                    onChange={(e) => {
+                      setEnUnidad(e.target.checked);
+                      if (!e.target.checked) { setUnidadSel(''); setUnidadNueva(''); }
+                    }}
+                  />
+                  <span className="toggle-track" />
+                  <span style={styles.toggleText}>El inmueble está en una unidad cerrada / edificio</span>
+                </label>
+
+                {enUnidad && (
+                  <div style={styles.unidadReveal}>
+                    <select
+                      className="form-select"
+                      required
+                      value={unidadSel}
+                      onChange={(e) => { setUnidadSel(e.target.value); if (e.target.value !== '__otra__') setUnidadNueva(''); }}
+                    >
+                      <option value="" disabled>Selecciona la unidad...</option>
+                      {unidades.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="__otra__">➕ Otra (agregar nueva)</option>
+                    </select>
+
+                    {unidadSel === '__otra__' && (
+                      <input
+                        type="text"
+                        className="form-control"
+                        required
+                        value={unidadNueva}
+                        onChange={(e) => setUnidadNueva(e.target.value)}
+                        placeholder="Nombre de la nueva unidad (ej. Luna del Mar)"
+                        style={{ marginTop: '0.6rem' }}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Lo que realmente viaja al POST de n8n */}
+                <input type="hidden" name="Unidad" value={unidadValue} />
+                <input type="hidden" name="Unidad Cerrada" value={unidadCerradaValue} />
               </div>
 
               <div style={styles.fieldGroup}>
@@ -566,7 +656,6 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                 { name: 'Calentador', label: 'Calentador' },
                 { name: 'Balcon', label: 'Balcón' },
                 { name: 'Cuarto Util', label: 'Cuarto Útil' },
-                { name: 'Unidad Cerrada', label: 'Unidad Cerrada' },
                 { name: 'Piscina', label: 'Piscina' },
                 { name: 'Cancha', label: 'Canchas' },
                 { name: 'Gimnasio', label: 'Gimnasio' }
@@ -935,6 +1024,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   textarea: {
     resize: 'vertical',
+  },
+  toggleText: {
+    fontSize: '0.85rem',
+    color: 'var(--text-secondary)',
+  },
+  unidadReveal: {
+    marginTop: '0.75rem',
+    display: 'flex',
+    flexDirection: 'column',
   },
   dragDropZone: {
     border: '2px dashed var(--border-color)',
