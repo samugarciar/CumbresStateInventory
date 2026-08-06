@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { correrCaptacion } from './graph';
 import { registrarUso, estadoPresupuesto } from './uso';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from './tipos';
-import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre } from './sources/mercadolibre';
+import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre, idCanonico } from './sources/mercadolibre';
 
 // Cuántos anuncios se procesan a la vez. Cada uno son 2 llamadas al LLM: en
 // serie un lote grande no cabe en maxDuration, y todos a la vez arriesga
@@ -122,7 +122,9 @@ export async function procesarAnuncios(
       }
 
       listing.url = a.url ?? listing.url;
-      listing.fuente_id = listing.fuente_id ?? a.url ?? null;
+      // Clave de dedup: el id del anuncio, NO la URL (ML mete un fragmento de
+      // sesión distinto en cada correo de alerta).
+      listing.fuente_id = listing.fuente_id ?? idCanonico(a.url, fuente);
       listing.titulo = listing.titulo || a.titulo;
       listing.precio = listing.precio ?? a.precio ?? null;
       listing.ciudad = listing.ciudad ?? a.ciudad ?? null;

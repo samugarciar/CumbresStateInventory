@@ -47,6 +47,7 @@ const PROMPT = `Extraes anuncios de inmuebles de los correos de alerta que enví
 
 Instrucciones:
 - Devuelve un elemento por cada INMUEBLE anunciado en el correo.
+- "titulo": si el texto del enlace es genérico —Mercado Libre suele poner solo "Apartamento en Arriendo" en TODOS los anuncios del correo— **no lo copies tal cual**: compón un título corto y distinguible con los datos del propio anuncio (zona/barrio, área y habitaciones). Ej.: "Apartamento en arriendo · Bello, Agua Clara · 67 m² · 3 hab". Si el enlace ya trae un título descriptivo y propio, úsalo tal cual.
 - "url": el enlace del anuncio tal como aparece en el correo (los enlaces vienen marcados como [URL] justo después de su texto). Si el anuncio no tiene enlace, deja null.
 - "precio": solo el número en pesos colombianos, sin puntos ni símbolos (ej. 245000000). Si dice "245 millones", conviértelo. Si no hay precio, null.
 - "area_m2" y "habitaciones": números; null si no aparecen.
@@ -132,16 +133,21 @@ export function asuntoDesdePayloadGmail(payload: unknown): string | undefined {
   return h?.value;
 }
 
-/** Quita parámetros de tracking (utm_*, etc.) para que el dedup por URL funcione. */
+/**
+ * Normaliza la URL del anuncio: fuera el fragmento y los parámetros de
+ * seguimiento. El fragmento importa especialmente porque Mercado Libre mete en
+ * cada correo un identificador de sesión único (`#[sa:true,sid:<uuid>,…]`).
+ */
 function limpiarUrl(url: string): string {
   try {
     const u = new URL(url);
+    u.hash = '';
     for (const p of [...u.searchParams.keys()]) {
-      if (/^(utm_|gclid|fbclid|mkt_|pk_|_ga|trk|tracking)/i.test(p)) u.searchParams.delete(p);
+      if (/^(utm_|gclid|fbclid|mkt_|pk_|_ga|trk|tracking|ref)/i.test(p)) u.searchParams.delete(p);
     }
     return u.toString();
   } catch {
-    return url;
+    return url.split('#')[0];
   }
 }
 

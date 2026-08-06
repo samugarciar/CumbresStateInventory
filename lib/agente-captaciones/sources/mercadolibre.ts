@@ -38,6 +38,39 @@ export function esUrlMercadoLibre(url: string): boolean {
   return /mercadolibre\.com/i.test(url) || extraerItemId(url) !== null;
 }
 
+/**
+ * Identificador estable de un anuncio, para deduplicar.
+ *
+ * POR QUÉ NO LA URL: Mercado Libre añade a cada correo de alerta un fragmento
+ * de sesión único (`#[sa:true,sid:<uuid>,uid:…]`), así que el MISMO anuncio
+ * llega con una URL distinta cada día y el dedup por URL no lo reconocía —
+ * pasó de verdad: un apartamento de Bello entró dos veces con 14 minutos de
+ * diferencia. El id del anuncio es inmune a fragmentos, parámetros y cambios
+ * de slug.
+ */
+export function idCanonico(url: string | null | undefined, fuente: string): string | null {
+  if (!url) return null;
+  if (fuente === 'mercadolibre') {
+    const id = extraerItemId(url);
+    if (id) return id;
+  }
+  if (fuente === 'facebook') {
+    const m = url.match(/\/marketplace\/item\/(\d+)/);
+    if (m) return `fb-${m[1]}`;
+  }
+  // Otros portales: al menos se quitan fragmento y parámetros de tracking.
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    for (const p of [...u.searchParams.keys()]) {
+      if (/^(utm_|gclid|fbclid|mkt_|pk_|_ga|trk|tracking|ref)/i.test(p)) u.searchParams.delete(p);
+    }
+    return u.toString();
+  } catch {
+    return url.split('#')[0];
+  }
+}
+
 async function get(url: string, token: string): Promise<any> {
   const r = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, accept: 'application/json' },
