@@ -342,7 +342,16 @@ export async function correrAgenteComercial(params: {
     const s = typeof h.salida === 'string' ? safeParse(h.salida) : h.salida;
     return !!(s && typeof s === 'object' && (s as { success?: boolean }).success === true);
   });
-  const etapa: Etapa = resultado.etapa === 'CITA AGENDADA' && !citaReal ? 'CONSULTA' : resultado.etapa;
+  // La etapa la manda el hecho, no la interpretación del formateador: si hubo
+  // cita, es CITA AGENDADA (n8n la usa para NO mandar el lead a "Escalado a
+  // asesor", que dejaría al agente mudo con un cliente que acaba de convertir
+  // y todavía puede querer reprogramar o preguntar cómo llegar); si no la
+  // hubo, nunca puede decir que sí.
+  const etapa: Etapa = citaReal
+    ? 'CITA AGENDADA'
+    : resultado.etapa === 'CITA AGENDADA'
+      ? 'CONSULTA'
+      : resultado.etapa;
 
   const leadCaliente = detectarLeadCaliente(bitacora);
 
