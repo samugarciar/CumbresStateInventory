@@ -6,11 +6,19 @@ import { revalidatePath } from 'next/cache';
 interface AprobarData {
   solicitud_id: string;
   asesor_id: string; // asesor al que se le crea la franja
+  // Horario en el que el asesor SÍ puede atender. Si se omite, se usa el que
+  // pidió el cliente. Poder ajustarlo es lo que convierte una denegación
+  // ("no puedo a esa hora") en una contraoferta ("te recibo a las 2"): el 64%
+  // de las solicitudes se denegaban y varias traían justamente eso escrito a
+  // mano en el motivo, donde el cliente nunca lo veía.
+  fecha?: string;
+  hora_inicio?: string;
+  hora_fin?: string;
 }
 
 interface DenegarData {
   solicitud_id: string;
-  motivo?: string | null;
+  motivo: string; // obligatorio: un "no" sin explicación ni alternativa mata el lead
 }
 
 // Payload del webhook de veredicto (contrato acordado con el admin del agente n8n)
@@ -143,8 +151,30 @@ export async function aprobarSolicitud(data: AprobarData) {
     if (solicitud.estado !== 'pendiente') {
       return { success: false, error: 'Esta solicitud ya fue decidida.' };
     }
-    if (solicitud.fecha < hoyBogota()) {
-      return { success: false, error: 'El horario solicitado ya pasó. Deniégala (el cliente recibirá el aviso) o espera una solicitud nueva.' };
+    // Horario efectivo: el que el asesor puede atender, o el que pidió el cliente.
+    const fecha = data.fecha || solicitud.fecha;
+    const horaInicio = data.hora_inicio || solicitud.hora_inicio;
+    const horaFin = data.hora_fin || solicitud.hora_fin;
+    const ajustado =
+      fecha !== solicitud.fecha ||
+      horaInicio.substring(0, 5) !== solicitud.hora_inicio.substring(0, 5) ||
+      horaFin.substring(0, 5) !== solicitud.hora_fin.substring(0, 5);
+
+    if (fecha < hoyBogota()) {
+      return {
+        success: false,
+        error: ajustado
+          ? 'La fecha que elegiste ya pasó. Escoge una fecha futura.'
+          : 'El horario solicitado ya pasó. Ofrécele otro horario que sí puedas, o deniégala explicándole el motivo.',
+      };
+    }
+    if (horaFin <= horaInicio) {
+      return { success: false, error: 'La hora de fin debe ser posterior a la de inicio.' };
+    }
+    // Misma grilla que exige la RPC agendar_cita: bloques de 30 minutos.
+    const enGrilla = (h: string) => ['00', '30'].includes(h.substring(3, 5));
+    if (!enGrilla(horaInicio) || !enGrilla(horaFin)) {
+      return { success: false, error: 'Las visitas van en bloques de 30 minutos (ej. 09:00, 09:30, 14:00).' };
     }
 
     // Asesor de la franja nueva
@@ -164,9 +194,9 @@ export async function aprobarSolicitud(data: AprobarData) {
       .from('franjas_horarias')
       .select('id')
       .eq('asesor_id', asesor.id)
-      .eq('fecha', solicitud.fecha)
-      .lt('hora_inicio', solicitud.hora_fin)
-      .gt('hora_fin', solicitud.hora_inicio);
+      .eq('fecha', fecha)
+      .lt('hora_inicio', horaFin)
+      .gt('hora_fin', horaInicio);
 
     if (overlaps && overlaps.length > 0) {
       return { success: false, error: `${asesor.nombre_completo.split(' ')[0]} ya tiene una franja en ese horario. Elige otro asesor.` };
@@ -179,9 +209,9 @@ export async function aprobarSolicitud(data: AprobarData) {
         inmobiliaria_id: profile.inmobiliaria_id,
         inmueble_id: solicitud.inmueble_id,
         asesor_id: asesor.id,
-        fecha: solicitud.fecha,
-        hora_inicio: solicitud.hora_inicio,
-        hora_fin: solicitud.hora_fin,
+        fecha,
+        hora_inicio: horaInicio,
+        hora_fin: horaFin,
         color: '#00abd8',
         creado_por: user.id,
       })
@@ -216,9 +246,9 @@ export async function aprobarSolicitud(data: AprobarData) {
     // 3) Agendar la cita vía la RPC (re-valida todo y captura alcance/unidad/snapshot)
     const rpcParams: Record<string, any> = {
       p_inmueble_id: solicitud.inmueble_id,
-      p_fecha: solicitud.fecha,
-      p_hora_inicio: solicitud.hora_inicio,
-      p_hora_fin: solicitud.hora_fin,
+      p_fecha: fecha,
+      p_hora_inicio: horaInicio,
+      p_hora_fin: horaFin,
       p_cliente_nombre: solicitud.cliente_nombre,
       p_cliente_telefono: solicitud.cliente_telefono,
       p_cliente_email: solicitud.cliente_email,
@@ -273,9 +303,9 @@ export async function aprobarSolicitud(data: AprobarData) {
       tipo_transaccion: solicitud.tipo_transaccion,
       unidad: solicitud.unidad,
       aptos_count: snapshot ? snapshot.length : null,
-      fecha: solicitud.fecha,
-      hora_inicio: solicitud.hora_inicio.substring(0, 5),
-      hora_fin: solicitud.hora_fin.substring(0, 5),
+      fecha,
+      hora_inicio: horaInicio.substring(0, 5),
+      hora_fin: horaFin.substring(0, 5),
       asesor: asesor.nombre_completo,
       telefono_asesor: asesor.telefono || null,
       cita_id: cita.cita_id,
@@ -286,10 +316,13 @@ export async function aprobarSolicitud(data: AprobarData) {
     revalidatePath('/agenda');
     revalidatePath('/tareas');
     revalidatePath('/dashboard');
+    const cuando = `${fecha} ${horaInicio.substring(0, 5)}`;
     return {
       success: true,
       webhookEnviado: enviado,
-      message: `Franja creada y cita agendada para ${solicitud.cliente_nombre}.${aviso ? ` ⚠️ ${aviso}` : ' El cliente recibirá la confirmación por WhatsApp.'}`,
+      message: ajustado
+        ? `Franja creada y cita agendada para ${solicitud.cliente_nombre} el ${cuando} (había pedido ${solicitud.fecha} ${solicitud.hora_inicio.substring(0, 5)}).${aviso ? ` ⚠️ ${aviso}` : ' El cliente recibirá el horario por WhatsApp y puede responder por ahí si no le sirve.'}`
+        : `Franja creada y cita agendada para ${solicitud.cliente_nombre}.${aviso ? ` ⚠️ ${aviso}` : ' El cliente recibirá la confirmación por WhatsApp.'}`,
     };
   } catch (error: any) {
     console.error('[Solicitudes] Excepción aprobarSolicitud:', error);
@@ -335,7 +368,18 @@ export async function denegarSolicitud(data: DenegarData) {
       return { success: false, error: 'Esta solicitud ya fue decidida.' };
     }
 
-    const motivo = (data.motivo || '').trim() || null;
+    // Motivo obligatorio: el 64% de las solicitudes se denegaban y 12 de 23 sin
+    // ningún motivo, así que el cliente recibía un "no" seco por WhatsApp y el
+    // lead moría. Si no podés a esa hora, la salida correcta es aprobar en el
+    // horario que sí puedas (contraoferta), no denegar.
+    const motivo = (data.motivo || '').trim();
+    if (motivo.length < 10) {
+      return {
+        success: false,
+        error:
+          'Explica el motivo (mínimo 10 caracteres): el cliente lo recibe por WhatsApp y un "no" sin explicación lo hace desistir. Si el problema es solo la hora, mejor apruébala en el horario que sí puedas atender.',
+      };
+    }
 
     const { error: updError } = await supabase
       .from('solicitudes_apertura')
