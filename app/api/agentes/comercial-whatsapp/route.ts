@@ -180,6 +180,7 @@ export async function POST(request: Request) {
       inmobiliariaId,
       promptSistema: promptCompleto,
       historial,
+      telefono,
     });
   } catch (error) {
     console.error('[AgenteComercial] Error corriendo el agente:', error);
@@ -235,7 +236,12 @@ export async function POST(request: Request) {
     response: resultado.response,
     etapa: resultado.etapa,
     escalado: resultado.escalado,
-    prioridad: resultado.prioridad, // 'urgente' = lead que quiere visitar y no había agenda (n8n lo usará en Fase 2)
+    prioridad: resultado.prioridad,
+    // lead_caliente = quiso visitar y no había agenda. n8n lo usa para avisarle
+    // al asesor SIN mover la etapa de Kommo (moverla dejaría al agente mudo
+    // justo cuando todavía debe recibir el día/hora que prefiere el cliente).
+    lead_caliente: resultado.leadCaliente,
+    contexto: resultado.contexto, // resumen para el correo del asesor — NUNCA para el cliente
     respuesta: resultado.respuesta, // conveniencia: partes unidas (pruebas directas / lectura humana)
     conversacion_id: conversacionId,
     metadata: {

@@ -56,6 +56,8 @@ export interface ResultadoAgenteComercial {
   etapa: Etapa;
   escalado: boolean;
   prioridad: 'urgente' | 'normal';
+  leadCaliente: boolean; // quiso visitar y no había agenda que ofrecerle
+  contexto: string; // resumen para el asesor (NUNCA se le manda al cliente)
   respuesta: string; // conveniencia: las partes unidas, para el log de mensajes y pruebas directas
   herramientasUsadas: HerramientaUsada[];
   uso: UsoRegistrado[];
@@ -100,6 +102,50 @@ function safeParse(s: string): unknown {
   } catch {
     return null;
   }
+}
+
+// "Lead caliente": el cliente pidió ver un inmueble y no teníamos ninguna
+// franja que ofrecerle. Es la señal de compra más fuerte del negocio (86% del
+// inventario no tiene agenda publicada, así que pasa seguido) y hoy se atendía
+// sola: si el cliente no volvía a escribir, nadie se enteraba de que existió.
+// Va aparte de `escalado` a propósito: se avisa al asesor SIN mover la etapa de
+// Kommo, porque moverla dejaría al agente mudo justo cuando todavía tiene que
+// recibir el día y la hora que prefiere el cliente.
+function detectarLeadCaliente(bitacora: HerramientaUsada[]): boolean {
+  return bitacora.some((h) => {
+    if (h.nombre !== 'verificar_horarios_disponibles') return false;
+    const s = typeof h.salida === 'string' ? safeParse(h.salida) : h.salida;
+    const filas = Array.isArray(s) ? s : [s];
+    return filas.some(
+      (f) =>
+        f &&
+        typeof f === 'object' &&
+        ['sin_disponibilidad', 'sin_resultados'].includes((f as { modo?: string }).modo ?? '')
+    );
+  });
+}
+
+// Resumen accionable para el correo del asesor. Se arma con los datos REALES
+// que pasaron por las herramientas, no con lo que el modelo escribió — así el
+// asesor ve exactamente qué inmueble pidió el cliente y con qué flexibilidad,
+// y el mensaje al cliente queda limpio de notas internas.
+function armarContexto(bitacora: HerramientaUsada[], telefono: string): string {
+  const lineas: string[] = [`Teléfono del cliente: ${telefono}`];
+  for (const h of bitacora) {
+    const ent = h.entrada as Record<string, unknown> | null;
+    if (!ent) continue;
+    if (h.nombre === 'verificar_horarios_disponibles') {
+      lineas.push(`Preguntó por: "${ent.texto}"${ent.tipo_transaccion ? ` (${ent.tipo_transaccion})` : ''}`);
+    }
+    if (h.nombre === 'solicitar_apertura_de_agenda') {
+      lineas.push(
+        `Quiere visitar "${ent.texto}" el ${ent.fecha} de ${ent.hora_inicio} a ${ent.hora_fin}` +
+          `${ent.cliente_nombre ? ` · ${ent.cliente_nombre}` : ''}` +
+          `${ent.notas ? `\nFlexibilidad: ${ent.notas}` : ''}`
+      );
+    }
+  }
+  return lineas.join('\n');
 }
 
 // Mismo esquema que "Structured Output Parser" en n8n (jsonSchemaExample).
@@ -194,8 +240,9 @@ export async function correrAgenteComercial(params: {
   inmobiliariaId: string;
   promptSistema: string;
   historial: BaseMessage[]; // turnos previos + el mensaje nuevo del usuario al final (sin system)
+  telefono: string;
 }): Promise<ResultadoAgenteComercial> {
-  const { supabase, inmobiliariaId, promptSistema, historial } = params;
+  const { supabase, inmobiliariaId, promptSistema, historial, telefono } = params;
 
   const bitacora: HerramientaUsada[] = [];
   const tools = crearToolsAgenteComercial(supabase, inmobiliariaId, bitacora);
@@ -297,12 +344,16 @@ export async function correrAgenteComercial(params: {
   });
   const etapa: Etapa = resultado.etapa === 'CITA AGENDADA' && !citaReal ? 'CONSULTA' : resultado.etapa;
 
+  const leadCaliente = detectarLeadCaliente(bitacora);
+
   return {
     output,
     response,
     etapa,
     escalado,
-    prioridad,
+    prioridad: leadCaliente && prioridad === 'normal' ? 'urgente' : prioridad,
+    leadCaliente,
+    contexto: armarContexto(bitacora, telefono),
     respuesta: Object.values(response).filter(Boolean).join('\n\n'),
     herramientasUsadas: bitacora,
     uso: resultado.usoTokens,
