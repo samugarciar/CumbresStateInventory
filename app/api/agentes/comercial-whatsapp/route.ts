@@ -235,6 +235,7 @@ export async function POST(request: Request) {
     response: resultado.response,
     etapa: resultado.etapa,
     escalado: resultado.escalado,
+    prioridad: resultado.prioridad, // 'urgente' = lead que quiere visitar y no había agenda (n8n lo usará en Fase 2)
     respuesta: resultado.respuesta, // conveniencia: partes unidas (pruebas directas / lectura humana)
     conversacion_id: conversacionId,
     metadata: {

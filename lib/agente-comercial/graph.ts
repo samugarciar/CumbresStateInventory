@@ -51,13 +51,55 @@ export interface HerramientaUsada {
 }
 
 export interface ResultadoAgenteComercial {
-  output: string; // borrador crudo del agente principal, CON el prefijo [ESCALAR] intacto si aplica
+  output: string; // borrador del agente, SIEMPRE con el prefijo [ESCALAR] cuando escalado=true
   response: { part_1: string; part_2?: string; part_3?: string; part_4?: string; part_5?: string };
   etapa: Etapa;
   escalado: boolean;
+  prioridad: 'urgente' | 'normal';
   respuesta: string; // conveniencia: las partes unidas, para el log de mensajes y pruebas directas
   herramientasUsadas: HerramientaUsada[];
   uso: UsoRegistrado[];
+}
+
+// El escalamiento NO puede depender de que el modelo recuerde escribir
+// "[ESCALAR]": si lo olvida, el asesor nunca se entera y el lead muere en
+// silencio (visto en pruebas 10/ago). Estos disparadores se derivan de lo que
+// las herramientas REALMENTE hicieron, así que son deterministas.
+//
+// Solo se auto-escala en puntos TERMINALES de la conversación (ya se capturó
+// todo lo que el agente necesitaba). Importante: escalar mueve el lead a
+// "Escalado a asesor", etapa que el filtro "Etapa permitida?" de n8n NO
+// admite → el agente queda MUDO para ese cliente. Por eso NO se auto-escala
+// al solo detectar `sin_disponibilidad`: ahí el agente todavía tiene que
+// recibir el día/hora que prefiere el cliente.
+function evaluarEscalamiento(bitacora: HerramientaUsada[]): {
+  autoEscalar: boolean;
+  prioridad: 'urgente' | 'normal';
+} {
+  const exito = (nombre: string) =>
+    bitacora.some((h) => {
+      if (h.nombre !== nombre) return false;
+      const s = typeof h.salida === 'string' ? safeParse(h.salida) : h.salida;
+      return !!(s && typeof s === 'object' && (s as { success?: boolean }).success === true);
+    });
+
+  // Se registró una solicitud de apertura → un asesor tiene que abrir ese
+  // espacio cuanto antes. Es la señal de compra más fuerte que existe.
+  const aperturaRegistrada = exito('solicitar_apertura_de_agenda');
+  const citaAgendada = exito('agendar_cita');
+
+  return {
+    autoEscalar: aperturaRegistrada || citaAgendada,
+    prioridad: aperturaRegistrada ? 'urgente' : 'normal',
+  };
+}
+
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
 }
 
 // Mismo esquema que "Structured Output Parser" en n8n (jsonSchemaExample).
@@ -232,13 +274,35 @@ export async function correrAgenteComercial(params: {
   const resultado = await grafo.invoke({ messages: historial });
 
   const response = resultado.respuestaFormateada ?? { part_1: resultado.borrador };
-  const escalado = /^\s*\[ESCALAR\]/i.test(resultado.borrador);
+
+  const tagPresente = /^\s*\[ESCALAR\]/i.test(resultado.borrador);
+  const { autoEscalar, prioridad } = evaluarEscalamiento(bitacora);
+  const escalado = tagPresente || autoEscalar;
+
+  // n8n decide la etapa de Kommo leyendo si `output` empieza con [ESCALAR]
+  // (nodo "Escalar?" y "Prepare Update Payload"). Se normaliza acá para que
+  // el escalamiento derivado por código llegue igual que el del modelo.
+  // `response` (lo que ve el cliente) nunca lleva la etiqueta.
+  const output = escalado && !tagPresente ? `[ESCALAR] ${resultado.borrador}` : resultado.borrador;
+
+  // Una solicitud de apertura pendiente NO es una cita agendada: dejar que el
+  // clasificador la mande a "CITA AGENDADA" movería el lead a una etapa falsa
+  // (y podría disparar el salesbot de confirmación de citas). Cuando el
+  // escalamiento es urgente, la etapa la manda n8n a "Escalado a asesor", pero
+  // se corrige igual para que el dato que registramos no mienta.
+  const citaReal = bitacora.some((h) => {
+    if (h.nombre !== 'agendar_cita') return false;
+    const s = typeof h.salida === 'string' ? safeParse(h.salida) : h.salida;
+    return !!(s && typeof s === 'object' && (s as { success?: boolean }).success === true);
+  });
+  const etapa: Etapa = resultado.etapa === 'CITA AGENDADA' && !citaReal ? 'CONSULTA' : resultado.etapa;
 
   return {
-    output: resultado.borrador,
+    output,
     response,
-    etapa: resultado.etapa,
+    etapa,
     escalado,
+    prioridad,
     respuesta: Object.values(response).filter(Boolean).join('\n\n'),
     herramientasUsadas: bitacora,
     uso: resultado.usoTokens,
