@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle } from 'lucide-react';
+import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { aprobarSolicitud, denegarSolicitud } from '@/app/actions/solicitudes';
 
 interface Solicitud {
@@ -193,11 +193,29 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
                     <Check size={14} />
                     {vencida ? 'Ofrecer otro horario' : 'Aprobar'}
                   </button>
+                  {/* Botón propio para la contraoferta: con solo "Aprobar" y "Denegar",
+                      el asesor que no puede a esa hora le da a Denegar y escribe la
+                      alternativa en el motivo, donde no crea agenda ni cierra nada
+                      (pasó en 23 de 36 solicitudes, y volvió a pasar en la prueba
+                      del 10/ago aun teniendo los campos de hora disponibles). */}
+                  {!vencida && (
+                    <button
+                      className="btn btn-secondary"
+                      style={styles.accionBtn}
+                      onClick={() => abrirAprobar(s)}
+                      disabled={procesando}
+                      title="No podés a esa hora pero sí a otra: elegí la tuya y el cliente la recibe por WhatsApp"
+                    >
+                      <Clock size={14} />
+                      Proponer otra hora
+                    </button>
+                  )}
                   <button
                     className="btn btn-danger"
                     style={styles.accionBtn}
                     onClick={() => abrirDenegar(s)}
                     disabled={procesando}
+                    title="Solo si la visita no es posible en ninguna hora"
                   >
                     <X size={14} />
                     Denegar
