@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { ASESOR_IDS_VALIDOS } from '@/lib/captacion/asesores';
 
 export interface WebhookResult {
   success: boolean;
@@ -46,8 +47,9 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const estratoRaw = formData.get('Estrato') as string;
   const municipio = formData.get('Municipio') as string;
   const barrioIdRaw = formData.get('Barrio_id') as string;
+  const asesorIdRaw = formData.get('Asesor_id') as string;
 
-  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio || !barrioIdRaw) {
+  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio || !barrioIdRaw || !asesorIdRaw) {
     return { success: false, message: 'Por favor, completa todos los campos requeridos.' };
   }
 
@@ -75,6 +77,11 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const barrioIdNum = Number(barrioIdRaw);
   if (!Number.isInteger(barrioIdNum) || barrioIdNum <= 0) {
     return { success: false, message: 'El barrio seleccionado no es válido.' };
+  }
+
+  const asesorIdNum = Number(asesorIdRaw);
+  if (!ASESOR_IDS_VALIDOS.has(asesorIdNum)) {
+    return { success: false, message: 'El asesor seleccionado no es válido.' };
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -162,6 +169,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     n8nFormData.append('Barrio_id', String(barrioIdNum));
     n8nFormData.append('Precio(COP)', precioRaw);
     n8nFormData.append('Asesor', asesor);
+    n8nFormData.append('Asesor_id', String(asesorIdNum));
 
     // Campos nuevos: viajan en el mismo body con las llaves exactas que espera n8n
     n8nFormData.append('Tipo Operacion', tipoOperacion);

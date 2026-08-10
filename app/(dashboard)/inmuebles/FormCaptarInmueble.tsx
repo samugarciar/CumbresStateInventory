@@ -4,6 +4,7 @@ import React, { useState, useRef, useTransition } from 'react';
 import { enviarCaptacionWebhook } from '@/app/actions/webhook-n8n';
 import { createClient } from '@/lib/supabase/client';
 import { BARRIOS_POR_MUNICIPIO } from '@/lib/captacion/barrios';
+import { ASESORES } from '@/lib/captacion/asesores';
 import { 
   Building2, 
   MapPin, 
@@ -39,6 +40,8 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
   const [enUnidad, setEnUnidad] = useState(false);
   const [unidadSel, setUnidadSel] = useState('');
   const [unidadNueva, setUnidadNueva] = useState('');
+  // Asesor: se envía el id del ERP (Asesor_id) + el nombre (Asesor). Default: Sebastian.
+  const [asesorId, setAsesorId] = useState(String(ASESORES[0].id));
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,6 +177,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           setEnUnidad(false);
           setUnidadSel('');
           setUnidadNueva('');
+          setAsesorId(String(ASESORES[0].id));
           setActiveTab('general');
         } else {
           setStatus({ success: false, message: result.message });
@@ -206,6 +210,9 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
   // `Unidad` = nombre del edificio (n/a si no aplica); `Unidad Cerrada` = sí/no del toggle.
   const unidadValue = !enUnidad ? 'n/a' : (unidadSel === '__otra__' ? unidadNueva.trim() : unidadSel);
   const unidadCerradaValue = enUnidad ? 'Si' : 'No';
+
+  // Nombre del asesor elegido (se envía como `Asesor`; el id va como `Asesor_id`).
+  const asesorNombre = ASESORES.find((a) => String(a.id) === asesorId)?.nombre || '';
 
   return (
     <div style={styles.formContainer}>
@@ -518,12 +525,19 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Asesor *</label>
-                <select name="Asesor" className="form-select" required defaultValue="Sebastian">
-                  <option value="Sebastian">Sebastian</option>
-                  <option value="Gisela">Gisela</option>
-                  <option value="Liz">Liz</option>
-                  <option value="Samuel">Samuel</option>
+                <select
+                  name="Asesor_id"
+                  className="form-select"
+                  required
+                  value={asesorId}
+                  onChange={(e) => setAsesorId(e.target.value)}
+                >
+                  {ASESORES.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
                 </select>
+                {/* El nombre del asesor se sigue enviando como `Asesor` (hoja/doc/post de n8n) */}
+                <input type="hidden" name="Asesor" value={asesorNombre} />
               </div>
             </div>
 
