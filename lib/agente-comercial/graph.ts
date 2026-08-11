@@ -112,17 +112,23 @@ function safeParse(s: string): unknown {
 // Kommo, porque moverla dejaría al agente mudo justo cuando todavía tiene que
 // recibir el día y la hora que prefiere el cliente.
 function detectarLeadCaliente(bitacora: HerramientaUsada[]): boolean {
-  return bitacora.some((h) => {
-    if (h.nombre !== 'verificar_horarios_disponibles') return false;
+  const modos: string[] = [];
+  for (const h of bitacora) {
+    if (h.nombre !== 'verificar_horarios_disponibles') continue;
     const s = typeof h.salida === 'string' ? safeParse(h.salida) : h.salida;
-    const filas = Array.isArray(s) ? s : [s];
-    return filas.some(
-      (f) =>
-        f &&
-        typeof f === 'object' &&
-        ['sin_disponibilidad', 'sin_resultados'].includes((f as { modo?: string }).modo ?? '')
-    );
-  });
+    for (const f of Array.isArray(s) ? s : [s]) {
+      if (f && typeof f === 'object') modos.push((f as { modo?: string }).modo ?? '');
+    }
+  }
+  if (modos.length === 0) return false;
+  // Si ALGUNA consulta encontró horarios, no es un lead sin agenda aunque otra
+  // haya fallado. El agente suele reintentar con un texto más corto cuando el
+  // primero no resuelve (ej. "Montiara 2026195" → sin_resultados, luego
+  // "Montiara" → disponibilidad_unidad con 3 franjas reales): mirar solo si
+  // hubo algún fallo disparaba la alerta de "quiere visitar y no hay agenda"
+  // aunque el cliente ya tuviera horarios en pantalla.
+  if (modos.some((m) => m === 'disponibilidad' || m === 'disponibilidad_unidad')) return false;
+  return modos.some((m) => m === 'sin_disponibilidad' || m === 'sin_resultados');
 }
 
 // Resumen accionable para el correo del asesor. Se arma con los datos REALES

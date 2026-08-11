@@ -15,6 +15,17 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// Postgres `ilike` ignora mayúsculas pero NO tildes: buscar "Niquía" (bien
+// escrito) contra un barrio guardado como "Niquia" devuelve CERO resultados.
+// Pasó con un cliente real el 11/ago: preguntó por Niquía y el agente le dijo
+// que no teníamos nada, habiendo 8 apartamentos. Cada carácter fuera de
+// [a-z0-9 espacio] se reemplaza por "_", el comodín de UN carácter en LIKE,
+// así "Niquía" matchea tanto "Niquia" como "Niquía" (y "Peñol" ambas formas).
+// De paso neutraliza % y _ que el cliente escriba, que serían comodines.
+function patronFlexible(v: string): string {
+  return [...v.trim()].map((ch) => (/[a-zA-Z0-9 ]/.test(ch) ? ch : '_')).join('');
+}
+
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);
 const ALCANCE = z.enum(['inmueble', 'unidad']);
@@ -43,8 +54,8 @@ export function crearToolsAgenteComercial(
         .eq('inmobiliaria_id', inmobiliariaId)
         .eq('estado', 'disponible');
 
-      if (args.ciudad) query = query.ilike('ciudad', `%${args.ciudad}%`);
-      if (args.barrio) query = query.ilike('barrio', `%${args.barrio}%`);
+      if (args.ciudad) query = query.ilike('ciudad', `%${patronFlexible(args.ciudad)}%`);
+      if (args.barrio) query = query.ilike('barrio', `%${patronFlexible(args.barrio)}%`);
       if (args.habitaciones_min != null) query = query.gte('habitaciones', args.habitaciones_min);
       if (args.precio_max != null) query = query.lte('precio', args.precio_max);
       if (args.tipo_inmueble) query = query.eq('tipo_inmueble', args.tipo_inmueble);
@@ -54,7 +65,10 @@ export function crearToolsAgenteComercial(
         // al modelo sintaxis PostgREST cruda demostró ser frágil: mandaba
         // "Mi Mundo" literal y la query moría con "failed to parse logic
         // tree"). Se limpian los caracteres que rompen el parser (, ( ) %).
-        const t = args.texto.replace(/[(),%]/g, ' ').replace(/\s+/g, ' ').trim();
+        // Las comas y paréntesis son sintaxis del .or() de PostgREST, así que
+        // se quitan ANTES de volver el resto flexible a tildes.
+        const limpio = args.texto.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+        const t = patronFlexible(limpio);
         if (t) {
           query = query.or(`titulo.ilike.%${t}%,descripcion.ilike.%${t}%,unidad.ilike.%${t}%`);
         }
