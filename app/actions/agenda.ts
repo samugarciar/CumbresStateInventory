@@ -464,7 +464,25 @@ export async function confirmarCitas(citaIds: string[]) {
       console.warn('[Citas] Enviadas al flujo pero no se pudieron marcar como confirmadas:', markErr.message);
     }
 
+    // Cerrar la tarea "Confirmar cita" que el agente creó al agendarla, para
+    // que no quede pendiente algo que ya se hizo (mismo patrón que
+    // completarTareaSolicitud en solicitudes.ts). Best-effort.
+    const { error: tareaErr } = await supabase
+      .from('tareas')
+      .update({
+        estado: 'completada',
+        completada_at: new Date().toISOString(),
+        completada_por: user.id,
+      })
+      .in('entidad_id', citas.map((c: any) => c.id))
+      .eq('evento_origen', 'cita_agendada')
+      .eq('estado', 'pendiente');
+    if (tareaErr) {
+      console.warn('[Citas] No se pudieron completar las tareas de confirmación:', tareaErr.message);
+    }
+
     revalidatePath('/citas');
+    revalidatePath('/tareas');
     return { success: true, count: payload.citas.length };
   } catch (error: any) {
     console.error('[Citas] Excepción confirmarCitas:', error);

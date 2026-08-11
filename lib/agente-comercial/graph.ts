@@ -150,8 +150,50 @@ function armarContexto(bitacora: HerramientaUsada[], telefono: string): string {
           `${ent.notas ? `\nFlexibilidad: ${ent.notas}` : ''}`
       );
     }
+    if (h.nombre === 'agendar_cita') {
+      const sal = (typeof h.salida === 'string' ? safeParse(h.salida) : h.salida) as Record<string, unknown> | null;
+      if (sal && sal.success === true) {
+        lineas.push(
+          `CITA AGENDADA: ${sal.inmueble}${sal.aptos_count ? ` (${sal.aptos_count} aptos, visita a la unidad)` : ''}\n` +
+            `Fecha: ${sal.fecha} de ${String(sal.hora_inicio).substring(0, 5)} a ${String(sal.hora_fin).substring(0, 5)}\n` +
+            `Cliente: ${ent.cliente_nombre} · ${ent.cliente_telefono}\n` +
+            `Asesor: ${sal.asesor}`
+        );
+      }
+    }
   }
   return lineas.join('\n');
+}
+
+// Datos de la cita recién agendada, para el correo de aviso y la tarea de
+// confirmación. Devuelve null si en este turno no se agendó nada.
+export function extraerCitaAgendada(bitacora: HerramientaUsada[]): {
+  cita_id: string;
+  inmueble: string;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  asesor: string | null;
+  cliente_nombre: string;
+  cliente_telefono: string;
+} | null {
+  for (const h of bitacora) {
+    if (h.nombre !== 'agendar_cita') continue;
+    const s = (typeof h.salida === 'string' ? safeParse(h.salida) : h.salida) as Record<string, unknown> | null;
+    if (!s || s.success !== true || !s.cita_id) continue;
+    const ent = (h.entrada ?? {}) as Record<string, unknown>;
+    return {
+      cita_id: String(s.cita_id),
+      inmueble: String(s.inmueble ?? ''),
+      fecha: String(s.fecha ?? ''),
+      hora_inicio: String(s.hora_inicio ?? '').substring(0, 5),
+      hora_fin: String(s.hora_fin ?? '').substring(0, 5),
+      asesor: s.asesor ? String(s.asesor) : null,
+      cliente_nombre: String(ent.cliente_nombre ?? ''),
+      cliente_telefono: String(ent.cliente_telefono ?? ''),
+    };
+  }
+  return null;
 }
 
 // Mismo esquema que "Structured Output Parser" en n8n (jsonSchemaExample).

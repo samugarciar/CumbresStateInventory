@@ -1,7 +1,7 @@
 import { HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { cargarPromptSistema, contextoVariable } from '@/lib/agente-comercial/prompt';
-import { correrAgenteComercial } from '@/lib/agente-comercial/graph';
+import { correrAgenteComercial, extraerCitaAgendada } from '@/lib/agente-comercial/graph';
 import { calcularCostoUSD } from '@/lib/agente-comercial/costos';
 
 // n8n sigue activando este agente (recibe el mensaje de Kommo, llama acá,
@@ -214,6 +214,27 @@ export async function POST(request: Request) {
     herramientas_usadas: resultado.herramientasUsadas.length > 0 ? resultado.herramientasUsadas : null,
   });
 
+  // Tarea de confirmación de la cita. La confirmación de citas ya existe
+  // (confirmarCitas → workflow n8n → Kommo, con insignia en /citas), pero
+  // nada avisaba que hubiera una cita nueva esperando: al 11/ago había citas
+  // del agente sin confirmar desde hacía días. La tarea aparece en /tareas,
+  // donde el equipo ya trabaja, y se completa sola al confirmar la cita.
+  const cita = extraerCitaAgendada(resultado.herramientasUsadas);
+  if (cita) {
+    const cuando = `${cita.fecha} ${cita.hora_inicio}`;
+    const { error: errorTarea } = await supabase.from('tareas').insert({
+      inmobiliaria_id: inmobiliariaId,
+      usuario_id: null, // sin dueño: la ven los admins, igual que las de solicitud_apertura
+      entidad_tipo: 'general',
+      entidad_id: cita.cita_id,
+      evento_origen: 'cita_agendada',
+      evento_titulo: `Cita agendada por el agente — ${cita.inmueble}`,
+      titulo: `Confirmar cita: ${cita.cliente_nombre} · ${cuando}${cita.asesor ? ` · ${cita.asesor}` : ''}`,
+      estado: 'pendiente',
+    });
+    if (errorTarea) console.warn('[AgenteComercial] No se pudo crear la tarea de la cita:', errorTarea.message);
+  }
+
   if (resultado.uso.length > 0) {
     const filasUso = resultado.uso.map((u) => ({
       inmobiliaria_id: inmobiliariaId,
@@ -241,6 +262,8 @@ export async function POST(request: Request) {
     // al asesor SIN mover la etapa de Kommo (moverla dejaría al agente mudo
     // justo cuando todavía debe recibir el día/hora que prefiere el cliente).
     lead_caliente: resultado.leadCaliente,
+    cita_agendada: cita !== null, // n8n lo usa para mandar el correo de aviso
+    cita,
     contexto: resultado.contexto, // resumen para el correo del asesor — NUNCA para el cliente
     respuesta: resultado.respuesta, // conveniencia: partes unidas (pruebas directas / lectura humana)
     conversacion_id: conversacionId,
