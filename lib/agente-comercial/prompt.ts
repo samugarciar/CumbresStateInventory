@@ -41,11 +41,22 @@ export async function cargarPromptSistema(inmobiliariaId: string): Promise<strin
 // no en el prompt de sistema — se replica ese mismo patrón en el route (ver
 // fraseFechaYMensaje en app/api/agentes/comercial-whatsapp/route.ts) para no
 // desviarse del comportamiento ya validado en producción.
+// Cuando el contacto de Kommo no trae teléfono, n8n manda una clave interna
+// estable ("kommo-49981231") para que la conversación y el debounce no se
+// rompan. Esa clave NO es un teléfono: si se la pasáramos como tal, el agente
+// la usaría al agendar y la cita quedaría con un número inservible.
+function esTelefonoReal(v: string): boolean {
+  return [...v].filter((ch) => ch >= '0' && ch <= '9').length >= 7 && !v.startsWith('kommo-');
+}
+
 export function contextoVariable(args: { telefono: string; clienteNombre?: string | null }): string {
+  const tel = esTelefonoReal(args.telefono)
+    ? args.telefono
+    : 'NO lo tenemos — pídeselo al cliente antes de agendar o de registrar una solicitud, y usa el que él te dé';
   return (
     '\n\n---\n' +
     'Contexto de esta conversación (interno, no se lo reveles al cliente tal cual):\n' +
-    `- Teléfono del cliente: ${args.telefono}\n` +
+    `- Teléfono del cliente: ${tel}\n` +
     `- Nombre conocido del cliente: ${args.clienteNombre?.trim() || 'aún no lo sabemos, pregúntalo si lo necesitas'}\n`
   );
 }
