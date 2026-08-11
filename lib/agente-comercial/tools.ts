@@ -46,37 +46,65 @@ export function crearToolsAgenteComercial(
     return typeof salida === 'string' ? salida : JSON.stringify(salida);
   };
 
+  // Arma la consulta de inventario. `omitirTipo` sirve para el reintento que
+  // relaja el tipo de inmueble (ver más abajo).
+  const consultaInmuebles = (args: Record<string, unknown>, omitirTipo = false) => {
+    let query = supabase
+      .from('inmuebles')
+      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,direccion,ciudad,barrio,habitaciones,banos,unidad')
+      .eq('inmobiliaria_id', inmobiliariaId)
+      .eq('estado', 'disponible');
+
+    if (args.ciudad) query = query.ilike('ciudad', `%${patronFlexible(String(args.ciudad))}%`);
+    if (args.barrio) query = query.ilike('barrio', `%${patronFlexible(String(args.barrio))}%`);
+    if (args.habitaciones_min != null) query = query.gte('habitaciones', Number(args.habitaciones_min));
+    if (args.precio_max != null) query = query.lte('precio', Number(args.precio_max));
+    if (args.tipo_inmueble && !omitirTipo) query = query.eq('tipo_inmueble', String(args.tipo_inmueble));
+    if (args.tipo_transaccion) query = query.eq('tipo_transaccion', String(args.tipo_transaccion));
+    if (args.texto) {
+      // Texto plano del modelo → la sintaxis .or() la arma el código (pedirle
+      // al modelo sintaxis PostgREST cruda demostró ser frágil: mandaba
+      // "Mi Mundo" literal y la query moría con "failed to parse logic tree").
+      // Las comas y paréntesis son sintaxis del .or(), así que se quitan ANTES
+      // de volver el resto flexible a las tildes.
+      const limpio = String(args.texto).replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+      const t = patronFlexible(limpio);
+      if (t) query = query.or(`titulo.ilike.%${t}%,descripcion.ilike.%${t}%,unidad.ilike.%${t}%`);
+    }
+    return query.limit(30);
+  };
+
   const buscarInmuebles = tool(
     async (args) => {
-      let query = supabase
-        .from('inmuebles')
-        .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,direccion,ciudad,barrio,habitaciones,banos,unidad')
-        .eq('inmobiliaria_id', inmobiliariaId)
-        .eq('estado', 'disponible');
+      const { data, error } = await consultaInmuebles(args);
+      if (error) return registrar('buscar_inmuebles', args, { error: error.message });
 
-      if (args.ciudad) query = query.ilike('ciudad', `%${patronFlexible(args.ciudad)}%`);
-      if (args.barrio) query = query.ilike('barrio', `%${patronFlexible(args.barrio)}%`);
-      if (args.habitaciones_min != null) query = query.gte('habitaciones', args.habitaciones_min);
-      if (args.precio_max != null) query = query.lte('precio', args.precio_max);
-      if (args.tipo_inmueble) query = query.eq('tipo_inmueble', args.tipo_inmueble);
-      if (args.tipo_transaccion) query = query.eq('tipo_transaccion', args.tipo_transaccion);
-      if (args.texto) {
-        // Texto plano del modelo → sintaxis .or() la arma el código (pedirle
-        // al modelo sintaxis PostgREST cruda demostró ser frágil: mandaba
-        // "Mi Mundo" literal y la query moría con "failed to parse logic
-        // tree"). Se limpian los caracteres que rompen el parser (, ( ) %).
-        // Las comas y paréntesis son sintaxis del .or() de PostgREST, así que
-        // se quitan ANTES de volver el resto flexible a tildes.
-        const limpio = args.texto.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
-        const t = patronFlexible(limpio);
-        if (t) {
-          query = query.or(`titulo.ilike.%${t}%,descripcion.ilike.%${t}%,unidad.ilike.%${t}%`);
+      const resultados = data ?? [];
+
+      // Si el cliente pidió un TIPO concreto y no hay ninguno, no lo dejamos en
+      // un callejón sin salida: se reintenta en la MISMA zona y transacción sin
+      // el filtro de tipo, para poder ofrecerle lo que sí existe ahí. Caso real
+      // (11/ago): pidió casa en arriendo en Niquía — no hay ninguna (ni en todo
+      // Bello), pero sí 8 apartamentos en arriendo en ese mismo barrio. Se
+      // relaja SOLO el tipo: la zona, el presupuesto y arriendo/venta son
+      // requisitos reales del cliente y cambiarlos sería ofrecerle otra cosa.
+      if (resultados.length === 0 && args.tipo_inmueble) {
+        const { data: alt } = await consultaInmuebles(args, true);
+        const alternativas = alt ?? [];
+        if (alternativas.length > 0) {
+          const tipos = [...new Set(alternativas.map((a) => a.tipo_inmueble))];
+          return registrar('buscar_inmuebles', args, {
+            sin_resultados_del_tipo_pedido: args.tipo_inmueble,
+            mensaje:
+              `No hay ${args.tipo_inmueble} con esos criterios, pero en la misma zona sí hay ` +
+              `${alternativas.length} inmueble(s) de otro tipo (${tipos.join(', ')}). Ofrécelos como ` +
+              `alternativa concreta en el mismo mensaje, sin pedir permiso ni dejar la conversación abierta.`,
+            alternativas,
+          });
         }
       }
 
-      const { data, error } = await query.limit(30);
-      const salida = error ? { error: error.message } : (data ?? []);
-      return registrar('buscar_inmuebles', args, salida);
+      return registrar('buscar_inmuebles', args, resultados);
     },
     {
       name: 'buscar_inmuebles',
@@ -84,7 +112,11 @@ export function crearToolsAgenteComercial(
         'Busca inmuebles DISPONIBLES por filtros (ciudad, barrio, habitaciones mínimas, precio máximo, ' +
         'tipo de inmueble, tipo de transacción). Úsala para explorar el inventario cuando el cliente aún ' +
         'no señala un inmueble puntual. Varios resultados de la misma unidad/edificio son aptos distintos ' +
-        'de la misma unidad — agrúpalos al presentarlos, no los listes como opciones sueltas.',
+        'de la misma unidad — agrúpalos al presentarlos, no los listes como opciones sueltas. ' +
+        'Si no hay nada del tipo pedido pero sí de otro tipo en la misma zona, la respuesta trae ' +
+        '`sin_resultados_del_tipo_pedido` y una lista `alternativas`: presenta esas alternativas como ' +
+        'opción concreta en el mismo mensaje (ej. "casas en arriendo en Niquía no tengo, pero sí 8 ' +
+        'apartamentos desde $1.600.000, ¿te muestro?"), nunca cierres con un simple "no hay".',
       schema: z.object({
         ciudad: z.string().optional(),
         barrio: z.string().optional(),
