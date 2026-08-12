@@ -26,6 +26,34 @@ function patronFlexible(v: string): string {
   return [...v.trim()].map((ch) => (/[a-zA-Z0-9 ]/.test(ch) ? ch : '_')).join('');
 }
 
+// El resolver de inmuebles hace AND de TODOS los tokens contra
+// unidad+barrio+título+dirección. Un código del ERP (ej. 2026195) no vive en
+// ninguno de esos campos, así que "Montiara 2026195" no resuelve NUNCA
+// mientras "Montiara" resuelve siempre. Auditoría del 12/ago: 14 de los 21
+// fallos de resolución (67%) fueron "Nombre + código", fallando 14/14 veces.
+// La puntuación también rompe el match ("Urb. Málaga, apto 410" falla y
+// "Urb. Málaga 410" funciona) porque el token queda como "málaga,".
+// El agente a veces se auto-salvaba reintentando sin el código y a veces no
+// — eso es el "a veces sí, a veces no" que reporta el usuario. Se limpia acá
+// para que deje de depender de que el modelo se acuerde.
+export function limpiarTextoInmueble(texto: string): { limpio: string; quitado: string[] } {
+  const quitado: string[] = [];
+  const tokens = texto
+    .replace(/[.,;:]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((t) => {
+      // Códigos del ERP: 5+ dígitos seguidos. Los números de apto (1-4
+      // dígitos: 401, 1320, 707) SÍ están en la dirección y ayudan a resolver.
+      if (/^\d{5,}$/.test(t)) {
+        quitado.push(t);
+        return false;
+      }
+      return true;
+    });
+  return { limpio: tokens.join(' ').trim(), quitado };
+}
+
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);
 const ALCANCE = z.enum(['inmueble', 'unidad']);
@@ -157,7 +185,7 @@ export function crearToolsAgenteComercial(
   const verificarHorariosDisponibles = tool(
     async (args) => {
       const { data, error } = await supabase.rpc('consultar_disponibilidad_por_texto', {
-        p_texto: args.texto,
+        p_texto: limpiarTextoInmueble(args.texto).limpio || args.texto,
         p_fecha_desde: args.fecha_desde ?? undefined,
         p_fecha_hasta: args.fecha_hasta ?? undefined,
         p_tipo_transaccion: args.tipo_transaccion ?? undefined,
@@ -222,7 +250,7 @@ export function crearToolsAgenteComercial(
       }
 
       const { data, error } = await supabase.rpc('agendar_cita_por_texto', {
-        p_texto: args.texto,
+        p_texto: limpiarTextoInmueble(args.texto).limpio || args.texto,
         p_fecha: args.fecha,
         p_hora_inicio: args.hora_inicio,
         p_hora_fin: args.hora_fin,
@@ -264,7 +292,7 @@ export function crearToolsAgenteComercial(
   const solicitarAperturaDeAgenda = tool(
     async (args) => {
       const { data, error } = await supabase.rpc('solicitar_apertura_agenda', {
-        p_texto: args.texto,
+        p_texto: limpiarTextoInmueble(args.texto).limpio || args.texto,
         p_fecha: args.fecha,
         p_hora_inicio: args.hora_inicio,
         p_hora_fin: args.hora_fin,
