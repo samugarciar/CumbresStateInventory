@@ -295,7 +295,16 @@ export async function correrAgenteComercial(params: {
   const bitacora: HerramientaUsada[] = [];
   const tools = crearToolsAgenteComercial(supabase, inmobiliariaId, bitacora);
 
-  const modeloPrincipal = new ChatOpenAI({ model: MODELO_PRINCIPAL, temperature: 0, maxRetries: 3 });
+  // El límite real de la cuenta es 30.000 tokens POR MINUTO en gpt-4.1 y cada
+  // llamada gasta ~9.900 (el 87% es el prompt del sistema), así que un turno
+  // con 2 herramientas consume el minuto entero por sí solo. Los 429 que ven
+  // los clientes ("Rate limit reached... try again in 2.9s / 16.4s") son eso.
+  // Con 6 reintentos y backoff exponencial se cubren esperas de ~30s, muy por
+  // debajo del maxDuration de 300s del endpoint: la conversación tarda un poco
+  // más pero el cliente recibe su respuesta en vez de un mensaje de disculpa.
+  // Esto es una MITIGACIÓN, no la solución: el arreglo real es subir el tier
+  // de la cuenta en OpenAI.
+  const modeloPrincipal = new ChatOpenAI({ model: MODELO_PRINCIPAL, temperature: 0, maxRetries: 6 });
   const agentePrincipal = createReactAgent({
     llm: modeloPrincipal,
     tools,

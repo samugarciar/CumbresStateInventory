@@ -29,10 +29,28 @@ interface CuerpoPeticion {
   inmobiliaria_id?: string;
 }
 
+function fechaCorta(fecha: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(fecha);
+}
+
+// Los turnos VIEJOS solo necesitan su fecha como ancla para que "mañana" o
+// "el martes" sigan significando lo mismo que cuando se escribieron. Antes
+// llevaban el preámbulo completo (~60 tokens cada uno): con 15 mensajes de
+// historial eran ~400 tokens por llamada, y como el bucle ReAct hace varias
+// llamadas por turno, se iban ~1.200 tokens del presupuesto por minuto en
+// repetir 15 veces la misma instrucción. La instrucción va una sola vez, en
+// el mensaje nuevo (envolverConFecha).
+function anclarFecha(mensaje: string, fecha: Date): string {
+  return `[${fechaCorta(fecha)}] ${mensaje}`;
+}
+
 // Mismo envoltorio que el campo "text" del nodo "Agente Cumbres AI" en n8n:
-// "Fecha de hoy: ... \n\nMensaje del usuario: ...". Se aplica tanto al turno
-// nuevo como a los turnos históricos reconstruidos (con SU PROPIA fecha, vía
-// created_at) para no perder el contexto de "hoy"/"mañana" de cada mensaje.
+// "Fecha de hoy: ... \n\nMensaje del usuario: ...". Solo para el mensaje nuevo.
 function envolverConFecha(mensaje: string, fecha: Date): string {
   const fechaISO = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Bogota',
@@ -159,7 +177,7 @@ export async function POST(request: Request) {
     .reverse()
     .map((m) =>
       m.rol === 'usuario'
-        ? new HumanMessage(envolverConFecha(m.contenido, new Date(m.created_at)))
+        ? new HumanMessage(anclarFecha(m.contenido, new Date(m.created_at)))
         : new AIMessage(m.contenido)
     );
   const ahora = new Date();
