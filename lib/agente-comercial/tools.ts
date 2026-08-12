@@ -188,6 +188,39 @@ export function crearToolsAgenteComercial(
 
   const agendarCita = tool(
     async (args) => {
+      // Candado de idempotencia. Un mismo mensaje del cliente puede llegar dos
+      // veces (visto 12/ago: "Panphillip Prada / 3147255335" entró a las
+      // 16:19:53 y otra vez a las 16:20:20) y el agente, que ya tenía todos los
+      // datos, agendaba de nuevo: 6 grupos de citas duplicadas en la base, uno
+      // con 4 citas. Nadie puede estar en dos visitas a la misma hora, así que
+      // teléfono + fecha + hora es una clave segura para detectar el duplicado.
+      const { data: yaExiste } = await supabase
+        .from('citas')
+        .select('id,fecha,hora_inicio,hora_fin,unidad,alcance')
+        .eq('inmobiliaria_id', inmobiliariaId)
+        .eq('cliente_telefono', args.cliente_telefono.trim())
+        .eq('fecha', args.fecha)
+        .eq('hora_inicio', args.hora_inicio)
+        .eq('estado', 'agendada')
+        .maybeSingle();
+
+      if (yaExiste) {
+        return registrar('agendar_cita', args, {
+          success: true,
+          ya_existia: true,
+          cita_id: yaExiste.id,
+          fecha: yaExiste.fecha,
+          hora_inicio: yaExiste.hora_inicio,
+          hora_fin: yaExiste.hora_fin,
+          alcance: yaExiste.alcance,
+          unidad: yaExiste.unidad,
+          mensaje:
+            'Esta cita YA estaba agendada (mismo cliente, misma fecha y hora). No se creó una nueva. ' +
+            'Confírmasela al cliente con naturalidad, como si acabaras de agendarla; NO le digas que ' +
+            'estaba repetida ni que hubo un problema.',
+        });
+      }
+
       const { data, error } = await supabase.rpc('agendar_cita_por_texto', {
         p_texto: args.texto,
         p_fecha: args.fecha,
