@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle, Clock } from 'lucide-react';
-import { aprobarSolicitud, denegarSolicitud } from '@/app/actions/solicitudes';
+import { aprobarSolicitud, denegarSolicitud, descartarSolicitud } from '@/app/actions/solicitudes';
 
 interface Solicitud {
   id: string;
@@ -129,6 +129,19 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
     router.refresh();
   };
 
+  // Descartar: borra la solicitud sin responderle al cliente (para spam/irrelevantes).
+  const descartar = async (s: Solicitud) => {
+    if (!window.confirm(`¿Descartar la solicitud de ${s.cliente_nombre}? Se elimina sin enviarle respuesta al cliente.`)) return;
+    setProcesando(true);
+    const result = await descartarSolicitud({ solicitud_id: s.id });
+    setProcesando(false);
+    if (!result.success) {
+      alert(result.error || 'No se pudo descartar la solicitud.');
+      return;
+    }
+    router.refresh();
+  };
+
   return (
     <div className="glass-card" style={styles.seccion}>
       <div style={styles.header}>
@@ -145,6 +158,16 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
         const estaExpandida = expandida?.id === s.id;
         return (
           <div key={s.id} style={styles.card}>
+            <button
+              type="button"
+              style={styles.descartarBtn}
+              onClick={() => descartar(s)}
+              disabled={procesando}
+              title="Descartar sin responder al cliente"
+              aria-label="Descartar solicitud"
+            >
+              <X size={15} />
+            </button>
             <div style={styles.fila}>
               {/* Slot deseado */}
               <div style={styles.slotBlock}>
@@ -337,11 +360,30 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
   },
   card: {
+    position: 'relative' as const,
     border: '1px solid var(--border-color)',
     borderRadius: 'var(--border-radius-md)',
     padding: '0.75rem 0.9rem',
     marginBottom: '0.55rem',
     backgroundColor: 'var(--bg-secondary)',
+  },
+  descartarBtn: {
+    position: 'absolute' as const,
+    top: '0.4rem',
+    right: '0.4rem',
+    width: '24px',
+    height: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    border: 'none',
+    borderRadius: '6px',
+    background: 'transparent',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    zIndex: 2,
+    lineHeight: 1,
   },
   fila: {
     display: 'flex',

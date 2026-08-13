@@ -434,3 +434,66 @@ export async function denegarSolicitud(data: DenegarData) {
     return { success: false, error: error.message || 'Error interno.' };
   }
 }
+
+interface DescartarData {
+  solicitud_id: string;
+}
+
+/**
+ * Descarta una solicitud de apertura SIN responder al cliente: la borra y cierra
+ * su tarea, sin disparar el webhook de veredicto ni exigir motivo. Para solicitudes
+ * irrelevantes/spam que no ameritan un aprobar/denegar. Solo admins. Borrado duro
+ * (la RLS FOR ALL ya lo permite; no hay estado 'descartada' en el CHECK).
+ */
+export async function descartarSolicitud(data: DescartarData) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: 'Sesión expirada.' };
+
+    const { data: profile } = await supabase
+      .from('usuarios')
+      .select('rol, inmobiliaria_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile || profile.rol !== 'admin') {
+      return { success: false, error: 'Solo los administradores pueden descartar solicitudes.' };
+    }
+
+    const { data: solicitud } = await supabase
+      .from('solicitudes_apertura')
+      .select('id, inmobiliaria_id, estado')
+      .eq('id', data.solicitud_id)
+      .single();
+
+    if (!solicitud || solicitud.inmobiliaria_id !== profile.inmobiliaria_id) {
+      return { success: false, error: 'Solicitud no encontrada.' };
+    }
+    if (solicitud.estado !== 'pendiente') {
+      return { success: false, error: 'Esta solicitud ya fue decidida.' };
+    }
+
+    // Cerrar la tarea automática antes de borrar, para que no quede huérfana en /tareas.
+    await completarTareaSolicitud(supabase, solicitud.id, user.id);
+
+    const { error: delError } = await supabase
+      .from('solicitudes_apertura')
+      .delete()
+      .eq('id', solicitud.id)
+      .eq('estado', 'pendiente');
+
+    if (delError) {
+      console.error('[Solicitudes] Error al descartar:', delError.message);
+      return { success: false, error: 'No se pudo descartar la solicitud.' };
+    }
+
+    revalidatePath('/citas');
+    revalidatePath('/tareas');
+    revalidatePath('/dashboard');
+    return { success: true, message: 'Solicitud descartada. No se le envió respuesta al cliente.' };
+  } catch (error: any) {
+    console.error('[Solicitudes] Excepción descartarSolicitud:', error);
+    return { success: false, error: error.message || 'Error interno.' };
+  }
+}
