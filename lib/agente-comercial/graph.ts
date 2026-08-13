@@ -165,6 +165,40 @@ function armarContexto(bitacora: HerramientaUsada[], telefono: string): string {
   return lineas.join('\n');
 }
 
+// GROUNDING: un precio que el agente le dice al cliente TIENE que venir de una
+// herramienta o del propio cliente. Auditoría 12/ago: dijo "$1.400.000" cuando
+// la herramienta había devuelto 1.472.800, y en otro caso inventó direcciones y
+// códigos completos. Pedirle al modelo que "estime su certeza" no sirve — los
+// modelos no tienen confianza calibrada y se equivocan con total seguridad. Lo
+// que sí es verificable es el ORIGEN del dato, y eso se puede comprobar sin
+// gastar un solo token extra: si el número no aparece en ninguna salida de
+// herramienta ni en lo que escribió el cliente, es inventado.
+//
+// Solo se miran importes de 6-9 dígitos (precios en pesos). Los números cortos
+// (habitaciones, baños, horas, nº de apto) generan falsos positivos y se dejan
+// al contrato de fuentes del prompt.
+function detectarPreciosInventados(
+  respuesta: string,
+  bitacora: HerramientaUsada[],
+  historial: BaseMessage[]
+): string[] {
+  const digitos = (s: string) => (s.match(/\d/g) ?? []).join('');
+  const fuente =
+    bitacora.map((h) => JSON.stringify(h.salida ?? '') + JSON.stringify(h.entrada ?? '')).join(' ') +
+    ' ' +
+    historial.map((m) => (typeof m.content === 'string' ? m.content : '')).join(' ');
+  const fuenteDigitos = digitos(fuente);
+
+  const inventados: string[] = [];
+  // "$1.600.000", "1600000", "1.850.000" → se comparan solo los dígitos
+  for (const m of respuesta.matchAll(/\$?\s?\d[\d.,]{5,}/g)) {
+    const d = digitos(m[0]);
+    if (d.length < 6 || d.length > 9) continue;
+    if (!fuenteDigitos.includes(d)) inventados.push(m[0].trim());
+  }
+  return [...new Set(inventados)];
+}
+
 // Datos de la cita recién agendada, para el correo de aviso y la tarea de
 // confirmación. Devuelve null si en este turno no se agendó nada.
 export function extraerCitaAgendada(bitacora: HerramientaUsada[]): {
@@ -411,6 +445,37 @@ export async function correrAgenteComercial(params: {
       : resultado.etapa;
 
   const leadCaliente = detectarLeadCaliente(bitacora);
+
+  // Si el agente le dijo al cliente un precio que no salió de ninguna
+  // herramienta ni del propio cliente, se lo inventó. No se envía: el cliente
+  // recibe un puente neutro y el caso se escala para que un asesor le dé la
+  // cifra correcta. Es preferible no responder a dar un precio falso.
+  const preciosInventados = detectarPreciosInventados(
+    Object.values(response).filter(Boolean).join(' '),
+    bitacora,
+    historial
+  );
+  if (preciosInventados.length > 0) {
+    console.warn('[AgenteComercial] Precios sin respaldo, se bloquea la respuesta:', preciosInventados);
+    const texto =
+      'Para no darte un dato equivocado, prefiero que un asesor te confirme esa información. ' +
+      'Te contacta por este mismo chat en un momento.';
+    return {
+      output: `[ESCALAR] ${texto}`,
+      response: { part_1: texto },
+      etapa,
+      escalado: true,
+      prioridad: 'urgente',
+      leadCaliente,
+      contexto:
+        armarContexto(bitacora, telefono) +
+        `\n\n⚠️ BLOQUEADO POR GROUNDING: el agente iba a decir precios que no salieron de ninguna ` +
+        `herramienta (${preciosInventados.join(', ')}). Confírmale el precio real al cliente.`,
+      respuesta: texto,
+      herramientasUsadas: bitacora,
+      uso: resultado.usoTokens,
+    };
+  }
 
   return {
     output,
