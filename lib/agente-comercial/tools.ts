@@ -353,6 +353,64 @@ export function crearToolsAgenteComercial(
     }
   );
 
+  // Las fotos existen (82 de 83 inmuebles disponibles, ~18 c/u, sincronizadas
+  // del ERP y públicas), pero el agente no las veía y por eso decía "no tengo
+  // fotos cargadas en el sistema" y hasta inventaba URLs que daban 404
+  // (auditoría 12/ago). Va como herramienta APARTE y no dentro de
+  // `buscar_inmuebles` a propósito: 18 URLs × 30 resultados serían ~13.000
+  // tokens por búsqueda, y el cuello de botella hoy es el límite de 30.000
+  // tokens por minuto. Así el costo se paga solo cuando el cliente pide fotos.
+  const obtenerFotos = tool(
+    async (args) => {
+      const limpio = limpiarTextoInmueble(args.texto).limpio || args.texto;
+      const t = patronFlexible(limpio.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim());
+      const { data, error } = await supabase
+        .from('inmuebles')
+        .select('titulo,unidad,direccion,precio,imagenes')
+        .eq('inmobiliaria_id', inmobiliariaId)
+        .eq('estado', 'disponible')
+        .or(`titulo.ilike.%${t}%,direccion.ilike.%${t}%,unidad.ilike.%${t}%`)
+        .limit(3);
+
+      if (error) return registrar('obtener_fotos', args, { error: error.message });
+      const props = (data ?? []).filter((p) => Array.isArray(p.imagenes) && p.imagenes.length);
+      if (props.length === 0) {
+        return registrar('obtener_fotos', args, {
+          sin_fotos: true,
+          mensaje:
+            'No encontré fotos para ese inmueble. NO le digas al cliente que "no hay fotos en el sistema": ' +
+            'ofrécele que un asesor se las envía y ESCALA.',
+        });
+      }
+      return registrar('obtener_fotos', args, {
+        inmuebles: props.map((p) => ({
+          titulo: p.titulo,
+          unidad: p.unidad,
+          direccion: p.direccion,
+          precio: p.precio,
+          total_fotos: (p.imagenes as string[]).length,
+          fotos: (p.imagenes as string[]).slice(0, 4),
+        })),
+        mensaje:
+          'Comparte los enlaces TAL CUAL, uno por mensaje (WhatsApp muestra la vista previa de la imagen). ' +
+          'Máximo 3-4. Nunca inventes ni modifiques una URL.',
+      });
+    },
+    {
+      name: 'obtener_fotos',
+      description:
+        'Devuelve las fotos REALES de un inmueble o unidad, por el mismo texto que usas para consultar ' +
+        'horarios (ej. "Montiara", "Mi Mundo 707"). Úsala SIEMPRE que el cliente pida fotos, imágenes, ' +
+        '"cómo se ve", o más detalle visual. NUNCA inventes URLs de fotos ni digas que no hay fotos sin ' +
+        'haber llamado esta herramienta primero.',
+      schema: z.object({
+        texto: z
+          .string()
+          .describe('Nombre del edificio/unidad y/o número de apto, igual que en verificar_horarios_disponibles.'),
+      }),
+    }
+  );
+
   const googleMapsLugares = tool(
     async (args) => {
       const key = process.env.GOOGLE_MAPS_API_KEY;
@@ -393,6 +451,7 @@ export function crearToolsAgenteComercial(
     agendarCita,
     solicitarAperturaDeAgenda,
     cancelarCita,
+    obtenerFotos,
     googleMapsLugares,
   ];
 }
