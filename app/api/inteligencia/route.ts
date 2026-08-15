@@ -243,12 +243,14 @@ const herramientaERP = tool(
           'buscar_factura',
           'cartera_resumen',
           'buscar_contrato',
+          'estado_cuenta',
           'asesores',
           'estados',
           'auxiliar_contable',
         ])
         .describe(
           "Qué consultar. DEUDA DE UNA PERSONA O CONTRATO → 'buscar_factura' (recorre todo el histórico y filtra por ti; devuelve solo lo FACTURADO, así que lee cobertura_facturacion.conclusion_permitida antes de redactar: si dice que no puedes afirmar que está al día, no lo afirmes). " +
+            "SEGUNDA OPINIÓN CONTABLE sobre la deuda de una persona → 'estado_cuenta' (con documento): su saldo en las cuentas por cobrar 13xx, que incluye conceptos causados aunque no estén facturados. Úsala SIEMPRE junto a buscar_factura cuando pregunten cuánto debe alguien, y reporta la diferencia si la hay. " +
             "CARTERA TOTAL de la inmobiliaria (saldo total/vencido, top deudores) → 'cartera_resumen'. " +
             "UBICAR UN CONTRATO por cédula, número o nombre → 'buscar_contrato'. " +
             "'facturas'/'contratos'/'propiedades' son listados crudos paginados, solo para HOJEAR los últimos registros: NO sirven para buscar a alguien ni para totalizar (el ERP no filtra server-side y son miles de registros). " +

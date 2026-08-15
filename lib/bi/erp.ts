@@ -25,7 +25,8 @@ export type RecursoERP =
   | 'buscar_contrato'
   | 'asesores'
   | 'estados'
-  | 'auxiliar_contable';
+  | 'auxiliar_contable'
+  | 'estado_cuenta';
 
 interface ParamsERP {
   pagina?: number;
@@ -158,7 +159,8 @@ function rutaYQuery(recurso: RecursoERP, p: ParamsERP): { ruta: string; query: U
     case 'buscar_factura':
     case 'cartera_resumen':
     case 'buscar_contrato':
-      // Se resuelven aparte (fetchTodasLasPaginas + filtro); no van por acá.
+    case 'estado_cuenta':
+      // Se resuelven aparte (escaneo/agregación propia); no van por acá.
       throw new Error(`${recurso} no usa rutaYQuery`);
   }
 }
@@ -451,6 +453,7 @@ async function buscarFactura(p: ParamsERP) {
   // interpretación van PRIMERO para que sobrevivan a cualquier recorte.
   return {
     ...(cobertura ? { cobertura_facturacion: cobertura } : {}),
+    limite_de_la_fuente: LIMITE_CARGOS_NO_CAUSADOS,
     resumen: {
       criterios_aplicados: criterios,
       facturas_encontradas: coincidencias.length,
@@ -692,6 +695,99 @@ async function buscarContrato(p: ParamsERP) {
   };
 }
 
+/**
+ * Estado de cuenta CONTABLE de un tercero: su saldo en las cuentas por cobrar
+ * (clase 13 = deudores), cuenta por cuenta, con sus últimos movimientos.
+ *
+ * Por qué existe además de buscar_factura: la facturación electrónica no cubre
+ * todo lo que se le causa a un inquilino. La contabilidad incluye conceptos que
+ * pueden no tener factura (administración, intereses de mora causados), así que
+ * es la segunda opinión sobre "cuánto debe". Se filtra en el servidor y solo
+ * viaja el tercero pedido: el auxiliar completo son cientos de terceros.
+ *
+ * OJO — límite real de la fuente: los "otros cargos" pendientes del módulo de
+ * recibos/cuentas de cobro (cláusula penal, sanciones, cargos no causados) NO
+ * están ni aquí ni en las facturas. Ver la nota en el retorno.
+ */
+async function estadoCuenta(p: ParamsERP) {
+  const documento = soloDigitos(p.documento);
+  if (!documento) {
+    throw new Error("El recurso 'estado_cuenta' requiere 'documento' (la cédula/NIT del tercero).");
+  }
+
+  const hoy = hoyBogota();
+  // Por defecto, histórico amplio: el saldo actual de una cuenta por cobrar
+  // depende de todos los movimientos previos, no solo de los del mes.
+  const fechaIni = p.fecha_ini ?? `${Number(hoy.slice(0, 4)) - 5}-01-01`;
+  const fechaFin = p.fecha_fin ?? hoy;
+
+  const query = new URLSearchParams({
+    fecha_ini: fechaIni,
+    fecha_fin: fechaFin,
+    cuenta_ini: p.cuenta_ini ?? '13',
+    cuenta_fin: (p.cuenta_fin ?? '13').padEnd(12, '9'),
+  });
+  const datos = await fetchPagina('/service/v2/public/accounting/general-ledger', query, 2, 'estado_cuenta');
+  const cuentas = Array.isArray(datos?.body) ? datos.body : [];
+
+  const enCuentas: any[] = [];
+  let nombre: string | null = null;
+  for (const cuenta of cuentas) {
+    for (const tercero of Object.values(cuenta?.terceros ?? {}) as any[]) {
+      if (soloDigitos(tercero?.documento_tercero) !== documento) continue;
+      nombre = nombre ?? tercero.nombre_tercero ?? null;
+      const saldo = Number(tercero.saldo_actual) || 0;
+      enCuentas.push({
+        cuenta: cuenta.cuenta,
+        nombre_cuenta: cuenta.nombre_cuenta,
+        saldo_actual: saldo,
+        debitos: Number(tercero.debitos) || 0,
+        creditos: Number(tercero.creditos) || 0,
+        ultimos_movimientos: (tercero.detalles ?? []).slice(-6).map((d: any) => ({
+          fecha: d.fecha_documento,
+          documento: d.consecutivo_documento,
+          debitos: Number(d.debitos) || 0,
+          creditos: Number(d.creditos) || 0,
+          detalle: typeof d.detalle_documento === 'string' ? d.detalle_documento.slice(0, 120) : null,
+        })),
+      });
+    }
+  }
+
+  if (enCuentas.length === 0) {
+    return {
+      resultado: 'sin_movimientos_contables',
+      criterios_aplicados: { documento, fecha_ini: fechaIni, fecha_fin: fechaFin, cuentas: query.get('cuenta_ini') },
+      instruccion:
+        'Ese documento no tiene movimientos en las cuentas por cobrar (13xx) en el rango consultado. NO concluyas ' +
+        'que no debe nada: verifica el documento, amplía el rango, o revisa si la deuda está solo facturada ' +
+        '(buscar_factura) o en conceptos no causados (ver limite_de_la_fuente).',
+      limite_de_la_fuente: LIMITE_CARGOS_NO_CAUSADOS,
+    };
+  }
+
+  const saldoContable = enCuentas.reduce((a, c) => a + c.saldo_actual, 0);
+  return {
+    tercero: { documento, nombre },
+    periodo: { desde: fechaIni, hasta: fechaFin },
+    saldo_contable_por_cobrar: saldoContable,
+    interpretacion:
+      `Suma de los saldos del tercero en las cuentas por cobrar (13xx) = ${saldoContable}. Es lo CAUSADO en ` +
+      'contabilidad (incluye conceptos que pueden no tener factura, como administración o intereses de mora). ' +
+      'Contrástalo con buscar_factura: si difieren, la diferencia suele ser conceptos causados y no facturados.',
+    limite_de_la_fuente: LIMITE_CARGOS_NO_CAUSADOS,
+    cuentas: enCuentas,
+  };
+}
+
+/** Advertencia compartida: hay deuda real que la API pública NO expone. */
+const LIMITE_CARGOS_NO_CAUSADOS =
+  'La API pública NO expone el módulo de recibos de caja / cuentas de cobro de Arrendasoft. Los conceptos ' +
+  'pendientes que se cargan ahí (cláusula penal, sanciones, "OTROS CARGOS INQUILINO", cobros no causados) NO ' +
+  'aparecen ni en las facturas ni en este auxiliar contable, y pueden ser MUY superiores a lo facturado. ' +
+  'Al dar una deuda, di siempre que es "lo facturado/causado" y sugiere confirmar la cuenta de cobro completa ' +
+  'en Arrendasoft (Tareas comunes → Recibos de caja) antes de gestionar un cobro.';
+
 /** Quita los movimientos por tercero del auxiliar contable (pueden ser enormes). */
 function auxiliarSinDetalles(cuentas: any[]): any[] {
   return cuentas.map((cuenta) => ({
@@ -724,14 +820,14 @@ function auxiliarSinDetalles(cuentas: any[]): any[] {
  * rechazan — solo se listan en el eco — para no gastar iteraciones del bucle.
  */
 const PARAMS_QUE_CAMBIAN_EL_SIGNIFICADO: Record<string, RecursoERP[]> = {
-  documento: ['buscar_factura', 'buscar_contrato'],
+  documento: ['buscar_factura', 'buscar_contrato', 'estado_cuenta'],
   nombre_contiene: ['buscar_factura', 'buscar_contrato'],
   contrato_numero: ['buscar_factura', 'buscar_contrato'],
   codigo: ['propiedad'],
-  fecha_ini: ['auxiliar_contable'],
-  fecha_fin: ['auxiliar_contable'],
-  cuenta_ini: ['auxiliar_contable'],
-  cuenta_fin: ['auxiliar_contable'],
+  fecha_ini: ['auxiliar_contable', 'estado_cuenta'],
+  fecha_fin: ['auxiliar_contable', 'estado_cuenta'],
+  cuenta_ini: ['auxiliar_contable', 'estado_cuenta'],
+  cuenta_fin: ['auxiliar_contable', 'estado_cuenta'],
   con_detalles: ['auxiliar_contable'],
 };
 
@@ -762,6 +858,7 @@ export async function consultaERP(recurso: RecursoERP, params: ParamsERP = {}): 
   if (recurso === 'buscar_factura') return buscarFactura(params);
   if (recurso === 'cartera_resumen') return carteraResumen();
   if (recurso === 'buscar_contrato') return buscarContrato(params);
+  if (recurso === 'estado_cuenta') return estadoCuenta(params);
 
   const { ruta, query } = rutaYQuery(recurso, params);
   const datos = await fetchPagina(ruta, query, 2, recurso);
