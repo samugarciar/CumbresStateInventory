@@ -86,7 +86,7 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
         </header>
 
         <div className="glass-container" style={styles.formCard}>
-          <FormCaptarInmueble isAdmin={isAdmin} />
+          <FormCaptarInmueble isAdmin={isAdmin} unidades={unidadesExistentes} />
         </div>
       </div>
     );

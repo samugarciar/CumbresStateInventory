@@ -2,6 +2,9 @@
 
 import React, { useState, useRef, useTransition } from 'react';
 import { enviarCaptacionWebhook } from '@/app/actions/webhook-n8n';
+import { createClient } from '@/lib/supabase/client';
+import { BARRIOS_POR_MUNICIPIO } from '@/lib/captacion/barrios';
+import { ASESORES } from '@/lib/captacion/asesores';
 import { 
   Building2, 
   MapPin, 
@@ -19,15 +22,26 @@ import {
 
 interface FormCaptarInmuebleProps {
   isAdmin: boolean;
+  unidades: string[];
 }
 
 type TabType = 'general' | 'caracteristicas' | 'comodidades' | 'propietario' | 'fotos';
 
-export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps) {
+export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmuebleProps) {
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  // Municipio y Barrio son controlados: Barrio es un desplegable dependiente de Municipio.
+  const [municipio, setMunicipio] = useState('');
+  const [barrioId, setBarrioId] = useState('');
+  // Unidad cerrada: toggle sí/no + selector de unidades existentes (con "agregar nueva").
+  const [enUnidad, setEnUnidad] = useState(false);
+  const [unidadSel, setUnidadSel] = useState('');
+  const [unidadNueva, setUnidadNueva] = useState('');
+  // Asesor: se envía el id del ERP (Asesor_id) + el nombre (Asesor). Default: Sebastian.
+  const [asesorId, setAsesorId] = useState(String(ASESORES[0].id));
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -123,26 +137,55 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
     }
 
     const formData = new FormData(e.currentTarget);
-    
-    // Adjuntar archivos validados
-    files.forEach(file => {
-      formData.append('Fotos', file);
-    });
 
     startTransition(async () => {
       try {
+        // 1. Subir las fotos DIRECTO a Supabase Storage (navegador → Supabase,
+        // sin pasar por la función serverless de Vercel y su tope de ~4.5 MB).
+        const supabase = createClient();
+        const urls: string[] = [];
+        let totalBytes = 0;
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setUploadMsg(`Subiendo foto ${i + 1} de ${files.length}...`);
+          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+          const path = `${crypto.randomUUID()}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from('captaciones')
+            .upload(path, file, { contentType: file.type, upsert: false });
+          if (upErr) {
+            throw new Error(`No se pudo subir la foto "${file.name}": ${upErr.message}`);
+          }
+          const { data: pub } = supabase.storage.from('captaciones').getPublicUrl(path);
+          urls.push(pub.publicUrl);
+          totalBytes += file.size;
+        }
+
+        // 2. Enviar SOLO las URLs (sin binarios) al server action → n8n.
+        formData.append('Fotos_URLs', JSON.stringify(urls));
+        formData.append('Fotos_size_bytes', String(totalBytes));
+        setUploadMsg('Enviando captación...');
+
         const result = await enviarCaptacionWebhook(null, formData);
-        
+
         if (result.success) {
           setStatus({ success: true, message: result.message });
           setFiles([]);
           formRef.current?.reset();
+          setMunicipio('');
+          setBarrioId('');
+          setEnUnidad(false);
+          setUnidadSel('');
+          setUnidadNueva('');
+          setAsesorId(String(ASESORES[0].id));
           setActiveTab('general');
         } else {
           setStatus({ success: false, message: result.message });
         }
       } catch (err: any) {
-        setStatus({ success: false, message: 'Ocurrió un error inesperado al conectar con el servidor.' });
+        setStatus({ success: false, message: err?.message || 'Ocurrió un error inesperado al conectar con el servidor.' });
+      } finally {
+        setUploadMsg(null);
       }
     });
   };
@@ -160,9 +203,60 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
   const progressPercent = (currentStepNumber / tabs.length) * 100;
   const currentStepLabel = tabs[currentStepIndex].label.replace(/^\d+\.\s*/, '');
 
+  // Barrios del municipio seleccionado + nombre del barrio elegido (se envía como `Barrio`).
+  const barriosDelMunicipio = BARRIOS_POR_MUNICIPIO[municipio] || [];
+  const barrioNombre = barriosDelMunicipio.find((b) => String(b.id) === barrioId)?.barrio || '';
+
+  // `Unidad` = nombre del edificio (n/a si no aplica); `Unidad Cerrada` = sí/no del toggle.
+  const unidadValue = !enUnidad ? 'n/a' : (unidadSel === '__otra__' ? unidadNueva.trim() : unidadSel);
+  const unidadCerradaValue = enUnidad ? 'Si' : 'No';
+
+  // Nombre del asesor elegido (se envía como `Asesor`; el id va como `Asesor_id`).
+  const asesorNombre = ASESORES.find((a) => String(a.id) === asesorId)?.nombre || '';
+
   return (
     <div style={styles.formContainer}>
       <style>{`
+        .toggle-switch {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.6rem;
+          cursor: pointer;
+          margin-top: 0.35rem;
+        }
+        .toggle-switch input {
+          position: absolute;
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+        .toggle-track {
+          width: 42px;
+          height: 24px;
+          background: var(--border-color);
+          border-radius: 999px;
+          position: relative;
+          transition: background var(--transition-fast);
+          flex-shrink: 0;
+        }
+        .toggle-track::after {
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 20px;
+          height: 20px;
+          background: #ffffff;
+          border-radius: 50%;
+          transition: transform var(--transition-fast);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        .toggle-switch input:checked + .toggle-track {
+          background: var(--primary);
+        }
+        .toggle-switch input:checked + .toggle-track::after {
+          transform: translateX(18px);
+        }
         @media (max-width: 767px) {
           .field-grid-responsive {
             grid-template-columns: 1fr !important;
@@ -298,25 +392,113 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
               </div>
 
               <div style={styles.fieldGroup}>
-                <label style={styles.label}>Barrio *</label>
-                <input 
-                  type="text" 
-                  name="Barrio" 
-                  className="form-control" 
-                  placeholder="Ej. Robledo Pajarito" 
-                  required 
-                />
+                <label style={styles.label}>Tipo de Operación *</label>
+                <select name="Tipo Operacion" className="form-select" required defaultValue="">
+                  <option value="" disabled>Selecciona una opción...</option>
+                  <option value="arriendo">Arriendo</option>
+                  <option value="venta">Venta</option>
+                  <option value="venta y arriendo">Venta y Arriendo</option>
+                </select>
               </div>
 
               <div style={styles.fieldGroup}>
+                <label style={styles.label}>Municipio *</label>
+                <select
+                  name="Municipio"
+                  className="form-select"
+                  required
+                  value={municipio}
+                  onChange={(e) => { setMunicipio(e.target.value); setBarrioId(''); }}
+                >
+                  <option value="" disabled>Selecciona un municipio...</option>
+                  <option value="Medellin">Medellín</option>
+                  <option value="Bello">Bello</option>
+                  <option value="Sabaneta">Sabaneta</option>
+                  <option value="Envigado">Envigado</option>
+                </select>
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Barrio *</label>
+                <select
+                  name="Barrio_id"
+                  className="form-select"
+                  required
+                  disabled={!municipio}
+                  value={barrioId}
+                  onChange={(e) => setBarrioId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    {municipio ? 'Selecciona un barrio...' : 'Primero elige el municipio'}
+                  </option>
+                  {barriosDelMunicipio.map((b) => (
+                    <option key={b.id} value={b.id}>{b.barrio}</option>
+                  ))}
+                </select>
+                {/* El nombre del barrio se sigue enviando como `Barrio` (hoja/doc/post de n8n) */}
+                <input type="hidden" name="Barrio" value={barrioNombre} />
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Estrato *</label>
+                <select name="Estrato" className="form-select" required defaultValue="">
+                  <option value="" disabled>Selecciona el estrato...</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                </select>
+              </div>
+
+              <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1' }}>
                 <label style={styles.label}>Unidad Cerrada / Edificio</label>
-                <input 
-                  type="text" 
-                  name="Unidad" 
-                  className="form-control" 
-                  placeholder="Ej. Luna del Mar (n/a si no aplica)" 
-                  defaultValue="n/a"
-                />
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={enUnidad}
+                    onChange={(e) => {
+                      setEnUnidad(e.target.checked);
+                      if (!e.target.checked) { setUnidadSel(''); setUnidadNueva(''); }
+                    }}
+                  />
+                  <span className="toggle-track" />
+                  <span style={styles.toggleText}>El inmueble está en una unidad cerrada / edificio</span>
+                </label>
+
+                {enUnidad && (
+                  <div style={styles.unidadReveal}>
+                    <select
+                      className="form-select"
+                      required
+                      value={unidadSel}
+                      onChange={(e) => { setUnidadSel(e.target.value); if (e.target.value !== '__otra__') setUnidadNueva(''); }}
+                    >
+                      <option value="" disabled>Selecciona la unidad...</option>
+                      {unidades.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="__otra__">➕ Otra (agregar nueva)</option>
+                    </select>
+
+                    {unidadSel === '__otra__' && (
+                      <input
+                        type="text"
+                        className="form-control"
+                        required
+                        value={unidadNueva}
+                        onChange={(e) => setUnidadNueva(e.target.value)}
+                        placeholder="Nombre de la nueva unidad (ej. Luna del Mar)"
+                        style={{ marginTop: '0.6rem' }}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Lo que realmente viaja al POST de n8n */}
+                <input type="hidden" name="Unidad" value={unidadValue} />
+                <input type="hidden" name="Unidad Cerrada" value={unidadCerradaValue} />
               </div>
 
               <div style={styles.fieldGroup}>
@@ -343,12 +525,19 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Asesor *</label>
-                <select name="Asesor" className="form-select" required defaultValue="Sebastian">
-                  <option value="Sebastian">Sebastian</option>
-                  <option value="Gisela">Gisela</option>
-                  <option value="Liz">Liz</option>
-                  <option value="Samuel">Samuel</option>
+                <select
+                  name="Asesor_id"
+                  className="form-select"
+                  required
+                  value={asesorId}
+                  onChange={(e) => setAsesorId(e.target.value)}
+                >
+                  {ASESORES.map((a) => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
                 </select>
+                {/* El nombre del asesor se sigue enviando como `Asesor` (hoja/doc/post de n8n) */}
+                <input type="hidden" name="Asesor" value={asesorNombre} />
               </div>
             </div>
 
@@ -481,7 +670,6 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                 { name: 'Calentador', label: 'Calentador' },
                 { name: 'Balcon', label: 'Balcón' },
                 { name: 'Cuarto Util', label: 'Cuarto Útil' },
-                { name: 'Unidad Cerrada', label: 'Unidad Cerrada' },
                 { name: 'Piscina', label: 'Piscina' },
                 { name: 'Cancha', label: 'Canchas' },
                 { name: 'Gimnasio', label: 'Gimnasio' }
@@ -531,12 +719,23 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
 
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Teléfono del Propietario *</label>
-                <input 
-                  type="tel" 
-                  name="Num Prop" 
-                  className="form-control" 
-                  placeholder="Ej. 3012345678" 
-                  required 
+                <input
+                  type="tel"
+                  name="Num Prop"
+                  className="form-control"
+                  placeholder="Ej. 3012345678"
+                  required
+                />
+              </div>
+
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Email del Propietario *</label>
+                <input
+                  type="email"
+                  name="Email prop"
+                  className="form-control"
+                  placeholder="Ej. propietario@correo.com"
+                  required
                 />
               </div>
 
@@ -669,7 +868,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                 {isPending ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div className="spinner-loader" style={styles.btnSpinner} />
-                    <span>Retransmitiendo a n8n...</span>
+                    <span>{uploadMsg || 'Enviando...'}</span>
                   </div>
                 ) : (
                   <span>¡Disparar Captación a n8n!</span>
@@ -683,7 +882,7 @@ export default function FormCaptarInmueble({ isAdmin }: FormCaptarInmuebleProps)
                   <div className="progress-bar-anim" style={styles.progressBarFill} />
                 </div>
                 <p style={styles.progressText}>
-                  Transmitiendo archivos binarios al servidor... Por favor, no cierres la ventana.
+                  {uploadMsg || 'Procesando...'} Por favor, no cierres la ventana.
                 </p>
               </div>
             )}
@@ -839,6 +1038,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   textarea: {
     resize: 'vertical',
+  },
+  toggleText: {
+    fontSize: '0.85rem',
+    color: 'var(--text-secondary)',
+  },
+  unidadReveal: {
+    marginTop: '0.75rem',
+    display: 'flex',
+    flexDirection: 'column',
   },
   dragDropZone: {
     border: '2px dashed var(--border-color)',

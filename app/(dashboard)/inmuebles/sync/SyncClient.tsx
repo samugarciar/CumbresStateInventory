@@ -88,10 +88,11 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
             <div style={styles.infoBox}>
               <Info size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
               <p style={styles.infoText}>
-                Esta sincronización descargará únicamente las propiedades del ERP que estén en estado 
-                <strong> Disponible (Desocupada)</strong> o <strong>Arrendado</strong>. Se descartan 
-                automáticamente inactivos y borradores. Los asesores locales serán enlazados de manera 
-                automática mediante comparación inteligente de sus nombres.
+                Esta sincronización descargará las propiedades del ERP en estado
+                <strong> Disponible (Desocupada)</strong> o <strong>Arrendado</strong>, y
+                <strong> dará de baja</strong> las que el ERP haya marcado como inactivas (sin borrarlas).
+                Los borradores y estados desconocidos se ignoran. Los asesores locales serán enlazados de
+                manera automática mediante comparación inteligente de sus nombres.
               </p>
             </div>
 
@@ -195,6 +196,10 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
                   <div style={{ ...styles.statBox, borderColor: 'var(--primary)' }}>
                     <span style={{ ...styles.statNum, color: 'var(--primary)' }}>{result.updated}</span>
                     <span style={styles.statLabel}>Actualizados</span>
+                  </div>
+                  <div style={{ ...styles.statBox, borderColor: '#f59e0b' }}>
+                    <span style={{ ...styles.statNum, color: '#f59e0b' }}>{result.deactivated ?? 0}</span>
+                    <span style={styles.statLabel}>Desactivados</span>
                   </div>
                   <div style={{ ...styles.statBox, borderColor: '#ef4444' }}>
                     <span style={{ ...styles.statNum, color: '#ef4444' }}>{result.failed}</span>

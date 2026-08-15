@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle } from 'lucide-react';
-import { aprobarSolicitud, denegarSolicitud } from '@/app/actions/solicitudes';
+import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle, Clock } from 'lucide-react';
+import { aprobarSolicitud, denegarSolicitud, descartarSolicitud } from '@/app/actions/solicitudes';
 
 interface Solicitud {
   id: string;
@@ -63,6 +63,11 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
   const [asesorSel, setAsesorSel] = useState<string>('');
   const [motivo, setMotivo] = useState('');
   const [procesando, setProcesando] = useState(false);
+  // Horario en el que el asesor SÍ puede atender: arranca en el que pidió el
+  // cliente y se puede ajustar. Ajustarlo en vez de denegar es lo que convierte
+  // un "no puedo a esa hora" en una contraoferta que el cliente recibe.
+  const [fechaSel, setFechaSel] = useState('');
+  const [horaSel, setHoraSel] = useState('');
 
   if (solicitudes.length === 0) return null;
 
@@ -70,6 +75,8 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
     // Preseleccionar el asesor asignado del inmueble (respetando el override local)
     const defaultAsesor = s.inmuebles?.asesor_id_override || s.inmuebles?.asesor_id || '';
     setAsesorSel(asesores.some(a => a.id === defaultAsesor) ? defaultAsesor : (asesores[0]?.id || ''));
+    setFechaSel(s.fecha);
+    setHoraSel(s.hora_inicio.substring(0, 5));
     setMotivo('');
     setExpandida({ id: s.id, modo: 'aprobar' });
   };
@@ -86,8 +93,19 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
 
   const aprobar = async (s: Solicitud) => {
     if (!asesorSel) { alert('Selecciona el asesor que atenderá la visita.'); return; }
+    if (!fechaSel || !horaSel) { alert('Indica la fecha y la hora de la visita.'); return; }
+    // La franja es de 30 min: la hora de fin se deriva de la de inicio.
+    const [h, m] = horaSel.split(':').map(Number);
+    const fin = new Date(Date.UTC(2000, 0, 1, h, m + 30));
+    const horaFin = `${String(fin.getUTCHours()).padStart(2, '0')}:${String(fin.getUTCMinutes()).padStart(2, '0')}`;
     setProcesando(true);
-    const result = await aprobarSolicitud({ solicitud_id: s.id, asesor_id: asesorSel });
+    const result = await aprobarSolicitud({
+      solicitud_id: s.id,
+      asesor_id: asesorSel,
+      fecha: fechaSel,
+      hora_inicio: horaSel,
+      hora_fin: horaFin,
+    });
     setProcesando(false);
     if (!result.success) {
       alert(result.error || 'No se pudo aprobar la solicitud.');
@@ -111,6 +129,19 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
     router.refresh();
   };
 
+  // Descartar: borra la solicitud sin responderle al cliente (para spam/irrelevantes).
+  const descartar = async (s: Solicitud) => {
+    if (!window.confirm(`¿Descartar la solicitud de ${s.cliente_nombre}? Se elimina sin enviarle respuesta al cliente.`)) return;
+    setProcesando(true);
+    const result = await descartarSolicitud({ solicitud_id: s.id });
+    setProcesando(false);
+    if (!result.success) {
+      alert(result.error || 'No se pudo descartar la solicitud.');
+      return;
+    }
+    router.refresh();
+  };
+
   return (
     <div className="glass-card" style={styles.seccion}>
       <div style={styles.header}>
@@ -127,6 +158,16 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
         const estaExpandida = expandida?.id === s.id;
         return (
           <div key={s.id} style={styles.card}>
+            <button
+              type="button"
+              style={styles.descartarBtn}
+              onClick={() => descartar(s)}
+              disabled={procesando}
+              title="Descartar sin responder al cliente"
+              aria-label="Descartar solicitud"
+            >
+              <X size={15} />
+            </button>
             <div style={styles.fila}>
               {/* Slot deseado */}
               <div style={styles.slotBlock}>
@@ -165,17 +206,39 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
                     className="btn btn-primary"
                     style={styles.accionBtn}
                     onClick={() => abrirAprobar(s)}
-                    disabled={procesando || vencida}
-                    title={vencida ? 'El horario ya pasó: solo se puede denegar' : 'Crear la franja y agendar la cita'}
+                    disabled={procesando}
+                    title={
+                      vencida
+                        ? 'El horario que pidió ya pasó, pero podés ofrecerle otro: elegí fecha y hora'
+                        : 'Crear la franja y agendar la cita'
+                    }
                   >
                     <Check size={14} />
-                    Aprobar
+                    {vencida ? 'Ofrecer otro horario' : 'Aprobar'}
                   </button>
+                  {/* Botón propio para la contraoferta: con solo "Aprobar" y "Denegar",
+                      el asesor que no puede a esa hora le da a Denegar y escribe la
+                      alternativa en el motivo, donde no crea agenda ni cierra nada
+                      (pasó en 23 de 36 solicitudes, y volvió a pasar en la prueba
+                      del 10/ago aun teniendo los campos de hora disponibles). */}
+                  {!vencida && (
+                    <button
+                      className="btn btn-secondary"
+                      style={styles.accionBtn}
+                      onClick={() => abrirAprobar(s)}
+                      disabled={procesando}
+                      title="No podés a esa hora pero sí a otra: elegí la tuya y el cliente la recibe por WhatsApp"
+                    >
+                      <Clock size={14} />
+                      Proponer otra hora
+                    </button>
+                  )}
                   <button
                     className="btn btn-danger"
                     style={styles.accionBtn}
                     onClick={() => abrirDenegar(s)}
                     disabled={procesando}
+                    title="Solo si la visita no es posible en ninguna hora"
                   >
                     <X size={14} />
                     Denegar
@@ -188,9 +251,28 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
             {estaExpandida && expandida.modo === 'aprobar' && (
               <div style={styles.panel}>
                 <label style={styles.panelLabel}>
-                  Asesor que atenderá la visita (se le crea la franja {s.hora_inicio.substring(0, 5)}–{s.hora_fin.substring(0, 5)}):
+                  Horario en el que vas a atender la visita. Si no podés a la hora que pidió, ofrecele otra
+                  aquí en vez de denegar — el cliente la recibe por WhatsApp y puede responder si no le sirve.
                 </label>
                 <div style={styles.panelFila}>
+                  <input
+                    className="form-input"
+                    style={styles.inputFecha}
+                    type="date"
+                    min={hoy}
+                    value={fechaSel}
+                    onChange={e => setFechaSel(e.target.value)}
+                    disabled={procesando}
+                  />
+                  <input
+                    className="form-input"
+                    style={styles.inputHora}
+                    type="time"
+                    step={1800}
+                    value={horaSel}
+                    onChange={e => setHoraSel(e.target.value)}
+                    disabled={procesando}
+                  />
                   <select
                     className="form-input"
                     style={styles.select}
@@ -216,13 +298,16 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
 
             {estaExpandida && expandida.modo === 'denegar' && (
               <div style={styles.panel}>
-                <label style={styles.panelLabel}>Motivo (opcional, se le envía al cliente):</label>
+                <label style={styles.panelLabel}>
+                  Motivo (obligatorio, se le envía al cliente). Si el problema es solo la hora, cerrá esto y
+                  usá “{vencida ? 'Ofrecer otro horario' : 'Aprobar'}” con el horario que sí puedas: denegar hace desistir al cliente.
+                </label>
                 <div style={styles.panelFila}>
                   <input
                     className="form-input"
                     style={styles.select}
                     type="text"
-                    placeholder="Ej. No hay asesor disponible ese día"
+                    placeholder="Ej. Ese inmueble ya se arrendó, pero tenemos otros similares en la zona"
                     value={motivo}
                     onChange={e => setMotivo(e.target.value)}
                     disabled={procesando}
@@ -275,11 +360,30 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)',
   },
   card: {
+    position: 'relative' as const,
     border: '1px solid var(--border-color)',
     borderRadius: 'var(--border-radius-md)',
     padding: '0.75rem 0.9rem',
     marginBottom: '0.55rem',
     backgroundColor: 'var(--bg-secondary)',
+  },
+  descartarBtn: {
+    position: 'absolute' as const,
+    top: '0.4rem',
+    right: '0.4rem',
+    width: '24px',
+    height: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    border: 'none',
+    borderRadius: '6px',
+    background: 'transparent',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    zIndex: 2,
+    lineHeight: 1,
   },
   fila: {
     display: 'flex',
@@ -401,6 +505,16 @@ const styles: Record<string, React.CSSProperties> = {
   select: {
     flex: 1,
     minWidth: '220px',
+    fontSize: '0.82rem',
+    padding: '0.4rem 0.6rem',
+  },
+  inputFecha: {
+    width: '150px',
+    fontSize: '0.82rem',
+    padding: '0.4rem 0.6rem',
+  },
+  inputHora: {
+    width: '110px',
     fontSize: '0.82rem',
     padding: '0.4rem 0.6rem',
   },

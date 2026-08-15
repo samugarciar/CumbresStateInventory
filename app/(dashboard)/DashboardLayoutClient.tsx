@@ -20,7 +20,8 @@ import {
   CalendarDays,
   CalendarCheck,
   BrainCircuit,
-  Bot
+  Bot,
+  Handshake
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
@@ -217,6 +218,22 @@ export default function DashboardLayoutClient({
 
           {isAdmin && (
             <>
+              <Link
+                href="/captaciones"
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  ...styles.navLink,
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/captaciones') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/captaciones') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/captaciones') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Captaciones' : undefined}
+              >
+                <Handshake size={20} />
+                {(!isCollapsed || !mounted) && <span>Captaciones</span>}
+              </Link>
+
               <Link
                 href="/inteligencia"
                 onClick={() => setIsMobileOpen(false)}

@@ -1,0 +1,147 @@
+// Intake por CORREO: recibe un correo de alerta de un portal (búsqueda
+// guardada) reenviado por n8n, extrae los anuncios que trae y los pasa por el
+// grafo → prospectos calificados en la bandeja.
+//
+// Es la vía de descubrimiento DESATENDIDA y conforme: no se raspa ninguna
+// página, el portal nos envía los datos por correo a nosotros. n8n solo hace de
+// cartero (trigger IMAP/Gmail → POST aquí); toda la lógica vive en este repo.
+//
+// Auth: cabecera x-webhook-token == CAPTACIONES_WEBHOOK_TOKEN (obligatoria: la
+// llama una máquina, no hay sesión).
+//
+// POST body: { asunto?, html?, texto?, from?, inmobiliaria_id? }
+
+import { createAdminClient } from '@/lib/supabase/admin';
+import { registrarUso } from '@/lib/agente-captaciones/uso';
+import {
+  extraerAnunciosDeCorreo,
+  cuerpoDesdePayloadGmail,
+  asuntoDesdePayloadGmail,
+  MAX_ANUNCIOS_POR_CORREO,
+} from '@/lib/agente-captaciones/email/extraer';
+import { procesarAnuncios } from '@/lib/agente-captaciones/procesar';
+
+export const maxDuration = 300;
+
+interface Cuerpo {
+  asunto?: string;
+  subject?: string;
+  html?: string;
+  textHtml?: string;
+  texto?: string;
+  text?: string;
+  textPlain?: string;
+  snippet?: string;
+  from?: string;
+  /** Estructura cruda de la API de Gmail (lo que reenvía n8n sin mapear nada). */
+  payload?: unknown;
+  inmobiliaria_id?: string;
+}
+
+export async function POST(request: Request) {
+  const token = request.headers.get('x-webhook-token');
+  if (!token || !process.env.CAPTACIONES_WEBHOOK_TOKEN || token !== process.env.CAPTACIONES_WEBHOOK_TOKEN) {
+    return Response.json({ estado: 'error', error: 'No autorizado' }, { status: 401 });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return Response.json({ estado: 'error', error: 'Falta configurar OPENAI_API_KEY' }, { status: 500 });
+  }
+
+  const cuerpo: Cuerpo | null = await request.json().catch(() => null);
+  if (!cuerpo) return Response.json({ estado: 'error', error: 'Body inválido' }, { status: 400 });
+
+  const inmobiliariaId = cuerpo.inmobiliaria_id || process.env.CUMBRES_INMOBILIARIA_ID;
+  if (!inmobiliariaId) {
+    return Response.json({ estado: 'error', error: 'Falta inmobiliaria_id' }, { status: 400 });
+  }
+
+  // Se acepta el correo en cualquiera de las formas que entregan los distintos
+  // triggers de n8n (Gmail simplificado, IMAP, o el payload crudo de la API de
+  // Gmail). Así el workflow puede reenviar el objeto tal cual, sin mapear nada.
+  const delPayload = cuerpo.payload ? cuerpoDesdePayloadGmail(cuerpo.payload) : { html: '', texto: '' };
+  const asunto = cuerpo.asunto ?? cuerpo.subject ?? asuntoDesdePayloadGmail(cuerpo.payload);
+  const html = cuerpo.html || cuerpo.textHtml || delPayload.html || undefined;
+  const texto = cuerpo.texto || cuerpo.text || cuerpo.textPlain || delPayload.texto || cuerpo.snippet || undefined;
+
+  if (!html && !texto) {
+    return Response.json(
+      {
+        estado: 'error',
+        error:
+          'No encontré el cuerpo del correo. Manda `html`, `texto`, o el objeto `payload` crudo de Gmail ' +
+          '(en n8n basta con reenviar el item completo).',
+        // Ayuda a depurar el mapeo desde n8n sin exponer contenido sensible.
+        campos_recibidos: Object.keys(cuerpo),
+      },
+      { status: 400 }
+    );
+  }
+
+  const supabase = createAdminClient();
+
+  // Kill switch: sin fila = activo
+  const { data: config } = await supabase
+    .from('agentes_config')
+    .select('activo')
+    .eq('inmobiliaria_id', inmobiliariaId)
+    .eq('agente', 'captaciones')
+    .maybeSingle();
+  if (config && !config.activo) {
+    return Response.json({ estado: 'pausado', error: 'El agente de captaciones está pausado.' }, { status: 409 });
+  }
+
+  // --- 1) Sacar los anuncios del correo ---
+  let extraccion;
+  try {
+    extraccion = await extraerAnunciosDeCorreo({ asunto, html, texto });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[Captaciones/email] Error extrayendo anuncios:', msg);
+    return Response.json({ estado: 'error', error: msg }, { status: 500 });
+  }
+  await registrarUso(supabase, inmobiliariaId, null, extraccion.uso);
+
+  if (!extraccion.esAlerta || extraccion.anuncios.length === 0) {
+    return Response.json({
+      estado: 'ok',
+      es_alerta: extraccion.esAlerta,
+      anuncios_detectados: 0,
+      mensaje: extraccion.esAlerta
+        ? 'Es una alerta pero no traía anuncios nuevos.'
+        : 'El correo no parece una alerta de inmuebles; se ignoró.',
+    });
+  }
+
+  // --- 2) Cada anuncio por el grafo (lógica compartida con el intake por lote) ---
+  const resumen = await procesarAnuncios(
+    supabase,
+    inmobiliariaId,
+    extraccion.anuncios.map((a) => ({
+      url: a.url,
+      titulo: a.titulo,
+      precio: a.precio,
+      ciudad: a.ciudad,
+      barrio: a.barrio,
+      area_m2: a.area_m2,
+      habitaciones: a.habitaciones,
+      contacto_telefono: a.contacto_telefono,
+      contacto_nombre: a.contacto_nombre,
+      // El texto del correo trae las señales de "dueño directo" (o de agencia)
+      // que el nodo de calificación necesita.
+      descripcion: a.detalles,
+    }))
+  );
+
+  return Response.json({
+    estado: 'ok',
+    es_alerta: true,
+    anuncios_detectados: extraccion.anuncios.length,
+    // Nunca truncar en silencio: si el correo traía más del tope, se reporta.
+    recortados: extraccion.recortados,
+    aviso_recorte:
+      extraccion.recortados > 0
+        ? `El correo traía más de ${MAX_ANUNCIOS_POR_CORREO} anuncios; ${extraccion.recortados} quedaron sin procesar.`
+        : undefined,
+    ...resumen,
+  });
+}

@@ -10,6 +10,7 @@ export interface SyncResult {
   processed: number;
   imported: number;
   updated: number;
+  deactivated?: number;
   failed: number;
   details?: string[];
 }
@@ -93,7 +94,7 @@ const VIA_MAP: Record<string, string> = {
   cra: 'cr', cr: 'cr', carrera: 'cr', kra: 'cr', krra: 'cr',
   av: 'av', ave: 'av', avda: 'av', avenida: 'av',
   diag: 'dg', dg: 'dg', diagonal: 'dg',
-  transv: 'tv', tv: 'tv', transversal: 'tv',
+  transv: 'tv', trasv: 'tv', tv: 'tv', transversal: 'tv',
   autopista: 'au', autop: 'au', circular: 'ci', circ: 'ci',
 };
 const VIA_CODES = new Set(['ca', 'cr', 'av', 'dg', 'tv', 'au', 'ci']);
@@ -121,6 +122,46 @@ function firmaDireccion(direccion: string | null): string {
   // conservar solo códigos de vía + números/placa
   const toks = s.split(' ').filter(Boolean).filter((t) => /\d/.test(t) || VIA_CODES.has(t));
   return toks.join(' ').trim();
+}
+
+// Marcadores que indican el fin del nombre de la unidad dentro de una dirección.
+const UNIDAD_MARCADORES = new Set([
+  'apto', 'aptp', 'apartamento', 'apartamentos', 'aptos', 'apt', 'ap', 'casa',
+  'casas', 'local', 'locales', 'oficina', 'oficinas', 'of', 'torre', 'bloque',
+  'bl', 'interior', 'int', 'parqueadero', 'parq', 'pq', 'piso', 't', 'mz',
+  'manzana', 'lote', 'lt',
+]);
+// Conectores que van en minúscula al formar el nombre (salvo si son la 1ª palabra).
+const UNIDAD_CONECTORES = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'el']);
+
+/**
+ * Último recurso para inferir la unidad: cuando la dirección trae un prefijo de
+ * urbanización (URB./CONJ./EDIF./…), extrae el nombre que le sigue hasta el primer
+ * tipo de vía, número o marcador (apto/torre/…). El nombre sale SIN acentos
+ * (normalizado) y en formato título con conectores en minúscula, para que quede
+ * consistente entre hermanos y con el catálogo manual.
+ *   "URB. MALAGA CR 99 # 65-115 APTO 410" -> "Malaga"
+ *   "CL 10 CONJ LOMAS DE PINARES APTO 3"  -> "Lomas de Pinares"
+ * Devuelve null si no hay prefijo o no queda un nombre útil. Solo corre cuando la
+ * unidad no se pudo inferir del catálogo existente (así los nombres a mano mandan).
+ */
+function extraerUnidadDePrefijo(direccion: string | null): string | null {
+  if (!direccion) return null;
+  const norm = normalizarTexto(direccion);
+  const m = norm.match(new RegExp(`\\b(?:${UNIDAD_PREFIJOS})\\s+(.+)`));
+  if (!m) return null;
+  const palabras: string[] = [];
+  for (const w of m[1].split(' ')) {
+    if (!w) continue;
+    if (/\d/.test(w)) break;                    // llegó a un número/placa
+    if (VIA_CODES.has(VIA_MAP[w] || w)) break;  // llegó a un tipo de vía
+    if (UNIDAD_MARCADORES.has(w)) break;        // llegó a apto/torre/etc.
+    palabras.push(w);
+  }
+  if (palabras.join(' ').length < UNIDAD_MIN_CHARS) return null;
+  return palabras
+    .map((p, i) => (i > 0 && UNIDAD_CONECTORES.has(p)) ? p : p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
 }
 
 /**
@@ -271,6 +312,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   let processedCount = 0;
   let importedCount = 0;
   let updatedCount = 0;
+  let desactivadosCount = 0;
   let failedCount = 0;
 
   // Consultar inmuebles locales previamente sincronizados para distinguir entre "creación" y "actualización"
@@ -333,21 +375,51 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
   for (const prop of allProperties) {
     processedCount++;
     
-    // Filtro de estados solicitado por el usuario:
-    // Solo disponibles (estado 1) y arrendados (estado 0)
-    // Se descartan inactivos (estado 3) y borradores (estado 5)
-    const isDisponible = prop.estado === 1 || prop.estado_texto?.toLowerCase().trim() === 'activa' || prop.estado_texto?.toLowerCase().trim() === 'desocupado';
-    const isArrendado = prop.estado === 0 || prop.estado_texto?.toLowerCase().trim() === 'arrendada' || prop.estado_texto?.toLowerCase().trim() === 'arrendado';
-    
+    // Estados en Nuby/Arrendasoft: 1 = Activa (disponible), 0 = Arrendada,
+    // 2 = Inactiva (retirada del mercado). Comparamos por número y por texto.
+    const estadoTexto = prop.estado_texto?.toLowerCase().trim();
+    const isDisponible = prop.estado === 1 || estadoTexto === 'activa' || estadoTexto === 'desocupado';
+    const isArrendado = prop.estado === 0 || estadoTexto === 'arrendada' || estadoTexto === 'arrendado';
+    const isInactivo = prop.estado === 2 || estadoTexto === 'inactiva' || estadoTexto === 'inactivo';
+
+    const arrendasoftId = String(prop.codigo);
+    const registroLocal = existingMap.get(arrendasoftId);
+    const isUpdate = !!registroLocal;
+
+    // BAJA DEL ERP: el inmueble está inactivo en Nuby (retirado del mercado).
+    // Antes se saltaba con `continue`, dejando el estado local congelado en su último
+    // valor (bug: un inmueble seguía "disponible" y lo ofertaba el agente aunque el ERP
+    // ya lo hubiera dado de baja). Ahora, si el inmueble YA existe localmente, reflejamos
+    // la baja: estado_erp='inactivo' y el estado EFECTIVO='inactivo', respetando el
+    // override local (soberano; el sync nunca lo pisa). Si NO existe localmente lo
+    // seguimos ignorando: no importamos el catálogo completo de inactivos del ERP.
+    if (isInactivo) {
+      if (registroLocal) {
+        try {
+          const { error: bajaErr } = await supabase
+            .from('inmuebles')
+            .update({
+              estado_erp: 'inactivo',
+              estado: registroLocal.estado_override || 'inactivo',
+            })
+            .eq('id', registroLocal.id);
+          if (bajaErr) throw new Error(bajaErr.message);
+          desactivadosCount++;
+        } catch (err: any) {
+          console.error(`Falla al marcar inactivo el código ${prop.codigo}:`, err.message);
+          failedCount++;
+          details.push(`Código ${prop.codigo}: Error al marcar inactivo (${err.message})`);
+        }
+      }
+      continue;
+    }
+
+    // Estados desconocidos (borradores u otros no contemplados): ignorar en silencio.
     if (!isDisponible && !isArrendado) {
-      // Ignorar inactivos/borradores de forma silenciosa
       continue;
     }
 
     try {
-      const arrendasoftId = String(prop.codigo);
-      const isUpdate = existingMap.has(arrendasoftId);
-
       // Mapear precio dinámicamente según transacción
       let precio = 0;
       if (prop.valor_arriendo1 && Number(prop.valor_arriendo1) > 0) {
@@ -453,12 +525,15 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         imagenes: imagenesArr,
       };
 
-      // Inferir la unidad: 1º por nombre del edificio en la dirección; si no aparece,
-      // 2º por firma de dirección (mismo edificio aunque el texto no lo nombre).
+      // Inferir la unidad: 1º por nombre del edificio en la dirección (catálogo
+      // manual); 2º por firma de dirección (mismo edificio aunque el texto no lo
+      // nombre); 3º extrayendo el nombre de un prefijo de urbanización (URB./CONJ./
+      // EDIF.) para agrupar edificios nuevos sin necesidad de sembrarlos a mano.
       // El payload base NO incluye `unidad` para no pisar asignaciones manuales.
       const unidadInferida =
         inferirUnidad(payload.direccion, unidadesConocidas) ||
         firmaAUnidad[firmaDireccion(payload.direccion)] ||
+        extraerUnidadDePrefijo(payload.direccion) ||
         null;
 
       if (isUpdate) {
@@ -504,7 +579,7 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
     details.push(`Se autocompletó la unidad de ${unidadInferidaCount} inmueble(s) a partir de la dirección (catálogo manual).`);
   }
 
-  details.push(`Sincronización completada. Nuevos: ${importedCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}.`);
+  details.push(`Sincronización completada. Nuevos: ${importedCount}, Actualizados: ${updatedCount}, Desactivados: ${desactivadosCount}, Fallidos: ${failedCount}.`);
 
   // 7. Revalidar vistas
   revalidatePath('/inmuebles');
@@ -512,10 +587,11 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
 
   return {
     success: true,
-    message: `Sincronización finalizada con éxito. Se importaron ${importedCount} propiedades nuevas y se actualizaron ${updatedCount} existentes.`,
+    message: `Sincronización finalizada con éxito. Se importaron ${importedCount} propiedades nuevas, se actualizaron ${updatedCount} y se desactivaron ${desactivadosCount} (dadas de baja en el ERP).`,
     processed: processedCount,
     imported: importedCount,
     updated: updatedCount,
+    deactivated: desactivadosCount,
     failed: failedCount,
     details
   };

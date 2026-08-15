@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { ASESOR_IDS_VALIDOS } from '@/lib/captacion/asesores';
 
 export interface WebhookResult {
   success: boolean;
@@ -40,13 +41,52 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   const precioRaw = formData.get('Precio(COP)') as string;
   const asesor = formData.get('Asesor') as string;
 
-  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor) {
+  // Campos nuevos de captación (todos obligatorios)
+  const tipoOperacion = formData.get('Tipo Operacion') as string;
+  const emailProp = formData.get('Email prop') as string;
+  const estratoRaw = formData.get('Estrato') as string;
+  const municipio = formData.get('Municipio') as string;
+  const barrioIdRaw = formData.get('Barrio_id') as string;
+  const asesorIdRaw = formData.get('Asesor_id') as string;
+
+  if (!tituloCaptacion || !direccion || !barrio || !precioRaw || !asesor || !tipoOperacion || !emailProp || !estratoRaw || !municipio || !barrioIdRaw || !asesorIdRaw) {
     return { success: false, message: 'Por favor, completa todos los campos requeridos.' };
   }
 
   const precio = Number(precioRaw);
   if (isNaN(precio) || precio <= 0) {
     return { success: false, message: 'El precio debe ser un número positivo válido.' };
+  }
+
+  // Validar valores enumerados y formato para que lleguen a n8n exactamente como se espera
+  const tiposOperacionValidos = ['arriendo', 'venta', 'venta y arriendo'];
+  if (!tiposOperacionValidos.includes(tipoOperacion)) {
+    return { success: false, message: 'El tipo de operación seleccionado no es válido.' };
+  }
+
+  const municipiosValidos = ['Medellin', 'Bello', 'Sabaneta', 'Envigado'];
+  if (!municipiosValidos.includes(municipio)) {
+    return { success: false, message: 'El municipio seleccionado no es válido.' };
+  }
+
+  const estratoNum = Number(estratoRaw);
+  if (!Number.isInteger(estratoNum) || estratoNum < 1 || estratoNum > 6) {
+    return { success: false, message: 'El estrato debe ser un número entre 1 y 6.' };
+  }
+
+  const barrioIdNum = Number(barrioIdRaw);
+  if (!Number.isInteger(barrioIdNum) || barrioIdNum <= 0) {
+    return { success: false, message: 'El barrio seleccionado no es válido.' };
+  }
+
+  const asesorIdNum = Number(asesorIdRaw);
+  if (!ASESOR_IDS_VALIDOS.has(asesorIdNum)) {
+    return { success: false, message: 'El asesor seleccionado no es válido.' };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(emailProp)) {
+    return { success: false, message: 'El email del propietario no tiene un formato válido.' };
   }
 
   // 4. Agrupar campos para guardar en el payload del log
@@ -58,17 +98,25 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     }
   });
 
-  // 5. Procesar archivos (Fotos) y calcular pesos
-  const fotos = formData.getAll('Fotos') as File[];
-  let totalSizeBytes = 0;
-  const validFiles: File[] = [];
-
-  for (const foto of fotos) {
-    if (foto && foto.size > 0) {
-      totalSizeBytes += foto.size;
-      validFiles.push(foto);
-    }
+  // 5. Fotos: ahora llegan como URLs (el navegador las sube directo a Supabase
+  // Storage), no como binarios. Así el body del Server Action es pequeño y no
+  // choca con el tope de ~4.5 MB de Vercel para funciones serverless.
+  let fotoUrls: string[] = [];
+  try {
+    const raw = formData.get('Fotos_URLs') as string | null;
+    if (raw) fotoUrls = JSON.parse(raw);
+  } catch {
+    fotoUrls = [];
   }
+  fotoUrls = Array.isArray(fotoUrls)
+    ? fotoUrls.filter((u) => typeof u === 'string' && u.length > 0)
+    : [];
+
+  if (fotoUrls.length === 0) {
+    return { success: false, message: 'No se recibió ninguna foto. Vuelve a intentarlo.' };
+  }
+
+  const totalSizeBytes = Number(formData.get('Fotos_size_bytes')) || 0;
 
   // 6. Insertar registro inicial en public.webhook_logs en estado 'enviando'
   const { data: logRecord, error: logInsertError } = await supabase
@@ -81,7 +129,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
       precio: precio,
       estado: 'enviando',
       payload: payloadJson,
-      files_count: validFiles.length,
+      files_count: fotoUrls.length,
       files_size_bytes: totalSizeBytes
     })
     .select('id')
@@ -111,12 +159,22 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
 
     // Mapear campos EXACTAMENTE como los espera el flujo n8n, incluyendo espacios al final de las llaves
     n8nFormData.append('Titulo Captacion', tituloCaptacion);
-    n8nFormData.append('Unidad', (formData.get('Unidad') as string) || 'n/a');
+    // Guardia: si aun así llega un sí/no como nombre de unidad, se descarta (n/a).
+    const unidadRaw = ((formData.get('Unidad') as string) || 'n/a').trim();
+    const unidadLimpia = /^(si|sí|no)$/i.test(unidadRaw) ? 'n/a' : (unidadRaw || 'n/a');
+    n8nFormData.append('Unidad', unidadLimpia);
     n8nFormData.append('Direccion', direccion);
     n8nFormData.append('Apartamento', (formData.get('Apartamento') as string) || 'n/a');
     n8nFormData.append('Barrio', barrio);
+    n8nFormData.append('Barrio_id', String(barrioIdNum));
     n8nFormData.append('Precio(COP)', precioRaw);
     n8nFormData.append('Asesor', asesor);
+    n8nFormData.append('Asesor_id', String(asesorIdNum));
+
+    // Campos nuevos: viajan en el mismo body con las llaves exactas que espera n8n
+    n8nFormData.append('Tipo Operacion', tipoOperacion);
+    n8nFormData.append('Municipio', municipio);
+    n8nFormData.append('Estrato', String(estratoNum));
 
     n8nFormData.append('num de habitaciones', (formData.get('num de habitaciones') as string) || '0');
     n8nFormData.append('num de baños', (formData.get('num de baños') as string) || '0');
@@ -145,22 +203,17 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     // Datos Propietario / Internos
     n8nFormData.append('Nombre prop', (formData.get('Nombre prop') as string) || 'Sin nombre');
     n8nFormData.append('Num Prop', (formData.get('Num Prop') as string) || 'Sin número');
+    n8nFormData.append('Email prop', emailProp);
     n8nFormData.append('Comision(portero)', (formData.get('Comision(portero)') as string) || 'n/a');
     n8nFormData.append('Observaciones', (formData.get('Observaciones') as string) || 'n/a');
 
-    // Mapear archivos como fotos binarias individuales con prefijos secuenciales para n8n
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i];
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      // Creamos un Blob a partir del Buffer en el servidor
-      const fileBlob = new Blob([buffer], { type: file.type });
-      
-      // Adjuntar como Fotos_N para emular el comportamiento del disparador de formularios n8n
-      n8nFormData.append(`Fotos_${i}`, fileBlob, file.name);
-    }
+    // Fotos: enviamos las URLs públicas (n8n las descarga). Antes se mandaban los
+    // binarios como Fotos_N; ese payload era el cuello de botella del tope de Vercel.
+    // CONTRATO n8n: 'Fotos_URLs' = arreglo JSON de URLs; 'Fotos_count' = cantidad.
+    n8nFormData.append('Fotos_URLs', JSON.stringify(fotoUrls));
+    n8nFormData.append('Fotos_count', String(fotoUrls.length));
 
-    console.log(`[Webhook] Retransmitiendo captación a n8n: POST ${n8nWebhookUrl} con ${validFiles.length} fotos (${(totalSizeBytes / (1024 * 1024)).toFixed(2)} MB)...`);
+    console.log(`[Webhook] Retransmitiendo captación a n8n: POST ${n8nWebhookUrl} con ${fotoUrls.length} foto(s) por URL...`);
 
     // Hacer la petición POST a n8n
     const response = await fetch(n8nWebhookUrl, {

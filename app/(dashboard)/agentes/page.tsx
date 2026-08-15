@@ -1,6 +1,8 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { MODELO_BI } from '@/lib/bi/costos';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { MODELO_CALIFICAR, MODELO_REDACTAR } from '@/lib/agente-captaciones/config';
 import { redirect } from 'next/navigation';
 import AgentesClient from './AgentesClient';
 import type { Metadata } from 'next';
@@ -45,15 +47,24 @@ export default async function AgentesPage() {
   const [
     { data: configRows },
     { data: usoMes },
+    { data: usoComercialMes },
     { count: citas7 },
     { count: citas30 },
     { count: solicitudes30 },
     { count: solicitudesPendientes },
+    { data: usoCaptacionMes },
+    { count: prospectosPorAprobar },
+    { count: prospectosContactados30 },
+    { count: prospectosCaptados },
   ] = await Promise.all([
-    supabase.from('agentes_config').select('agente, activo, limite_mensual_usd'),
+    supabase.from('agentes_config').select('agente, activo, limite_mensual_usd, prompt_sistema'),
     supabase
       .from('bi_uso')
       .select('costo_usd, tokens_entrada, tokens_salida, tokens_cache_lectura, tokens_cache_escritura, created_at')
+      .gte('created_at', inicioMes),
+    supabase
+      .from('agente_comercial_uso')
+      .select('costo_usd, tokens_entrada, tokens_salida, tokens_cache, modelo, created_at')
       .gte('created_at', inicioMes),
     supabase
       .from('citas')
@@ -73,12 +84,36 @@ export default async function AgentesPage() {
       .from('solicitudes_apertura')
       .select('id', { count: 'exact', head: true })
       .eq('estado', 'pendiente'),
+    supabase.from('captacion_uso').select('costo_usd, tokens_entrada, tokens_salida, tokens_cache, modelo, created_at').gte('created_at', inicioMes),
+    supabase.from('captacion_prospectos').select('id', { count: 'exact', head: true }).eq('estado', 'por_aprobar'),
+    supabase.from('captacion_prospectos').select('id', { count: 'exact', head: true }).eq('estado', 'contactado').gte('fecha_contacto', hace30d.substring(0, 10)),
+    supabase.from('captacion_prospectos').select('id', { count: 'exact', head: true }).eq('estado', 'captado'),
   ]);
+
+  // Estado de la conexión con Mercado Libre. Se lee con el cliente admin porque
+  // integraciones_mercadolibre tiene RLS sin políticas (guarda tokens); acá solo
+  // se exponen campos NO sensibles — nunca los tokens.
+  let ml: { conectado: boolean; ml_user_id: string | null; expira: string | null } = {
+    conectado: false, ml_user_id: null, expira: null,
+  };
+  try {
+    const { data: conexion } = await createAdminClient()
+      .from('integraciones_mercadolibre')
+      .select('ml_user_id, expires_at')
+      .eq('inmobiliaria_id', user.profile.inmobiliaria_id)
+      .maybeSingle();
+    if (conexion) {
+      ml = { conectado: true, ml_user_id: conexion.ml_user_id, expira: conexion.expires_at };
+    }
+  } catch (e) {
+    console.warn('[Agentes] No se pudo leer la conexión de Mercado Libre:', e);
+  }
 
   // Config por agente (sin fila = activo por defecto, igual que el backend)
   const config = {
     arriendabot_bi: { activo: true, limite_mensual_usd: null as number | null },
     comercial_whatsapp: { activo: true },
+    captaciones: { activo: true, prompt_sistema: '' as string, limite_mensual_usd: null as number | null },
   };
   for (const row of configRows || []) {
     if (row.agente === 'arriendabot_bi') {
@@ -88,6 +123,12 @@ export default async function AgentesPage() {
       };
     } else if (row.agente === 'comercial_whatsapp') {
       config.comercial_whatsapp = { activo: row.activo };
+    } else if (row.agente === 'captaciones') {
+      config.captaciones = {
+        activo: row.activo,
+        prompt_sistema: row.prompt_sistema ?? '',
+        limite_mensual_usd: row.limite_mensual_usd !== null ? Number(row.limite_mensual_usd) : null,
+      };
     }
   }
 
@@ -113,5 +154,42 @@ export default async function AgentesPage() {
     solicitudesPendientes: solicitudesPendientes || 0,
   };
 
-  return <AgentesClient config={config} bi={bi} n8n={n8n} />;
+  // Agregados del uso del agente comercial (mismo patrón que `bi` arriba).
+  // Hasta que la Fase 5 (cablear n8n al endpoint nuevo) esté lista, esto
+  // solo refleja pruebas directas — el tráfico real de WhatsApp sigue
+  // corriendo por el agente viejo en n8n mientras dura el canario.
+  const filasComercial = usoComercialMes || [];
+  const sumaComercial = (fn: (r: any) => number) => filasComercial.reduce((acc, r) => acc + fn(r), 0);
+  const filasComercialHoy = filasComercial.filter((r) => r.created_at >= inicioHoy);
+  const modelosComercial = Array.from(new Set(filasComercial.map((r) => r.modelo))).sort();
+  const comercial = {
+    modelos: modelosComercial.length > 0 ? modelosComercial.join(' + ') : 'gpt-4.1 + gpt-4o',
+    gastoMesUsd: sumaComercial((r) => Number(r.costo_usd || 0)),
+    gastoHoyUsd: filasComercialHoy.reduce((acc, r) => acc + Number(r.costo_usd || 0), 0),
+    peticionesMes: filasComercial.length,
+    peticionesHoy: filasComercialHoy.length,
+    tokensEntradaMes: sumaComercial((r) => r.tokens_entrada || 0),
+    tokensSalidaMes: sumaComercial((r) => r.tokens_salida || 0),
+    tokensCacheMes: sumaComercial((r) => r.tokens_cache || 0),
+  };
+
+  // Agregados del agente de captaciones (mismo patrón que `bi` y `comercial`).
+  const filasCap = usoCaptacionMes || [];
+  const sumaCap = (fn: (r: any) => number) => filasCap.reduce((acc, r) => acc + fn(r), 0);
+  const filasCapHoy = filasCap.filter((r) => r.created_at >= inicioHoy);
+  const captaciones = {
+    modelos: `${MODELO_CALIFICAR} + ${MODELO_REDACTAR}`,
+    gastoMesUsd: sumaCap((r) => Number(r.costo_usd || 0)),
+    gastoHoyUsd: filasCapHoy.reduce((acc, r) => acc + Number(r.costo_usd || 0), 0),
+    anunciosMes: filasCap.length,
+    tokensMes: sumaCap((r) => (r.tokens_entrada || 0) + (r.tokens_salida || 0) + (r.tokens_cache || 0)),
+    porAprobar: prospectosPorAprobar || 0,
+    contactados30: prospectosContactados30 || 0,
+    captados: prospectosCaptados || 0,
+    promptSistema: config.captaciones.prompt_sistema,
+    limiteMensualUsd: config.captaciones.limite_mensual_usd,
+    ml,
+  };
+
+  return <AgentesClient config={config} bi={bi} n8n={n8n} comercial={comercial} captaciones={captaciones} />;
 }

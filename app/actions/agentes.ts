@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { revalidatePath } from 'next/cache';
 
-export type AgenteId = 'arriendabot_bi' | 'comercial_whatsapp';
+export type AgenteId = 'arriendabot_bi' | 'comercial_whatsapp' | 'captaciones';
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -45,11 +45,48 @@ export async function toggleAgente(agente: AgenteId, activo: boolean) {
 }
 
 /**
- * Fija (o quita, con null) el límite de gasto mensual en USD del Asesor BI.
- * Al alcanzarlo, el chat responde como pausado hasta el mes siguiente o
- * hasta que se ajuste el límite.
+ * Guarda el prompt de redacción del agente de captaciones (el estilo del primer
+ * mensaje al propietario), editable en caliente sin redeploy. Vacío = volver al
+ * default de código (lib/agente-captaciones/prompt.ts).
+ *
+ * Solo se expone el de captaciones a propósito: el prompt del agente comercial
+ * viene de n8n y editarlo desde aquí sin más contexto sería riesgoso.
  */
-export async function guardarLimiteMensual(limiteUsd: number | null) {
+export async function guardarPromptCaptaciones(prompt: string) {
+  const user = await requireAdmin();
+  if (!user) return { success: false, error: 'Solo los administradores pueden editar el prompt.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('agentes_config')
+    .upsert(
+      {
+        inmobiliaria_id: user.profile.inmobiliaria_id,
+        agente: 'captaciones',
+        prompt_sistema: prompt.trim() || null,
+        updated_at: new Date().toISOString(),
+        updated_by: user.profile.id,
+      },
+      { onConflict: 'inmobiliaria_id,agente' }
+    );
+
+  if (error) {
+    console.error('[Agentes] Error al guardar el prompt de captaciones:', error.message);
+    return { success: false, error: 'No se pudo guardar el prompt.' };
+  }
+
+  revalidatePath('/agentes');
+  return { success: true as const };
+}
+
+/**
+ * Fija (o quita, con null) el límite de gasto mensual en USD de un agente.
+ *
+ * Al alcanzarlo: el Asesor BI responde como pausado, y el agente de captaciones
+ * deja de procesar anuncios (importante porque corre solo desde n8n). En ambos
+ * casos se libera el mes siguiente o al ajustar el límite.
+ */
+export async function guardarLimiteMensual(limiteUsd: number | null, agente: AgenteId = 'arriendabot_bi') {
   const user = await requireAdmin();
   if (!user) return { success: false, error: 'Solo los administradores pueden gestionar agentes.' };
 
@@ -63,7 +100,7 @@ export async function guardarLimiteMensual(limiteUsd: number | null) {
     .upsert(
       {
         inmobiliaria_id: user.profile.inmobiliaria_id,
-        agente: 'arriendabot_bi',
+        agente,
         limite_mensual_usd: limiteUsd,
         updated_at: new Date().toISOString(),
         updated_by: user.profile.id,

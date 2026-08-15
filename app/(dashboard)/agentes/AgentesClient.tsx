@@ -13,13 +13,32 @@ import {
   CalendarPlus,
   AlertTriangle,
   Info,
+  Handshake,
+  Inbox,
+  CheckCircle2,
+  PlugZap,
+  Save,
 } from 'lucide-react';
-import { toggleAgente, guardarLimiteMensual, type AgenteId } from '@/app/actions/agentes';
+import { toggleAgente, guardarLimiteMensual, guardarPromptCaptaciones, type AgenteId } from '@/app/actions/agentes';
 
 interface AgentesClientProps {
   config: {
     arriendabot_bi: { activo: boolean; limite_mensual_usd: number | null };
     comercial_whatsapp: { activo: boolean };
+    captaciones: { activo: boolean; prompt_sistema: string; limite_mensual_usd: number | null };
+  };
+  captaciones: {
+    limiteMensualUsd: number | null;
+    modelos: string;
+    gastoMesUsd: number;
+    gastoHoyUsd: number;
+    anunciosMes: number;
+    tokensMes: number;
+    porAprobar: number;
+    contactados30: number;
+    captados: number;
+    promptSistema: string;
+    ml: { conectado: boolean; ml_user_id: string | null; expira: string | null };
   };
   bi: {
     modelo: string;
@@ -36,6 +55,16 @@ interface AgentesClientProps {
     citas30: number;
     solicitudes30: number;
     solicitudesPendientes: number;
+  };
+  comercial: {
+    modelos: string;
+    gastoMesUsd: number;
+    gastoHoyUsd: number;
+    peticionesMes: number;
+    peticionesHoy: number;
+    tokensEntradaMes: number;
+    tokensSalidaMes: number;
+    tokensCacheMes: number;
   };
 }
 
@@ -76,9 +105,15 @@ function Interruptor({
   );
 }
 
-export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
+export default function AgentesClient({ config, bi, n8n, comercial, captaciones }: AgentesClientProps) {
   const router = useRouter();
   const [cambiando, setCambiando] = useState<AgenteId | null>(null);
+  const [promptCap, setPromptCap] = useState(captaciones.promptSistema);
+  const [guardandoPrompt, setGuardandoPrompt] = useState(false);
+  const [limiteCap, setLimiteCap] = useState(
+    captaciones.limiteMensualUsd !== null ? String(captaciones.limiteMensualUsd) : ''
+  );
+  const [guardandoLimiteCap, setGuardandoLimiteCap] = useState(false);
   const [limiteInput, setLimiteInput] = useState(
     config.arriendabot_bi.limite_mensual_usd !== null ? String(config.arriendabot_bi.limite_mensual_usd) : ''
   );
@@ -91,7 +126,9 @@ export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
       !confirm(
         agente === 'comercial_whatsapp'
           ? '¿Apagar el agente comercial de WhatsApp? Dejará de consultar disponibilidad, agendar, cancelar y registrar solicitudes hasta que lo prendas de nuevo.'
-          : '¿Apagar el asesor BI? El chat de Arriendabot no responderá hasta que lo prendas de nuevo.'
+          : agente === 'captaciones'
+            ? '¿Apagar el agente de captaciones? No podrás agregar anuncios nuevos a la bandeja hasta que lo prendas. Los prospectos que ya están ahí no se pierden.'
+            : '¿Apagar el asesor BI? El chat de Arriendabot no responderá hasta que lo prendas de nuevo.'
       )
     ) {
       return;
@@ -116,6 +153,34 @@ export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
     setGuardandoLimite(true);
     const res = await guardarLimiteMensual(valor);
     setGuardandoLimite(false);
+    if (!res.success) {
+      alert(res.error || 'No se pudo guardar el límite.');
+      return;
+    }
+    router.refresh();
+  };
+
+  const guardarPrompt = async () => {
+    setGuardandoPrompt(true);
+    const res = await guardarPromptCaptaciones(promptCap);
+    setGuardandoPrompt(false);
+    if (!res.success) {
+      alert(res.error || 'No se pudo guardar el prompt.');
+      return;
+    }
+    router.refresh();
+  };
+
+  const guardarLimiteCaptaciones = async () => {
+    const texto = limiteCap.trim();
+    const valor = texto === '' ? null : Number(texto);
+    if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
+      alert('Ingresa un monto en USD mayor a 0, o deja vacío para quitar el límite.');
+      return;
+    }
+    setGuardandoLimiteCap(true);
+    const res = await guardarLimiteMensual(valor, 'captaciones');
+    setGuardandoLimiteCap(false);
     if (!res.success) {
       alert(res.error || 'No se pudo guardar el límite.');
       return;
@@ -300,12 +365,214 @@ export default function AgentesClient({ config, bi, n8n }: AgentesClientProps) {
             </div>
           </div>
 
+          {/* Trazabilidad LLM del agente ya migrado a LangGraph (mismo formato que el Asesor BI) */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>
+              Consumo LLM · <code style={styles.codigo}>{comercial.modelos}</code>
+            </span>
+            <div style={styles.statsGrid}>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>
+                  <DollarSign size={12} style={{ verticalAlign: '-2px' }} /> Gasto este mes
+                </span>
+                <span style={styles.statValorGrande}>{usd(comercial.gastoMesUsd)}</span>
+                <span style={styles.statSub}>USD (API de OpenAI)</span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Gasto hoy</span>
+                <span style={styles.statValor}>{usd(comercial.gastoHoyUsd)}</span>
+                <span style={styles.statSub}>
+                  {comercial.peticionesHoy} petición{comercial.peticionesHoy !== 1 ? 'es' : ''}
+                </span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>Peticiones del mes</span>
+                <span style={styles.statValor}>{comercial.peticionesMes}</span>
+                <span style={styles.statSub}>al endpoint del agente</span>
+              </div>
+              <div style={styles.stat}>
+                <span style={styles.statLabel}>
+                  <Zap size={12} style={{ verticalAlign: '-2px' }} /> Tokens del mes
+                </span>
+                <span style={styles.statValor}>
+                  {(comercial.tokensEntradaMes + comercial.tokensSalidaMes + comercial.tokensCacheMes).toLocaleString(
+                    'es-CO'
+                  )}
+                </span>
+                <span style={styles.statSub}>
+                  {comercial.tokensEntradaMes.toLocaleString('es-CO')} entrada ·{' '}
+                  {comercial.tokensSalidaMes.toLocaleString('es-CO')} salida ·{' '}
+                  {comercial.tokensCacheMes.toLocaleString('es-CO')} cache
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div style={styles.notaExterna}>
             <Info size={13} style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>
-              El presupuesto LLM de este agente se gestiona fuera de la app (workflow de n8n). Aquí se controla su
-              acceso a los datos: apagarlo bloquea al instante consultar disponibilidad, agendar, cancelar y registrar
-              solicitudes — sin tocar n8n.
+              {comercial.peticionesMes > 0
+                ? 'El agente ya corre en LangGraph dentro de esta app — el gasto de arriba es en tiempo real. Mientras el tráfico real de WhatsApp siga en n8n (canario en curso), estos números solo reflejan pruebas directas al endpoint, no clientes reales todavía.'
+                : 'El agente ya está migrado a LangGraph en esta app, pero el tráfico real de WhatsApp todavía corre por el workflow viejo en n8n (canario pendiente de cablear) — por eso el consumo de arriba está en $0. Apagar el switch bloquea al instante consultar disponibilidad, agendar, cancelar y registrar solicitudes, sin importar cuál de los dos esté respondiendo.'}
+            </span>
+          </div>
+        </div>
+
+        {/* ==================== Agente de captaciones ==================== */}
+        <div className="glass-card" style={styles.card}>
+          <div style={styles.cardHeader}>
+            <div style={styles.cardIcono}>
+              <Handshake size={22} color="var(--primary)" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={styles.cardTitulo}>Agente de captaciones</h2>
+              <p style={styles.cardDetalle}>
+                Califica anuncios de dueños directos y redacta el primer mensaje ·{' '}
+                <code style={styles.codigo}>{captaciones.modelos}</code>
+              </p>
+            </div>
+            <Interruptor
+              activo={config.captaciones.activo}
+              cambiando={cambiando === 'captaciones'}
+              onToggle={() => toggle('captaciones', config.captaciones.activo)}
+            />
+          </div>
+
+          {!config.captaciones.activo && (
+            <div style={styles.avisoPausado}>
+              <AlertTriangle size={14} />
+              Pausado: no se pueden agregar anuncios nuevos a la bandeja. Lo que ya está en Captaciones se conserva.
+            </div>
+          )}
+
+          <div style={styles.statsGrid}>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>
+                <Inbox size={12} style={{ verticalAlign: '-2px' }} /> Por aprobar
+              </span>
+              <span style={styles.statValorGrande}>{captaciones.porAprobar}</span>
+              <span style={styles.statSub}>esperando tu visto bueno</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>Contactados (30 días)</span>
+              <span style={styles.statValor}>{captaciones.contactados30}</span>
+              <span style={styles.statSub}>propietarios</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>
+                <CheckCircle2 size={12} style={{ verticalAlign: '-2px' }} /> Captados
+              </span>
+              <span style={styles.statValor}>{captaciones.captados}</span>
+              <span style={styles.statSub}>en total</span>
+            </div>
+            <div style={styles.stat}>
+              <span style={styles.statLabel}>
+                <DollarSign size={12} style={{ verticalAlign: '-2px' }} /> Gasto este mes
+              </span>
+              <span style={styles.statValor}>{usd(captaciones.gastoMesUsd)}</span>
+              <span style={styles.statSub}>
+                {captaciones.anunciosMes} llamada{captaciones.anunciosMes !== 1 ? 's' : ''} ·{' '}
+                {captaciones.tokensMes.toLocaleString('es-CO')} tokens
+              </span>
+            </div>
+          </div>
+
+          {/* Tope de gasto: crítico porque este agente corre solo desde n8n */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>Límite de gasto mensual (USD)</span>
+            {captaciones.limiteMensualUsd !== null && (
+              <div style={styles.barraWrap}>
+                <div style={styles.barraFondo}>
+                  <div
+                    style={{
+                      ...styles.barraRelleno,
+                      width: `${Math.min(100, (captaciones.gastoMesUsd / captaciones.limiteMensualUsd) * 100)}%`,
+                      backgroundColor:
+                        captaciones.gastoMesUsd >= captaciones.limiteMensualUsd ? '#ef4444'
+                          : captaciones.gastoMesUsd / captaciones.limiteMensualUsd >= 0.8 ? '#f59e0b' : '#22c55e',
+                    }}
+                  />
+                </div>
+                <span style={styles.barraTexto}>
+                  {usd(captaciones.gastoMesUsd)} de {usd(captaciones.limiteMensualUsd)}
+                  {captaciones.gastoMesUsd >= captaciones.limiteMensualUsd && ' — alcanzado: no se procesan anuncios nuevos'}
+                </span>
+              </div>
+            )}
+            <div style={styles.limiteFila}>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Sin límite"
+                className="form-input"
+                style={styles.limiteInput}
+                value={limiteCap}
+                onChange={(e) => setLimiteCap(e.target.value)}
+                disabled={guardandoLimiteCap}
+              />
+              <button className="btn btn-secondary" style={styles.limiteBtn} onClick={guardarLimiteCaptaciones} disabled={guardandoLimiteCap}>
+                {guardandoLimiteCap ? <Loader2 size={14} className="animate-spin" /> : 'Guardar'}
+              </button>
+            </div>
+            <span style={styles.limiteNota}>
+              Este agente <strong>corre solo</strong> (n8n le manda las alertas de los portales), así que el techo de
+              gasto es su principal red de seguridad. Al alcanzarlo deja de procesar anuncios hasta el mes siguiente.
+            </span>
+          </div>
+
+          {/* Conexión con Mercado Libre */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>Conexión con Mercado Libre</span>
+            {captaciones.ml.conectado ? (
+              <span style={styles.statSub}>
+                ✅ Conectado (vendedor <code style={styles.codigo}>{captaciones.ml.ml_user_id}</code>). Se usa para
+                traer los datos oficiales de un anuncio de Mercado Libre a partir de su enlace.
+              </span>
+            ) : (
+              <>
+                <span style={styles.statSub}>
+                  Sin conectar. Solo hace falta para enriquecer anuncios de Mercado Libre con sus datos oficiales.
+                </span>
+                <div style={styles.limiteFila}>
+                  <a className="btn btn-secondary" style={styles.limiteBtn} href="/api/integraciones/mercadolibre/connect">
+                    <PlugZap size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+                    Conectar Mercado Libre
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Prompt del mensaje */}
+          <div style={styles.limiteSeccion}>
+            <span style={styles.limiteLabel}>Estilo del primer mensaje al propietario</span>
+            <textarea
+              className="form-input"
+              style={styles.promptArea}
+              rows={5}
+              placeholder="Vacío = se usa el mensaje por defecto (se presenta a nombre de la inmobiliaria, ofrece gestión integral, comisión solo al vender y alcance)."
+              value={promptCap}
+              onChange={(e) => setPromptCap(e.target.value)}
+              disabled={guardandoPrompt}
+            />
+            <div style={styles.limiteFila}>
+              <button className="btn btn-secondary" style={styles.limiteBtn} onClick={guardarPrompt} disabled={guardandoPrompt}>
+                {guardandoPrompt ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />Guardar</>}
+              </button>
+            </div>
+            <span style={styles.limiteNota}>
+              Se aplica de inmediato, sin redeploy. El nombre de la inmobiliaria se inyecta automáticamente y el agente
+              tiene prohibido inventarse nombres.
+            </span>
+          </div>
+
+          <div style={styles.notaExterna}>
+            <Info size={13} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <span>
+              El agente <strong>nunca envía mensajes</strong>: deja el borrador listo en Captaciones y una persona lo
+              revisa y lo manda por WhatsApp. Hoy los anuncios se agregan pegando su enlace o su texto — el
+              descubrimiento automático está pendiente (Mercado Libre cerró su API de búsqueda).
             </span>
           </div>
         </div>
@@ -503,6 +770,14 @@ const styles: Record<string, React.CSSProperties> = {
   limiteNota: {
     fontSize: '0.7rem',
     color: 'var(--text-muted)',
+  },
+  promptArea: {
+    width: '100%',
+    fontSize: '0.78rem',
+    padding: '0.5rem 0.65rem',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+    lineHeight: 1.5,
   },
   notaExterna: {
     display: 'flex',
