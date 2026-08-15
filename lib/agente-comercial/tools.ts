@@ -366,14 +366,16 @@ export function crearToolsAgenteComercial(
       const t = patronFlexible(limpio.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim());
       const { data, error } = await supabase
         .from('inmuebles')
-        .select('titulo,unidad,direccion,precio,imagenes')
+        .select('titulo,unidad,direccion,precio,imagenes,arrendasoft_id')
         .eq('inmobiliaria_id', inmobiliariaId)
         .eq('estado', 'disponible')
         .or(`titulo.ilike.%${t}%,direccion.ilike.%${t}%,unidad.ilike.%${t}%`)
         .limit(3);
 
       if (error) return registrar('obtener_fotos', args, { error: error.message });
-      const props = (data ?? []).filter((p) => Array.isArray(p.imagenes) && p.imagenes.length);
+      const props = (data ?? []).filter(
+        (p) => Array.isArray(p.imagenes) && p.imagenes.length && p.arrendasoft_id
+      );
       if (props.length === 0) {
         return registrar('obtener_fotos', args, {
           sin_fotos: true,
@@ -382,6 +384,11 @@ export function crearToolsAgenteComercial(
             'ofrécele que un asesor se las envía y ESCALA.',
         });
       }
+      // Un enlace a la galería en vez de las URLs crudas del ERP: el campo de
+      // Kommo admite 256 caracteres y cada URL del ERP mide ~99, así que solo
+      // cabía una por mensaje. Este enlace mide ~52, cabe con texto, se ve con
+      // la marca y muestra TODAS las fotos (~18) en vez de las 4 que cabían.
+      const base = process.env.NEXT_PUBLIC_APP_URL || 'https://cumbres-state-inventory.vercel.app';
       return registrar('obtener_fotos', args, {
         inmuebles: props.map((p) => ({
           titulo: p.titulo,
@@ -389,11 +396,11 @@ export function crearToolsAgenteComercial(
           direccion: p.direccion,
           precio: p.precio,
           total_fotos: (p.imagenes as string[]).length,
-          fotos: (p.imagenes as string[]).slice(0, 4),
+          galeria: `${base}/f/${p.arrendasoft_id}`,
         })),
         mensaje:
-          'Comparte los enlaces TAL CUAL, uno por mensaje (WhatsApp muestra la vista previa de la imagen). ' +
-          'Máximo 3-4. Nunca inventes ni modifiques una URL.',
+          'Comparte el enlace de `galeria` TAL CUAL — ahí el cliente ve todas las fotos del inmueble. ' +
+          'Un enlace por inmueble, nunca más de 2 en el mismo mensaje. PROHIBIDO inventar o modificar la URL.',
       });
     },
     {
