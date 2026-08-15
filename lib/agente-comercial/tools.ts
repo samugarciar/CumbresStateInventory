@@ -54,6 +54,43 @@ export function limpiarTextoInmueble(texto: string): { limpio: string; quitado: 
   return { limpio: tokens.join(' ').trim(), quitado };
 }
 
+// Colombia es UTC-5 fijo (sin horario de verano), pero el servidor corre en
+// UTC: sin esto, "hoy" y "la hora" se corren 5 horas.
+function ahoraBogota(): { fecha: string; minutos: number } {
+  const ahora = new Date();
+  const fecha = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(ahora);
+  const hhmm = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(ahora);
+  const [h, m] = hhmm.split(':').map(Number);
+  return { fecha, minutos: h * 60 + m };
+}
+
+// Margen mínimo entre "ahora" y el inicio de una visita que se puede ofrecer o
+// agendar. El cliente necesita tiempo para llegar y el asesor para prepararse.
+const MARGEN_MIN = 30;
+
+// ¿Ese bloque ya pasó, o arranca en menos de MARGEN_MIN minutos?
+// Caso real (12/ago 16:37): el agente ofreció "3:00 pm o 3:30 pm" para hoy y
+// el cliente respondió "Hoy ya son las 4y38". La RPC devuelve los bloques del
+// día aunque la hora ya haya pasado, así que filtrarlos es responsabilidad
+// nuestra y se hace en código, no confiando en que el modelo mire el reloj.
+function bloqueDemasiadoPronto(fecha: string, horaInicio: string): boolean {
+  const ahora = ahoraBogota();
+  if (fecha > ahora.fecha) return false; // otro día futuro: siempre válido
+  if (fecha < ahora.fecha) return true; // día pasado
+  const [h, m] = String(horaInicio).split(':').map(Number);
+  return h * 60 + m < ahora.minutos + MARGEN_MIN;
+}
+
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);
 const ALCANCE = z.enum(['inmueble', 'unidad']);
@@ -190,8 +227,49 @@ export function crearToolsAgenteComercial(
         p_fecha_hasta: args.fecha_hasta ?? undefined,
         p_tipo_transaccion: args.tipo_transaccion ?? undefined,
       });
-      const salida = error ? { error: error.message } : data;
-      return registrar('verificar_horarios_disponibles', args, salida);
+      if (error) return registrar('verificar_horarios_disponibles', args, { error: error.message });
+
+      const filas = Array.isArray(data) ? data : [];
+      // La RPC devuelve los bloques de HOY aunque la hora ya haya pasado. Se
+      // filtran acá los que ya no son ofrecibles para que el agente nunca vea
+      // —ni pueda ofrecer— un horario imposible.
+      const conHorario = filas.filter((f) => f?.fecha && f?.hora_inicio);
+      const vigentes = conHorario.filter((f) => !bloqueDemasiadoPronto(f.fecha, f.hora_inicio));
+      const descartados = conHorario.length - vigentes.length;
+
+      // Si TODOS los bloques del inmueble ya pasaron, no es que el inmueble no
+      // exista: es que hoy ya no hay margen. Se devuelve como
+      // `sin_disponibilidad` para que el agente aplique el puente neutro y
+      // ofrezca registrar el horario que el cliente prefiera.
+      if (conHorario.length > 0 && vigentes.length === 0) {
+        const base = conHorario[0];
+        return registrar('verificar_horarios_disponibles', args, [
+          {
+            ...base,
+            modo: 'sin_disponibilidad',
+            franja_id: null,
+            fecha: null,
+            hora_inicio: null,
+            hora_fin: null,
+            mensaje:
+              `Los ${descartados} horario(s) que quedaban ya pasaron o empiezan en menos de ${MARGEN_MIN} ` +
+              'minutos. NO se los ofrezcas. Pregúntale al cliente qué día y hora le sirve y registra la solicitud.',
+          },
+        ]);
+      }
+
+      const salida = vigentes.length > 0 || conHorario.length === 0 ? [...vigentes, ...filas.filter((f) => !f?.hora_inicio)] : filas;
+      return registrar(
+        'verificar_horarios_disponibles',
+        args,
+        descartados > 0
+          ? {
+              horarios: salida,
+              descartados_por_hora: descartados,
+              nota: `Se ocultaron ${descartados} bloque(s) de hoy que ya pasaron o empiezan en menos de ${MARGEN_MIN} minutos. Ofrece SOLO los que ves acá.`,
+            }
+          : salida
+      );
     },
     {
       name: 'verificar_horarios_disponibles',
@@ -216,6 +294,20 @@ export function crearToolsAgenteComercial(
 
   const agendarCita = tool(
     async (args) => {
+      // Un horario que ya pasó no se puede agendar aunque el agente lo tuviera
+      // de un turno anterior: entre que lo ofreció y el cliente confirmó pudo
+      // pasar media hora. La RPC solo valida "fecha pasada", no la hora.
+      if (bloqueDemasiadoPronto(args.fecha, args.hora_inicio)) {
+        return registrar('agendar_cita', args, {
+          success: false,
+          horario_ya_paso: true,
+          error:
+            `Ese horario ya pasó o empieza en menos de ${MARGEN_MIN} minutos, así que no se puede agendar. ` +
+            'Vuelve a consultar disponibilidad y ofrécele al cliente los horarios que siguen vigentes; ' +
+            'si ninguno le sirve, pregúntale qué día y hora prefiere y registra la solicitud de apertura.',
+        });
+      }
+
       // Candado de idempotencia. Un mismo mensaje del cliente puede llegar dos
       // veces (visto 12/ago: "Panphillip Prada / 3147255335" entró a las
       // 16:19:53 y otra vez a las 16:20:20) y el agente, que ya tenía todos los

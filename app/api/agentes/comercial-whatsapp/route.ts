@@ -60,10 +60,22 @@ function envolverConFecha(mensaje: string, fecha: Date): string {
   }).format(fecha);
   const dia = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', weekday: 'long' }).format(fecha);
   const anio = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric' }).format(fecha);
+  // La HORA importa tanto como la fecha: sin ella el agente ofrecía visitas
+  // que ya habían pasado (12/ago 16:37 → "aún tienes tiempo, 3:00 pm o
+  // 3:30 pm", y el cliente respondió "Hoy ya son las 4y38").
+  const hora = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(fecha);
   return (
-    `Fecha de hoy: ${fechaISO} (${dia}), zona America/Bogota. El año actual es ${anio}. Usa esta fecha SOLO ` +
-    'para interpretar "hoy", "mañana" y los días de la semana; las fechas para agendar cópialas del resultado ' +
-    `de disponibilidad.\n\nMensaje del usuario: ${mensaje}`
+    `Fecha y hora ahora: ${fechaISO} (${dia}) ${hora}, zona America/Bogota. El año actual es ${anio}. ` +
+    'Usa esto SOLO para interpretar "hoy", "mañana", "esta tarde" y los días de la semana; las fechas para ' +
+    'agendar cópialas del resultado de disponibilidad. ⚠️ No ofrezcas ni des por válido un horario de HOY que ' +
+    'ya pasó o que empiece dentro de menos de 30 minutos: el cliente necesita tiempo para llegar. Las ' +
+    'herramientas ya ocultan esos bloques, así que ofrece únicamente los que te devuelvan.' +
+    `\n\nMensaje del usuario: ${mensaje}`
   );
 }
 
