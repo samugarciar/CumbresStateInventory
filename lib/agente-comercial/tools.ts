@@ -78,6 +78,29 @@ function ahoraBogota(): { fecha: string; minutos: number } {
 // agendar. El cliente necesita tiempo para llegar y el asesor para prepararse.
 const MARGEN_MIN = 30;
 
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+// Día de la semana de una fecha 'AAAA-MM-DD'. Las RPC devuelven la fecha pero
+// NO el día, y el agente lo calculaba de cabeza: le dijo a un cliente "lunes 18
+// de agosto" cuando el 18 era martes, y arrastró el error toda la conversación.
+// Los modelos son poco confiables haciendo aritmética de calendario, así que se
+// les entrega resuelto.
+// OJO con la zona: `new Date('2026-08-18')` es medianoche UTC y al mirarlo desde
+// Bogotá (UTC-5) cae el día anterior. Por eso se arma en UTC y se lee en UTC.
+function diaSemana(fecha: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fecha ?? ''));
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return DIAS[d.getUTCDay()] ?? null;
+}
+
+// Agrega `dia_semana` a cualquier objeto que tenga `fecha`, para que el agente
+// nunca tenga que deducirlo.
+function conDiaSemana<T extends Record<string, unknown>>(obj: T): T & { dia_semana?: string } {
+  const dia = typeof obj?.fecha === 'string' ? diaSemana(obj.fecha) : null;
+  return dia ? { ...obj, dia_semana: dia } : obj;
+}
+
 // ¿Ese bloque ya pasó, o arranca en menos de MARGEN_MIN minutos?
 // Caso real (12/ago 16:37): el agente ofreció "3:00 pm o 3:30 pm" para hoy y
 // el cliente respondió "Hoy ya son las 4y38". La RPC devuelve los bloques del
@@ -245,7 +268,7 @@ export function crearToolsAgenteComercial(
         const base = conHorario[0];
         return registrar('verificar_horarios_disponibles', args, [
           {
-            ...base,
+            ...conDiaSemana(base),
             modo: 'sin_disponibilidad',
             franja_id: null,
             fecha: null,
@@ -258,7 +281,11 @@ export function crearToolsAgenteComercial(
         ]);
       }
 
-      const salida = vigentes.length > 0 || conHorario.length === 0 ? [...vigentes, ...filas.filter((f) => !f?.hora_inicio)] : filas;
+      const salida = (
+        vigentes.length > 0 || conHorario.length === 0
+          ? [...vigentes, ...filas.filter((f) => !f?.hora_inicio)]
+          : filas
+      ).map(conDiaSemana);
       return registrar(
         'verificar_horarios_disponibles',
         args,
@@ -353,7 +380,9 @@ export function crearToolsAgenteComercial(
         p_alcance: args.alcance ?? undefined,
         p_tipo_transaccion: args.tipo_transaccion ?? undefined,
       });
-      const salida = error ? { success: false, error: error.message } : data;
+      const salida = error
+        ? { success: false, error: error.message }
+        : conDiaSemana((data ?? {}) as Record<string, unknown>);
       return registrar('agendar_cita', args, salida);
     },
     {
@@ -395,7 +424,9 @@ export function crearToolsAgenteComercial(
         p_alcance: args.alcance ?? undefined,
         p_tipo_transaccion: args.tipo_transaccion ?? undefined,
       });
-      const salida = error ? { success: false, error: error.message } : data;
+      const salida = error
+        ? { success: false, error: error.message }
+        : conDiaSemana((data ?? {}) as Record<string, unknown>);
       return registrar('solicitar_apertura_de_agenda', args, salida);
     },
     {
