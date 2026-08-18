@@ -14,6 +14,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { fotosDeInmueble } from '@/lib/fotos';
 
 // Postgres `ilike` ignora mayúsculas pero NO tildes: buscar "Niquía" (bien
 // escrito) contra un barrio guardado como "Niquia" devuelve CERO resultados.
@@ -496,9 +497,9 @@ export function crearToolsAgenteComercial(
         .limit(3);
 
       if (error) return registrar('obtener_fotos', args, { error: error.message });
-      const props = (data ?? []).filter(
-        (p) => Array.isArray(p.imagenes) && p.imagenes.length && p.arrendasoft_id
-      );
+      const props = (data ?? [])
+        .map((p) => ({ ...p, fotosOk: fotosDeInmueble(p.imagenes) }))
+        .filter((p) => p.fotosOk.length > 0 && p.arrendasoft_id);
       if (props.length === 0) {
         return registrar('obtener_fotos', args, {
           sin_fotos: true,
@@ -518,7 +519,7 @@ export function crearToolsAgenteComercial(
           unidad: p.unidad,
           direccion: p.direccion,
           precio: p.precio,
-          total_fotos: (p.imagenes as string[]).length,
+          total_fotos: p.fotosOk.length,
           galeria: `${base}/f/${p.arrendasoft_id}`,
         })),
         mensaje:

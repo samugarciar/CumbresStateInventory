@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { fotosDeInmueble } from '@/lib/fotos';
 import { revalidatePath } from 'next/cache';
 import { fetchPropiedadesNuby, getNubyConfig, mapearTipoInmueble, obtenerTokenJWT, NubyConfig, fetchContratosNuby } from '@/lib/nuby';
 
@@ -475,10 +476,10 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
       }
 
       // Extraer URLs de imágenes
-      let imagenesArr: string[] = [];
-      if (Array.isArray(prop.imagenes)) {
-        imagenesArr = prop.imagenes.map((img: any) => img.imagen).filter(Boolean);
-      }
+      // Normalizadas al guardar: hubo un periodo en que el ERP devolvió el
+      // dominio y la ruta pegados y quedaron 2.779 fotos apuntando a un host
+      // inexistente (ver lib/fotos.ts).
+      const imagenesArr: string[] = fotosDeInmueble(prop.imagenes);
 
       // Enlace de contrato y metadatos
       let arrendasoftContratoId: string | null = null;

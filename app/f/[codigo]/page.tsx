@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { fotosDeInmueble } from '@/lib/fotos';
 import type { Metadata } from 'next';
 import GaleriaCliente from './GaleriaCliente';
 
@@ -44,7 +45,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: `${inm.unidad || inm.titulo}`,
       description: donde,
-      images: Array.isArray(inm.imagenes) && inm.imagenes.length ? [inm.imagenes[0]] : [],
+      images: fotosDeInmueble(inm.imagenes).slice(0, 1),
     },
   };
 }
@@ -65,9 +66,9 @@ export default async function GaleriaInmueble({ params }: Props) {
     );
   }
 
-  const fotos: string[] = Array.isArray(inm.imagenes)
-    ? (inm.imagenes as unknown[]).map((f) => (typeof f === 'string' ? f : (f as { imagen?: string })?.imagen)).filter((f): f is string => !!f)
-    : [];
+  // Repara las URLs partidas del ERP (ver lib/fotos.ts): el 40% de las fotos
+  // guardadas apunta a un dominio que no existe y no cargaría.
+  const fotos: string[] = fotosDeInmueble(inm.imagenes);
   const donde = [inm.barrio, inm.ciudad].filter(Boolean).join(', ');
   const precio = inm.precio
     ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(inm.precio)
