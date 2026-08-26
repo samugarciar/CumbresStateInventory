@@ -295,3 +295,71 @@ export async function ofertarInmueble(inmuebleId: string, ofertar: boolean) {
   revalidatePath('/agenda');
   return { success: true };
 }
+
+/**
+ * Marca (o quita) un inmueble como "empalme": arrendado que el inquilino de salida
+ * muestra directo. Setea el override local a 'empalme' (el sync no lo pisa) y guarda
+ * el contacto del inquilino (teléfono obligatorio; lo carga el admin, no viene del ERP).
+ * No crea agenda ni asesor: el empalme es off-platform salvo el estado + el contacto.
+ */
+export async function marcarEmpalme(
+  inmuebleId: string,
+  activar: boolean,
+  contacto?: { nombre?: string; telefono?: string }
+) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Sesión no válida.' };
+
+  const { data: profile } = await supabase
+    .from('usuarios')
+    .select('rol, inmobiliaria_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.rol !== 'admin') {
+    return { success: false, error: 'No autorizado. Solo los administradores pueden marcar empalmes.' };
+  }
+
+  const { data: inmueble } = await supabase
+    .from('inmuebles')
+    .select('id, estado_erp')
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id)
+    .single();
+
+  if (!inmueble) return { success: false, error: 'Inmueble no encontrado.' };
+
+  let update: Record<string, any>;
+  if (activar) {
+    const telefono = (contacto?.telefono || '').trim();
+    const nombre = (contacto?.nombre || '').trim();
+    if (!telefono) {
+      return { success: false, error: 'Ingresa el teléfono del inquilino que muestra el inmueble.' };
+    }
+    update = {
+      estado_override: 'empalme',
+      estado: 'empalme',
+      empalme_contacto_nombre: nombre || null,
+      empalme_contacto_telefono: telefono,
+    };
+  } else {
+    update = {
+      estado_override: null,
+      estado: inmueble.estado_erp || 'arrendado',
+      empalme_contacto_nombre: null,
+      empalme_contacto_telefono: null,
+    };
+  }
+
+  const { error } = await supabase
+    .from('inmuebles')
+    .update(update)
+    .eq('id', inmuebleId)
+    .eq('inmobiliaria_id', profile.inmobiliaria_id);
+
+  if (error) return { success: false, error: error.message };
+
+  revalidatePath('/inmuebles');
+  return { success: true };
+}

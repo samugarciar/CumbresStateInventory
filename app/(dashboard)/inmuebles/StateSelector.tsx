@@ -50,6 +50,19 @@ export default function StateSelector({ inmuebleId, currentEstado }: StateSelect
     setEstado(currentEstado); // Restaurar estado
   };
 
+  // En empalme se gestiona desde "Estado comercial" (abajo), no desde este selector.
+  if (estado === 'empalme') {
+    return (
+      <div
+        style={{ ...styles.arrendadoBadge, color: '#4f46e5', borderColor: 'rgba(79, 70, 229, 0.3)', backgroundColor: 'rgba(79, 70, 229, 0.08)' }}
+        title="En empalme: se gestiona en «Estado comercial» (más abajo)"
+      >
+        <Lock size={12} color="#4f46e5" style={{ marginRight: '0.25rem' }} />
+        <span>En empalme</span>
+      </div>
+    );
+  }
+
   // Si el estado es arrendado, aplicar bloqueo estricto (padlock icon)
   if (estado === 'arrendado') {
     return (

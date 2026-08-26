@@ -21,6 +21,8 @@ export default function OfertarControl({ inmuebleId, estadoErp, estadoOverride }
   const ofertado = estadoOverride === 'disponible';
   const arrendadoEnErp = estadoErp === 'arrendado';
 
+  // Excluyente con "Empalme": si el override ya es empalme, este control no aplica.
+  if (estadoOverride === 'empalme') return null;
   if (!ofertado && !arrendadoEnErp) return null;
 
   const cambiar = (ofertar: boolean) => {

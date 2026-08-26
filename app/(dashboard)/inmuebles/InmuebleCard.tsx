@@ -16,6 +16,7 @@ import StateSelector from './StateSelector';
 import AsesorSelector from './AsesorSelector';
 import UnidadEditor from './UnidadEditor';
 import OfertarControl from './OfertarControl';
+import EmpalmeControl from './EmpalmeControl';
 import PhotosGallery from './PhotosGallery';
 
 interface Asesor {
@@ -69,6 +70,7 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
   const estadoChip = () => {
     if (inm.estado === 'disponible') return { txt: 'Disponible', bg: '#dcfce7', color: '#166534' };
     if (inm.estado === 'arrendado') return { txt: 'Arrendado', bg: '#e2e8f0', color: '#334155' };
+    if (inm.estado === 'empalme') return { txt: 'En empalme', bg: '#e0e7ff', color: '#4338ca' };
     return { txt: inm.estado, bg: '#e2e8f0', color: '#334155' };
   };
   const chip = estadoChip();
@@ -211,11 +213,21 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
               <UnidadEditor inmuebleId={inm.id} unidad={inm.unidad} unidadesExistentes={unidadesExistentes} />
             </div>
           )}
-          {/* OfertarControl solo aplica si el ERP lo tiene arrendado o ya está ofertado */}
+          {/* Ofertar / Empalme: solo si el ERP lo tiene arrendado o ya hay override.
+              Son excluyentes (mismo estado_override): cada control se oculta si el otro está activo. */}
           {isAdmin && (inm.estado_erp === 'arrendado' || inm.estado_override) && (
             <div style={styles.panelItem}>
               <span style={styles.panelLabel}>Estado comercial</span>
-              <OfertarControl inmuebleId={inm.id} estadoErp={inm.estado_erp} estadoOverride={inm.estado_override} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'flex-start' }}>
+                <OfertarControl inmuebleId={inm.id} estadoErp={inm.estado_erp} estadoOverride={inm.estado_override} />
+                <EmpalmeControl
+                  inmuebleId={inm.id}
+                  estadoErp={inm.estado_erp}
+                  estadoOverride={inm.estado_override}
+                  contactoNombre={inm.empalme_contacto_nombre}
+                  contactoTelefono={inm.empalme_contacto_telefono}
+                />
+              </div>
             </div>
           )}
         </div>

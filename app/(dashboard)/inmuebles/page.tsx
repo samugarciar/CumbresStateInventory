@@ -177,8 +177,8 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   } else if (resolvedParams.estado) {
     query = query.eq('estado', resolvedParams.estado);
   } else {
-    // Omitir inactivos por defecto (según requerimiento de negocio)
-    query = query.in('estado', ['disponible', 'arrendado']);
+    // Omitir inactivos por defecto (según requerimiento de negocio); incluir empalmes.
+    query = query.in('estado', ['disponible', 'arrendado', 'empalme']);
   }
 
   // Filtro de búsqueda textual 'q'

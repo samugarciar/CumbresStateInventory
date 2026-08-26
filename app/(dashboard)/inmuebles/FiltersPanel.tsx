@@ -146,10 +146,11 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
             onChange={(e) => updateFilters('estado', e.target.value)}
             style={styles.filterSelect}
           >
-            <option value="">Todos (Disp/Arrend)</option>
+            <option value="">Todos (activos)</option>
             <option value="disponible">Disponible (incluye desocupación)</option>
             <option value="desocupacion">En desocupación (ofertados)</option>
             <option value="arrendado">Arrendado</option>
+            <option value="empalme">En empalme</option>
           </select>
         </div>
 
