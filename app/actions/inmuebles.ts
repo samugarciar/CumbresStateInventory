@@ -250,11 +250,18 @@ export async function actualizarUnidad(inmuebleId: string, unidad: string | null
  * Oferta (o deja de ofertar) un inmueble mediante un override LOCAL de estado.
  * Caso de uso: un inmueble se desocupa y queremos ofertarlo, pero el ERP lo
  * mantiene como 'arrendado' por temas de contrato pendientes.
- * - ofertar=true  → estado_override='disponible' y estado='disponible' (efectivo).
- * - ofertar=false → limpia el override; estado vuelve al del ERP (estado_erp).
- * Nunca escribe al ERP; el sync respeta el override (no lo pisa).
+ * - ofertar=true  → estado_override='disponible', estado='disponible' y el
+ *   canon con el que se va a ofrecer (`precio_oferta`, obligatorio).
+ * - ofertar=false → limpia el override y el precio de oferta; el estado vuelve
+ *   al del ERP (estado_erp).
+ * Nunca escribe al ERP; el sync respeta ambos overrides (no los pisa).
+ *
+ * El precio es obligatorio porque es justamente el dato que el ERP tiene mal:
+ * al desocuparse, el inmueble se vuelve a ofrecer con el canon ajustado por
+ * IPC, mientras el ERP sigue mostrando el del contrato viejo. Llamarla de
+ * nuevo sobre un inmueble ya ofertado sirve para corregir ese precio.
  */
-export async function ofertarInmueble(inmuebleId: string, ofertar: boolean) {
+export async function ofertarInmueble(inmuebleId: string, ofertar: boolean, precioOferta?: number | null) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Sesión no válida.' };
@@ -271,16 +278,36 @@ export async function ofertarInmueble(inmuebleId: string, ofertar: boolean) {
 
   const { data: inmueble } = await supabase
     .from('inmuebles')
-    .select('id, estado_erp')
+    .select('id, estado_erp, precio')
     .eq('id', inmuebleId)
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .single();
 
   if (!inmueble) return { success: false, error: 'Inmueble no encontrado.' };
 
-  const update = ofertar
-    ? { estado_override: 'disponible', estado: 'disponible' }
-    : { estado_override: null, estado: inmueble.estado_erp || 'arrendado' };
+  let update: Record<string, unknown>;
+  if (ofertar) {
+    const precio = Number(precioOferta);
+    if (!Number.isFinite(precio) || precio <= 0) {
+      return { success: false, error: 'Indica el canon con el que se va a ofrecer el inmueble.' };
+    }
+    // Freno al cero de más. El ajuste por IPC mueve el canon unos puntos
+    // porcentuales, nunca lo triplica: si la cifra se sale de ese rango es un
+    // error de tipeo, y ese número terminaría saliendo por WhatsApp a un
+    // cliente. Solo se compara si el ERP trae un precio válido.
+    const erp = Number(inmueble.precio);
+    if (Number.isFinite(erp) && erp > 0 && (precio > erp * 3 || precio < erp / 3)) {
+      return {
+        success: false,
+        error:
+          `$${precio.toLocaleString('es-CO')} se aleja demasiado del precio del ERP ` +
+          `($${erp.toLocaleString('es-CO')}). Revisa si sobra o falta un cero.`,
+      };
+    }
+    update = { estado_override: 'disponible', estado: 'disponible', precio_oferta: precio };
+  } else {
+    update = { estado_override: null, estado: inmueble.estado_erp || 'arrendado', precio_oferta: null };
+  }
 
   const { error } = await supabase
     .from('inmuebles')

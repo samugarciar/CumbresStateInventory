@@ -518,6 +518,10 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
         tipo_inmueble: tipoInmueble,
         // estado_erp = lo que dice el ERP; estado (efectivo) = override local si existe, si no el del ERP.
         // NO incluimos estado_override en el payload: es soberanía local (como asesor_id_override).
+        // Tampoco `precio_oferta`, por lo mismo: es el canon con el que se está
+        // ofreciendo un inmueble en desocupación (ajustado por IPC) y el ERP
+        // sigue trayendo el del contrato viejo. Si se agrega acá, el sync borra
+        // el precio real de oferta y el agente vuelve a cotizar el de hace un año.
         estado_erp: erpEstado,
         estado: erpEstado,
         arrendasoft_id: isNaN(Number(arrendasoftId)) ? null : Number(arrendasoftId),

@@ -55,6 +55,21 @@ export function limpiarTextoInmueble(texto: string): { limpio: string; quitado: 
   return { limpio: tokens.join(' ').trim(), quitado };
 }
 
+// Precio EFECTIVO. Un inmueble arrendado que se desocupa se vuelve a ofrecer
+// con el canon ajustado por IPC, pero el ERP conserva el del contrato viejo
+// hasta que se firma el nuevo; por eso el admin fija `precio_oferta` al
+// apretar "Ofertar (desocupado)" en /inmuebles, y ese manda.
+//
+// Clave: al modelo se le entrega UN SOLO número, no los dos. El 28/ago un
+// cliente recibió $1.200.000 por un apartamento de $1.367.600 porque el
+// sistema le dio dos precios (la columna y uno escrito a mano dentro de la
+// descripción) y eligió el que no era. Pedirle al modelo que elija entre dos
+// datos contradictorios es la forma segura de que se equivoque.
+function conPrecioEfectivo<T extends { precio?: number | null; precio_oferta?: number | null }>(fila: T): T {
+  const { precio_oferta: oferta, ...resto } = fila;
+  return { ...resto, precio: oferta ?? fila.precio } as unknown as T;
+}
+
 // Colombia es UTC-5 fijo (sin horario de verano), pero el servidor corre en
 // UTC: sin esto, "hoy" y "la hora" se corren 5 horas.
 function ahoraBogota(): { fecha: string; minutos: number } {
@@ -140,7 +155,7 @@ export function crearToolsAgenteComercial(
   const consultaInmuebles = (args: Record<string, unknown>, omitirTipo = false) => {
     let query = supabase
       .from('inmuebles')
-      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,direccion,ciudad,barrio,habitaciones,banos,unidad')
+      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,precio_oferta,direccion,ciudad,barrio,habitaciones,banos,unidad')
       .eq('inmobiliaria_id', inmobiliariaId)
       .eq('estado', 'disponible');
 
@@ -168,7 +183,7 @@ export function crearToolsAgenteComercial(
       const { data, error } = await consultaInmuebles(args);
       if (error) return registrar('buscar_inmuebles', args, { error: error.message });
 
-      const resultados = data ?? [];
+      const resultados = (data ?? []).map(conPrecioEfectivo);
 
       // Si el cliente pidió un TIPO concreto y no hay ninguno, no lo dejamos en
       // un callejón sin salida: se reintenta en la MISMA zona y transacción sin
@@ -179,7 +194,7 @@ export function crearToolsAgenteComercial(
       // requisitos reales del cliente y cambiarlos sería ofrecerle otra cosa.
       if (resultados.length === 0 && args.tipo_inmueble) {
         const { data: alt } = await consultaInmuebles(args, true);
-        const alternativas = alt ?? [];
+        const alternativas = (alt ?? []).map(conPrecioEfectivo);
         if (alternativas.length > 0) {
           const tipos = [...new Set(alternativas.map((a) => a.tipo_inmueble))];
           return registrar('buscar_inmuebles', args, {
@@ -581,12 +596,13 @@ export function crearToolsAgenteComercial(
 
       const { data, error: errorInmuebles } = await supabase
         .from('inmuebles')
-        .select('titulo,unidad,direccion,precio,tipo_transaccion,imagenes,arrendasoft_id')
+        .select('titulo,unidad,direccion,precio,precio_oferta,tipo_transaccion,imagenes,arrendasoft_id')
         .eq('inmobiliaria_id', inmobiliariaId)
         .in('id', ids);
       if (errorInmuebles) return registrar('obtener_fotos', args, { error: errorInmuebles.message });
 
       const props = (data ?? [])
+        .map(conPrecioEfectivo)
         .map((p) => ({ ...p, fotosOk: fotosDeInmueble(p.imagenes) }))
         .filter((p) => p.fotosOk.length > 0 && p.arrendasoft_id);
 

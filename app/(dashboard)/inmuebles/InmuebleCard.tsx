@@ -47,6 +47,11 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
 
   const esArriendo = inm.tipo_transaccion === 'arriendo';
   const ofertado = inm.estado_override === 'disponible';
+  // Precio EFECTIVO: si el inmueble está en desocupación y se le fijó un canon
+  // de oferta, ese es el que vale — es el mismo número que ve el agente y que
+  // recibe el cliente. Mostrar aquí el del ERP haría que el asesor y el bot
+  // cotizaran distinto.
+  const precioEfectivo = inm.precio_oferta ?? inm.precio;
   const asesorNombre = inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo;
 
   const anterior = (e: React.MouseEvent) => {
@@ -144,8 +149,8 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
       {/* ---- Info clave ---- */}
       <div style={styles.body}>
         <p style={styles.precio}>
-          {inm.precio
-            ? <>${Number(inm.precio).toLocaleString('es-CO')}<span style={styles.precioSufijo}>{esArriendo ? ' COP/mes' : ' COP'}</span></>
+          {precioEfectivo
+            ? <>${Number(precioEfectivo).toLocaleString('es-CO')}<span style={styles.precioSufijo}>{esArriendo ? ' COP/mes' : ' COP'}</span></>
             : <span style={{ ...styles.precioSufijo, fontSize: '0.85rem' }}>Sin precio registrado</span>}
         </p>
         <p style={styles.direccion} title={inm.titulo || undefined}>
@@ -219,7 +224,13 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
             <div style={styles.panelItem}>
               <span style={styles.panelLabel}>Estado comercial</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', alignItems: 'flex-start' }}>
-                <OfertarControl inmuebleId={inm.id} estadoErp={inm.estado_erp} estadoOverride={inm.estado_override} />
+                <OfertarControl
+                  inmuebleId={inm.id}
+                  estadoErp={inm.estado_erp}
+                  estadoOverride={inm.estado_override}
+                  precio={inm.precio}
+                  precioOferta={inm.precio_oferta}
+                />
                 <EmpalmeControl
                   inmuebleId={inm.id}
                   estadoErp={inm.estado_erp}

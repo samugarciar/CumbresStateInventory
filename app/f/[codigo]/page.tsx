@@ -27,7 +27,7 @@ async function traerInmueble(codigo: string) {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('inmuebles')
-    .select('titulo, descripcion, direccion, barrio, ciudad, unidad, precio, habitaciones, banos, tipo_inmueble, tipo_transaccion, estado, imagenes, arrendasoft_id')
+    .select('titulo, descripcion, direccion, barrio, ciudad, unidad, precio, precio_oferta, habitaciones, banos, tipo_inmueble, tipo_transaccion, estado, imagenes, arrendasoft_id')
     .eq('arrendasoft_id', Number(digits))
     .maybeSingle();
   return data;
@@ -70,8 +70,12 @@ export default async function GaleriaInmueble({ params }: Props) {
   // guardadas apunta a un dominio que no existe y no cargaría.
   const fotos: string[] = fotosDeInmueble(inm.imagenes);
   const donde = [inm.barrio, inm.ciudad].filter(Boolean).join(', ');
-  const precio = inm.precio
-    ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(inm.precio)
+  // El canon de oferta manda sobre el del ERP: es el que el agente le dijo al
+  // cliente por WhatsApp, y esta página es el enlace que abre a continuación.
+  // Si mostraran precios distintos, el cliente vería una contradicción.
+  const precioEfectivo = inm.precio_oferta ?? inm.precio;
+  const precio = precioEfectivo
+    ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(precioEfectivo)
     : null;
 
   return (
