@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { MAX_MOTIVO_DENEGACION } from '@/lib/solicitudes';
 
 interface AprobarData {
   solicitud_id: string;
@@ -373,6 +374,15 @@ export async function denegarSolicitud(data: DenegarData) {
     // lead moría. Si no podés a esa hora, la salida correcta es aprobar en el
     // horario que sí puedas (contraoferta), no denegar.
     const motivo = (data.motivo || '').trim();
+    if (motivo.length > MAX_MOTIVO_DENEGACION) {
+      return {
+        success: false,
+        error:
+          `El motivo no puede pasar de ${MAX_MOTIVO_DENEGACION} caracteres y llevas ${motivo.length}. ` +
+          'Kommo no acepta el mensaje si es más largo y el cliente se queda sin respuesta. Resumilo: ' +
+          'la fecha y la alternativa concreta son lo que importa.',
+      };
+    }
     if (motivo.length < 10) {
       return {
         success: false,

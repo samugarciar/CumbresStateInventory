@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarPlus, Phone, Building2, Loader2, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { aprobarSolicitud, denegarSolicitud, descartarSolicitud } from '@/app/actions/solicitudes';
+import { MAX_MOTIVO_DENEGACION } from '@/lib/solicitudes';
 
 interface Solicitud {
   id: string;
@@ -309,7 +310,8 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
                     type="text"
                     placeholder="Ej. Ese inmueble ya se arrendó, pero tenemos otros similares en la zona"
                     value={motivo}
-                    onChange={e => setMotivo(e.target.value)}
+                    onChange={e => setMotivo(e.target.value.slice(0, MAX_MOTIVO_DENEGACION))}
+                    maxLength={MAX_MOTIVO_DENEGACION}
                     disabled={procesando}
                   />
                   <button className="btn btn-danger" style={styles.accionBtn} onClick={() => denegar(s)} disabled={procesando}>
@@ -320,6 +322,10 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
                     Cancelar
                   </button>
                 </div>
+                <span style={{ ...styles.contadorMotivo, color: motivo.length >= MAX_MOTIVO_DENEGACION ? '#dc2626' : '#94a3b8' }}>
+                  {motivo.length}/{MAX_MOTIVO_DENEGACION}
+                  {motivo.length >= MAX_MOTIVO_DENEGACION && ' — llegaste al máximo que acepta WhatsApp'}
+                </span>
               </div>
             )}
           </div>
@@ -495,6 +501,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     color: 'var(--text-secondary)',
     marginBottom: '0.4rem',
+  },
+  contadorMotivo: {
+    display: 'block',
+    marginTop: 6,
+    fontSize: '0.75rem',
+    fontWeight: 600,
   },
   panelFila: {
     display: 'flex',
