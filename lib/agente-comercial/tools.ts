@@ -477,52 +477,179 @@ export function crearToolsAgenteComercial(
     }
   );
 
-  // Las fotos existen (82 de 83 inmuebles disponibles, ~18 c/u, sincronizadas
+  // Ruido que descarta el resolver de Postgres (resolver_inmuebles_por_texto).
+  // Se replica acá SOLO para el diagnóstico de "existe pero ya no está
+  // disponible" — el matching de verdad lo hace la RPC, ver abajo.
+  const RUIDO_TOKENS = new Set([
+    'del', 'las', 'los', 'una', 'con', 'sin', 'por', 'que',
+    'apartamento', 'apto', 'casa', 'local', 'oficina', 'bodega', 'lote',
+    'arriendo', 'venta', 'alquiler', 'inmueble', 'propiedad',
+  ]);
+
+  const tokensDeTexto = (texto: string): string[] =>
+    texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !RUIDO_TOKENS.has(t));
+
+  // Las fotos existen (82 de 84 inmuebles disponibles, ~18 c/u, sincronizadas
   // del ERP y públicas), pero el agente no las veía y por eso decía "no tengo
   // fotos cargadas en el sistema" y hasta inventaba URLs que daban 404
   // (auditoría 12/ago). Va como herramienta APARTE y no dentro de
   // `buscar_inmuebles` a propósito: 18 URLs × 30 resultados serían ~13.000
   // tokens por búsqueda, y el cuello de botella hoy es el límite de 30.000
   // tokens por minuto. Así el costo se paga solo cuando el cliente pide fotos.
+  //
+  // 26/ago — LA falla: esta era la única tool por texto que NO usaba
+  // `resolver_inmuebles_por_texto`; reimplementaba el match con un ilike
+  // CONTIGUO sobre titulo/direccion/unidad. La dirección del 1509 es
+  // "AV 31 #67 -221 APTO 1509" y su unidad es "Mi Mundo": ninguna columna
+  // contiene "Mi Mundo 1509" seguido, así que la consulta devolvía CERO
+  // teniendo el inmueble 30 fotos, y el cliente oía "no tengo fotos".
+  // 69 de 287 llamadas (24%) fallaron así desde el 17/jul, con un patrón
+  // exacto: fallaban TODAS las que traían unidad + número de apto (Villas del
+  // Sol 1713 trece veces, Mi Mundo 1509 siete) y funcionaban solo las de
+  // unidad pelada — hasta el ejemplo de esta misma descripción, "Mi Mundo
+  // 707", devolvía cero. Ahora resuelve por la MISMA RPC que agendar y
+  // consultar horarios, así las fotos que se mandan son por construcción las
+  // del inmueble del que el agente acaba de dar precio y horarios.
   const obtenerFotos = tool(
     async (args) => {
       const limpio = limpiarTextoInmueble(args.texto).limpio || args.texto;
-      const t = patronFlexible(limpio.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim());
-      const { data, error } = await supabase
-        .from('inmuebles')
-        .select('titulo,unidad,direccion,precio,imagenes,arrendasoft_id')
-        .eq('inmobiliaria_id', inmobiliariaId)
-        .eq('estado', 'disponible')
-        .or(`titulo.ilike.%${t}%,direccion.ilike.%${t}%,unidad.ilike.%${t}%`)
-        .limit(3);
+      const normalizado = limpio.replace(/[.,;:()]/g, ' ').replace(/\s+/g, ' ').trim();
 
+      // Fuente ÚNICA del matching: tokeniza, ignora tildes y exige que TODOS
+      // los tokens aparezcan en titulo+direccion+unidad+barrio+ciudad. Solo
+      // devuelve inmuebles con estado 'disponible'.
+      const { data: resueltos, error } = await supabase.rpc('resolver_inmuebles_por_texto', {
+        p_texto: normalizado,
+      });
       if (error) return registrar('obtener_fotos', args, { error: error.message });
+
+      const ids: string[] = (Array.isArray(resueltos) ? resueltos : [])
+        .map((r: { id?: string }) => r?.id)
+        .filter((id: string | undefined): id is string => !!id);
+
+      if (ids.length === 0) {
+        // Diagnóstico, NO es el resolver. Como la RPC solo mira disponibles,
+        // un cero significa dos cosas muy distintas para el cliente: que no
+        // existe, o que existe y ya lo arrendaron. Se repite el AND de tokens
+        // acá para escalar con el motivo correcto en vez de con un genérico.
+        // Si alguna vez discreparan, manda la RPC: esto solo elige el texto.
+        // Sin tokens útiles no hay nada que preguntar: una consulta sin
+        // filtros devolvería tres inmuebles cualquiera y le haría creer al
+        // agente que el que pidió el cliente está arrendado.
+        const tokens = tokensDeTexto(normalizado);
+        let consulta = supabase
+          .from('inmuebles')
+          .select('titulo,unidad,direccion,estado')
+          .eq('inmobiliaria_id', inmobiliariaId)
+          .neq('estado', 'disponible');
+        for (const tok of tokens) {
+          const p = patronFlexible(tok);
+          consulta = consulta.or(
+            `titulo.ilike.%${p}%,direccion.ilike.%${p}%,unidad.ilike.%${p}%,barrio.ilike.%${p}%,ciudad.ilike.%${p}%`
+          );
+        }
+        const { data: fueraDeInventario } = tokens.length > 0
+          ? await consulta.limit(3)
+          : { data: null };
+
+        if (fueraDeInventario && fueraDeInventario.length > 0) {
+          const estados = [...new Set(fueraDeInventario.map((p) => p.estado))].join('/');
+          return registrar('obtener_fotos', args, {
+            inmueble_no_disponible: true,
+            estado: estados,
+            direccion: fueraDeInventario[0].direccion,
+            mensaje:
+              `Ese inmueble existe pero su estado es "${estados}": ya NO está disponible. No le mandes ` +
+              'fotos ni le ofrezcas visita. Dile con claridad que ya no está disponible y ofrécele ' +
+              'alternativas reales de la misma zona con buscar_inmuebles, en el mismo mensaje.',
+          });
+        }
+
+        return registrar('obtener_fotos', args, {
+          sin_coincidencias: true,
+          mensaje:
+            'Ese texto no coincide con ningún inmueble del inventario. NO le digas al cliente que "no hay ' +
+            'fotos en el sistema". Si no estás seguro de a cuál se refiere, pregúntale el edificio y el ' +
+            'número de apartamento; si ya se lo preguntaste, ESCALA.',
+        });
+      }
+
+      const { data, error: errorInmuebles } = await supabase
+        .from('inmuebles')
+        .select('titulo,unidad,direccion,precio,tipo_transaccion,imagenes,arrendasoft_id')
+        .eq('inmobiliaria_id', inmobiliariaId)
+        .in('id', ids);
+      if (errorInmuebles) return registrar('obtener_fotos', args, { error: errorInmuebles.message });
+
       const props = (data ?? [])
         .map((p) => ({ ...p, fotosOk: fotosDeInmueble(p.imagenes) }))
         .filter((p) => p.fotosOk.length > 0 && p.arrendasoft_id);
+
       if (props.length === 0) {
+        // El inmueble existe Y está disponible; lo que falta son las fotos.
+        // Hoy le pasa a 2 de los 84 disponibles, y es la ÚNICA situación en
+        // la que "no tengo fotos" sería literalmente cierto.
         return registrar('obtener_fotos', args, {
-          sin_fotos: true,
+          sin_fotos_cargadas: true,
           mensaje:
-            'No encontré fotos para ese inmueble. NO le digas al cliente que "no hay fotos en el sistema": ' +
-            'ofrécele que un asesor se las envía y ESCALA.',
+            'Encontré el inmueble y sí está disponible, pero no tiene fotos cargadas. NO le digas al ' +
+            'cliente que "no hay fotos en el sistema": ofrécele que un asesor se las envía y ESCALA.',
         });
       }
+
       // Un enlace a la galería en vez de las URLs crudas del ERP: el campo de
       // Kommo admite 256 caracteres y cada URL del ERP mide ~99, así que solo
       // cabía una por mensaje. Este enlace mide ~52, cabe con texto, se ve con
       // la marca y muestra TODAS las fotos (~18) en vez de las 4 que cabían.
+      // El resolver no sabe de arriendo/venta, y en Mi Mundo conviven 6
+      // arriendos con 2 ventas de $280 millones: sin esto, un cliente que
+      // pregunta por arriendo puede recibir la galería de un apartamento en
+      // venta. Es un filtro sobre el conjunto YA resuelto, no un segundo
+      // matcher. Si ninguno es del tipo pedido se devuelven igual, pero
+      // diciéndolo, para que el agente no lo presente como lo que no es.
+      const pedido = args.tipo_transaccion;
+      const delTipo = pedido ? props.filter((p) => p.tipo_transaccion === pedido) : props;
+      const ningunoDelTipo = !!pedido && delTipo.length === 0;
+      const elegibles = delTipo.length > 0 ? delTipo : props;
+
       const base = process.env.NEXT_PUBLIC_APP_URL || 'https://cumbres-state-inventory.vercel.app';
+      const mostrados = elegibles.slice(0, 3);
+
+      // Un texto de unidad pelada ("Mi Mundo") resuelve a 8 inmuebles y antes
+      // se devolvían 3 en silencio, siempre los mismos: si el cliente estaba
+      // preguntando por el 1509, recibía las fotos del 1003. Mandarle fotos
+      // del apartamento equivocado es peor que no mandarle ninguna, así que
+      // la ambigüedad ahora se declara en vez de resolverse a dedo.
+      const ambiguo = ids.length > 1;
+
       return registrar('obtener_fotos', args, {
-        inmuebles: props.map((p) => ({
+        coincidencias: ids.length,
+        inmuebles: mostrados.map((p) => ({
           titulo: p.titulo,
           unidad: p.unidad,
           direccion: p.direccion,
           precio: p.precio,
+          tipo_transaccion: p.tipo_transaccion,
           total_fotos: p.fotosOk.length,
           galeria: `${base}/f/${p.arrendasoft_id}`,
         })),
         mensaje:
+          (ningunoDelTipo
+            ? `NINGUNO de los que coinciden es de ${pedido}: los de abajo son de otro tipo de ` +
+              'transacción. Si se los muestras, dilo explícitamente; no los presentes como ' +
+              `${pedido}. `
+            : '') +
+          (ambiguo
+            ? `Ojo: "${args.texto}" coincide con ${ids.length} inmuebles y abajo van ${mostrados.length}. ` +
+              'Si el cliente está preguntando por UNO en concreto, NO le mandes estos enlaces: vuelve a ' +
+              'llamar esta tool agregando el número de apartamento. Si pidió ver opciones en general, ' +
+              'ofrécele máximo 2 de estos enlaces. '
+            : '') +
           'Comparte el enlace de `galeria` TAL CUAL — ahí el cliente ve todas las fotos del inmueble. ' +
           'Un enlace por inmueble, nunca más de 2 en el mismo mensaje. PROHIBIDO inventar o modificar la URL.',
       });
@@ -531,13 +658,19 @@ export function crearToolsAgenteComercial(
       name: 'obtener_fotos',
       description:
         'Devuelve las fotos REALES de un inmueble o unidad, por el mismo texto que usas para consultar ' +
-        'horarios (ej. "Montiara", "Mi Mundo 707"). Úsala SIEMPRE que el cliente pida fotos, imágenes, ' +
-        '"cómo se ve", o más detalle visual. NUNCA inventes URLs de fotos ni digas que no hay fotos sin ' +
-        'haber llamado esta herramienta primero.',
+        'horarios (ej. "Montiara", "Mi Mundo 707"). Si el cliente está hablando de UN apartamento ' +
+        'concreto, incluye SIEMPRE su número: con el nombre pelado del edificio te devuelve otros de la ' +
+        'misma unidad. Úsala SIEMPRE que el cliente pida fotos, imágenes, "cómo se ve", o más detalle ' +
+        'visual. NUNCA inventes URLs de fotos ni digas que no hay fotos sin haber llamado esta ' +
+        'herramienta primero.',
       schema: z.object({
         texto: z
           .string()
-          .describe('Nombre del edificio/unidad y/o número de apto, igual que en verificar_horarios_disponibles.'),
+          .describe('Nombre del edificio/unidad y el número de apto, igual que en verificar_horarios_disponibles.'),
+        tipo_transaccion: TIPO_TRANSACCION.optional().describe(
+          'Pásalo SIEMPRE que sepas si el cliente busca arriendo o venta: en la misma unidad conviven ' +
+            'ambos y evita mandarle la galería de un inmueble en venta a quien busca arriendo.'
+        ),
       }),
     }
   );
