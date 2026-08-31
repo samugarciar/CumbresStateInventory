@@ -1,6 +1,14 @@
 -- =====================================================================
 -- MIGRACIÓN: resolver_inmuebles_por_texto — código del ERP y palabras de ruido
--- Fecha: 2026-08-28
+-- Fecha: 2026-08-28   (v2 — corrige la primera versión de este mismo archivo)
+--
+-- ⚠️ SI YA CORRISTE LA v1 DE ESTE ARCHIVO: vuelve a correrlo. La v1 escribía
+-- sobre la firma de UN argumento —la de junio, que 2026-07-09 ya había
+-- reemplazado— y por lo tanto (a) dejaba una función huérfana conviviendo con
+-- la buena, lo que hacía que PostgREST respondiera 300 Multiple Choices al
+-- llamar la RPC por HTTP, y (b) no cambiaba nada en producción, porque TODOS
+-- los llamadores usan la forma de dos argumentos. Este archivo borra la
+-- huérfana y aplica los cambios donde corresponde.
 --
 -- POR QUÉ
 -- Este resolver es la fuente única del matching por texto: lo usan
@@ -41,13 +49,28 @@
 -- SEGUNDA PASADA
 -- Si el texto completo no da nada y traía un código, se reintenta sin él. Así
 -- un código viejo o inexistente sigue cayendo al nombre del edificio, que es
--- lo que hoy hace el candado de TypeScript — que queda libre para retirarse.
+-- lo que hacía el candado de TypeScript — que queda libre para retirarse.
 --
--- Firma y columnas idénticas: ningún llamador cambia. Idempotente.
+-- PRECIO EFECTIVO
+-- Devuelve COALESCE(precio_oferta, precio), igual que el resto del sistema
+-- desde 2026-08-28_precio_oferta.sql, y ordena por ese mismo valor.
+--
+-- Firma, columnas y orden idénticos a 2026-07-09: ningún llamador cambia.
+-- Idempotente.
 -- =====================================================================
 
-CREATE OR REPLACE FUNCTION public.resolver_inmuebles_por_texto(p_texto TEXT)
-RETURNS TABLE (id UUID, titulo TEXT, direccion TEXT)
+-- Huérfana que dejó la v1 de este archivo (firma de junio). Sin esto, PostgREST
+-- no sabe cuál de las dos elegir y responde 300 al llamar la RPC por HTTP.
+DROP FUNCTION IF EXISTS public.resolver_inmuebles_por_texto(TEXT);
+
+CREATE OR REPLACE FUNCTION public.resolver_inmuebles_por_texto(
+    p_texto TEXT,
+    p_tipo_transaccion TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id UUID, titulo TEXT, direccion TEXT, unidad TEXT,
+    tipo_transaccion TEXT, precio NUMERIC, habitaciones INTEGER, banos INTEGER
+)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE
     v_norm    TEXT;
@@ -85,9 +108,11 @@ BEGIN
     -- 1ª pasada: TODOS los tokens. Un token de 5+ dígitos es un código del ERP
     -- y se compara exacto contra arrendasoft_id; el resto, como subcadena.
     RETURN QUERY
-    SELECT i.id, i.titulo, i.direccion
+    SELECT i.id, i.titulo, i.direccion, i.unidad, i.tipo_transaccion,
+           COALESCE(i.precio_oferta, i.precio), i.habitaciones, i.banos
     FROM inmuebles i
     WHERE i.estado = 'disponible'
+      AND (p_tipo_transaccion IS NULL OR i.tipo_transaccion = p_tipo_transaccion)
       AND (
           SELECT bool_and(
               unaccent(lower(
@@ -101,7 +126,7 @@ BEGIN
           )
           FROM unnest(v_tokens) AS tok
       )
-    ORDER BY i.titulo;
+    ORDER BY COALESCE(i.precio_oferta, i.precio), i.titulo;
 
     GET DIAGNOSTICS v_filas = ROW_COUNT;
     IF v_filas > 0 THEN
@@ -119,9 +144,11 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    SELECT i.id, i.titulo, i.direccion
+    SELECT i.id, i.titulo, i.direccion, i.unidad, i.tipo_transaccion,
+           COALESCE(i.precio_oferta, i.precio), i.habitaciones, i.banos
     FROM inmuebles i
     WHERE i.estado = 'disponible'
+      AND (p_tipo_transaccion IS NULL OR i.tipo_transaccion = p_tipo_transaccion)
       AND (
           SELECT bool_and(
               unaccent(lower(
@@ -134,6 +161,6 @@ BEGIN
           )
           FROM unnest(v_sin_cod) AS tok
       )
-    ORDER BY i.titulo;
+    ORDER BY COALESCE(i.precio_oferta, i.precio), i.titulo;
 END;
 $$;
