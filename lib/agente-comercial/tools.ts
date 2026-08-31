@@ -190,9 +190,11 @@ export function crearToolsAgenteComercial(
   const consultaInmuebles = (args: Record<string, unknown>, omitirTipo = false) => {
     let query = supabase
       .from('inmuebles')
-      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,precio_oferta,direccion,ciudad,barrio,habitaciones,banos,unidad')
+      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,precio_oferta,direccion,ciudad,barrio,habitaciones,banos,unidad,estado')
       .eq('inmobiliaria_id', inmobiliariaId)
-      .eq('estado', 'disponible');
+      // Incluye empalmes (ocupados que muestra el inquilino): el agente los distingue
+      // por estado='empalme' y NO los agenda — comparte el contacto vía compartir_contacto_empalme.
+      .in('estado', ['disponible', 'empalme']);
 
     if (args.ciudad) query = query.ilike('ciudad', `%${patronFlexible(String(args.ciudad))}%`);
     if (args.barrio) query = query.ilike('barrio', `%${patronFlexible(String(args.barrio))}%`);
@@ -763,8 +765,88 @@ export function crearToolsAgenteComercial(
     }
   );
 
+  // Empalme: inmueble ocupado que muestra el inquilino de salida. No se agenda;
+  // se comparte el teléfono del inquilino (solo cuando el lead califica) y se avisa
+  // al admin. El número NO viaja en buscar_inmuebles: solo se revela aquí.
+  const compartirContactoEmpalme = tool(
+    async (args) => {
+      const codigo = String(args.codigo ?? '').replace(/\D/g, '');
+      if (!codigo) {
+        return registrar('compartir_contacto_empalme', args, { error: 'Falta el código del inmueble.' });
+      }
+
+      const { data: inm, error } = await supabase
+        .from('inmuebles')
+        .select('id, titulo, direccion, unidad, estado, empalme_contacto_nombre, empalme_contacto_telefono')
+        .eq('inmobiliaria_id', inmobiliariaId)
+        .eq('arrendasoft_id', Number(codigo))
+        .maybeSingle();
+
+      if (error) return registrar('compartir_contacto_empalme', args, { error: error.message });
+      if (!inm) {
+        return registrar('compartir_contacto_empalme', args, { error: `No encontré el inmueble con código ${codigo}.` });
+      }
+      if (inm.estado !== 'empalme') {
+        return registrar('compartir_contacto_empalme', args, {
+          es_empalme: false,
+          mensaje:
+            'Este inmueble NO es un empalme: se maneja con visita agendada normal. Usa ' +
+            'verificar_horarios_disponibles / agendar_cita y NO compartas ningún contacto.',
+        });
+      }
+      if (!inm.empalme_contacto_telefono) {
+        return registrar('compartir_contacto_empalme', args, {
+          error:
+            'Es un empalme pero no hay teléfono del inquilino cargado todavía. Dile al cliente que un ' +
+            'asesor le confirma el contacto y ESCALA.',
+        });
+      }
+
+      // Aviso al admin (cola sin dueño, como las tareas de solicitud/cita agendada).
+      const clienteNombre = String(args.cliente_nombre ?? '').trim();
+      const etiqueta = inm.unidad || inm.titulo || inm.direccion || `#${codigo}`;
+      const { error: errorTarea } = await supabase.from('tareas').insert({
+        inmobiliaria_id: inmobiliariaId,
+        usuario_id: null,
+        entidad_tipo: 'inmueble',
+        entidad_id: inm.id,
+        evento_origen: 'empalme_contacto_compartido',
+        evento_titulo: `Empalme — ${etiqueta}`,
+        titulo: `Se compartió el contacto del inquilino (empalme, cód ${codigo}) con ${clienteNombre || 'un interesado'}`,
+        estado: 'pendiente',
+      });
+      if (errorTarea) {
+        console.warn('[AgenteComercial] No se pudo crear la tarea de empalme:', errorTarea.message);
+      }
+
+      return registrar('compartir_contacto_empalme', args, {
+        es_empalme: true,
+        contacto_nombre: inm.empalme_contacto_nombre,
+        contacto_telefono: inm.empalme_contacto_telefono,
+        instruccion:
+          'Comparte ESTE teléfono con el cliente y explícale que el inmueble lo muestra directamente el ' +
+          'inquilino de salida (empalme), así que coordine la visita con esa persona por ese número. NO ' +
+          'agendes cita ni ofrezcas horarios. Un asesor ya quedó avisado.',
+      });
+    },
+    {
+      name: 'compartir_contacto_empalme',
+      description:
+        'SOLO para inmuebles en EMPALME (verás estado="empalme" en buscar_inmuebles/buscar_inmueble_por_codigo): ' +
+        'no se agenda visita porque lo muestra el inquilino de salida directamente. Llama esta tool ÚNICAMENTE ' +
+        'cuando el cliente ya dio su nombre y confirmó interés real en visitar ese inmueble puntual. Devuelve el ' +
+        'teléfono del inquilino para que se lo compartas y avisa a un asesor. NUNCA la uses para inmuebles ' +
+        'disponibles normales (esos se agendan con agendar_cita).',
+      schema: z.object({
+        codigo: z.union([z.string(), z.number()]).describe('Código del inmueble (el que aparece como código / arrendasoft_id).'),
+        cliente_nombre: z.string().optional().describe('Nombre del cliente interesado, para el aviso al asesor.'),
+      }),
+    }
+  );
+
   return [
     buscarInmuebles,
+    compartirContactoEmpalme,
     buscarInmueblePorCodigo,
     verificarHorariosDisponibles,
     agendarCita,
