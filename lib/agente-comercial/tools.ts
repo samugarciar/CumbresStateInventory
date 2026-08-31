@@ -27,32 +27,23 @@ function patronFlexible(v: string): string {
   return [...v.trim()].map((ch) => (/[a-zA-Z0-9 ]/.test(ch) ? ch : '_')).join('');
 }
 
-// El resolver de inmuebles hace AND de TODOS los tokens contra
-// unidad+barrio+título+dirección. Un código del ERP (ej. 2026195) no vive en
-// ninguno de esos campos, así que "Montiara 2026195" no resuelve NUNCA
-// mientras "Montiara" resuelve siempre. Auditoría del 12/ago: 14 de los 21
-// fallos de resolución (67%) fueron "Nombre + código", fallando 14/14 veces.
-// La puntuación también rompe el match ("Urb. Málaga, apto 410" falla y
-// "Urb. Málaga 410" funciona) porque el token queda como "málaga,".
-// El agente a veces se auto-salvaba reintentando sin el código y a veces no
-// — eso es el "a veces sí, a veces no" que reporta el usuario. Se limpia acá
-// para que deje de depender de que el modelo se acuerde.
+// Normaliza el texto antes de mandárselo al resolver de Postgres. Hoy solo
+// arregla la puntuación: el token "málaga," no matchea contra "MALAGA", así
+// que "Urb. Málaga, apto 410" fallaba mientras "Urb. Málaga 410" funcionaba.
+//
+// Hasta el 28/ago esta función TAMBIÉN borraba los códigos del ERP (5+
+// dígitos), porque `arrendasoft_id` no estaba entre los campos que buscaba el
+// resolver y "Montiara 2026195" no resolvía nunca. Ese arreglo se volvió en
+// contra: cuando el código es lo ÚNICO que distingue un apartamento de otro,
+// borrarlo vuelve el texto AMBIGUO — "Villas del Sol 2026198" quedaba en
+// "Villas del Sol", tres candidatos, y la herramienta se negaba. Fueron 16 de
+// los 53 fallos de resolución de esas dos semanas.
+// Ahora el resolver compara los códigos exacto contra `arrendasoft_id` y, si
+// no encuentra nada, reintenta él mismo sin el código
+// (2026-08-28_resolver_codigo_y_ruido.sql). Borrarlos acá le taparía el dato.
 export function limpiarTextoInmueble(texto: string): { limpio: string; quitado: string[] } {
-  const quitado: string[] = [];
-  const tokens = texto
-    .replace(/[.,;:]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((t) => {
-      // Códigos del ERP: 5+ dígitos seguidos. Los números de apto (1-4
-      // dígitos: 401, 1320, 707) SÍ están en la dirección y ayudan a resolver.
-      if (/^\d{5,}$/.test(t)) {
-        quitado.push(t);
-        return false;
-      }
-      return true;
-    });
-  return { limpio: tokens.join(' ').trim(), quitado };
+  const limpio = texto.replace(/[.,;:]/g, ' ').split(/\s+/).filter(Boolean).join(' ').trim();
+  return { limpio, quitado: [] };
 }
 
 // Precio EFECTIVO. Un inmueble arrendado que se desocupa se vuelve a ofrecer
@@ -133,6 +124,50 @@ function bloqueDemasiadoPronto(fecha: string, horaInicio: string): boolean {
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);
 const ALCANCE = z.enum(['inmueble', 'unidad']);
+
+// Cuando el resolver no da con el inmueble, el error de la RPC dice "sé más
+// específico", que es lo contrario de lo que le sirve al agente en ese momento.
+// Caso del 28/ago (Luis Casallas): con la franja ya encontrada y el cliente
+// dando su nombre, reintentó con el MISMO texto que ya le había fallado y la
+// cita nunca se creó. Acá se le dice qué probar, sin tocar el contrato de la
+// RPC, que también consume el backend.
+function conPistaDeReintento(salida: Record<string, unknown>, texto: string): Record<string, unknown> {
+  const err = String(salida?.error ?? '');
+  if (salida?.success !== false || !err) return salida;
+
+  if (/No encontr/i.test(err)) {
+    const palabras = texto.trim().split(/\s+/).filter(Boolean);
+    const soloNombre = palabras.filter((p) => !/^\d+$/.test(p)).join(' ');
+    if (palabras.length > 1 && soloNombre && soloNombre !== texto.trim()) {
+      return {
+        ...salida,
+        reintenta_con: soloNombre,
+        mensaje:
+          'Ese texto no resolvió. NO se lo traslades al cliente ni le pidas que sea más específico: ' +
+          'vuelve a llamar esta MISMA herramienta con el valor de `reintenta_con`. Escribe solo el ' +
+          'nombre del edificio y, si lo sabes, el número de apartamento — nunca palabras como ' +
+          '"piso", "torre" o "unidad".',
+      };
+    }
+    return {
+      ...salida,
+      mensaje:
+        'Ese texto no resolvió. Reintenta con el nombre del edificio tal como aparece en el ' +
+        'inventario (el que te devolvió buscar_inmuebles), sin adornos. Solo si tampoco así, escala.',
+    };
+  }
+
+  if (/varios inmuebles|una sola unidad/i.test(err)) {
+    return {
+      ...salida,
+      mensaje:
+        'Ese texto coincide con varios inmuebles. Si el cliente ya te dijo cuál (número de ' +
+        'apartamento o código), vuelve a llamar la herramienta agregándolo. Pregúntaselo solo si ' +
+        'de verdad no lo sabes.',
+    };
+  }
+  return salida;
+}
 
 interface HerramientaUsada {
   nombre: string;
@@ -398,7 +433,7 @@ export function crearToolsAgenteComercial(
       });
       const salida = error
         ? { success: false, error: error.message }
-        : conDiaSemana((data ?? {}) as Record<string, unknown>);
+        : conPistaDeReintento(conDiaSemana((data ?? {}) as Record<string, unknown>), args.texto);
       return registrar('agendar_cita', args, salida);
     },
     {
@@ -442,12 +477,16 @@ export function crearToolsAgenteComercial(
       });
       const salida = error
         ? { success: false, error: error.message }
-        : conDiaSemana((data ?? {}) as Record<string, unknown>);
+        : conPistaDeReintento(conDiaSemana((data ?? {}) as Record<string, unknown>), args.texto);
       return registrar('solicitar_apertura_de_agenda', args, salida);
     },
     {
       name: 'solicitar_apertura_de_agenda',
       description:
+        '⛔ NO la uses si el cliente está aceptando un horario que TÚ le ofreciste desde ' +
+        'verificar_horarios_disponibles: eso es agendar_cita, siempre. Esta herramienta es SOLO para ' +
+        'horarios que no existen en la agenda. Si ya tienes franja y el nombre y teléfono del cliente, ' +
+        'la respuesta correcta es agendar_cita — usar esta en su lugar deja al cliente sin cita. ' +
         'Cuando el cliente pide un día/hora específico y verificar_horarios_disponibles NO trae esa hora ' +
         'exacta entre sus franjas (ya sea modo sin_disponibilidad, o disponibilidad/disponibilidad_unidad ' +
         'con franjas que no coinciden), NO lo descartes: ofrécele PROACTIVAMENTE, en el mismo mensaje, ' +
