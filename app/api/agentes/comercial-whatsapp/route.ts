@@ -49,6 +49,34 @@ function anclarFecha(mensaje: string, fecha: Date): string {
   return `[${fechaCorta(fecha)}] ${mensaje}`;
 }
 
+// Los extractos bancarios que pide Fianzacrédito son los del ÚLTIMO TRIMESTRE
+// CALENDARIO CERRADO, no los de los últimos tres meses corridos: al 31/ago el
+// trimestre vigente es abril-mayo-junio, y el 1/oct pasa a ser julio-agosto-
+// septiembre. Se calcula acá y se le entrega resuelto al modelo, por la misma
+// razón que la fecha y la hora: todo lo que se le pidió deducir de un
+// calendario terminó fallando. Escribirlo fijo en el prompt lo dejaría vencido
+// el primer día del trimestre siguiente, sin que nadie se entere.
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+export function trimestreDeExtractos(fecha: Date): string {
+  const iso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(fecha);
+  const [anio, mes] = iso.split('-').map(Number);
+  // Trimestre calendario en curso (0-3) → el cerrado es el anterior.
+  const enCurso = Math.floor((mes - 1) / 3);
+  const cerrado = (enCurso + 3) % 4;
+  const anioCerrado = enCurso === 0 ? anio - 1 : anio;
+  const inicio = cerrado * 3;
+  return `${MESES[inicio]}, ${MESES[inicio + 1]} y ${MESES[inicio + 2]} de ${anioCerrado}`;
+}
+
 // Mismo envoltorio que el campo "text" del nodo "Agente Cumbres AI" en n8n:
 // "Fecha de hoy: ... \n\nMensaje del usuario: ...". Solo para el mensaje nuevo.
 function envolverConFecha(mensaje: string, fecha: Date): string {
@@ -75,6 +103,8 @@ function envolverConFecha(mensaje: string, fecha: Date): string {
     'agendar cópialas del resultado de disponibilidad. ⚠️ No ofrezcas ni des por válido un horario de HOY que ' +
     'ya pasó o que empiece dentro de menos de 30 minutos: el cliente necesita tiempo para llegar. Las ' +
     'herramientas ya ocultan esos bloques, así que ofrece únicamente los que te devuelvan.' +
+    `\nEl "último trimestre" de los extractos bancarios es HOY: ${trimestreDeExtractos(fecha)}. ` +
+    'Si te preguntan cuáles meses, di exactamente esos tres — no los calcules ni los cambies.' +
     `\n\nMensaje del usuario: ${mensaje}`
   );
 }
