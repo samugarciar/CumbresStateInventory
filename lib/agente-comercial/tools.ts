@@ -108,6 +108,18 @@ function conDiaSemana<T extends Record<string, unknown>>(obj: T): T & { dia_sema
   return dia ? { ...obj, dia_semana: dia } : obj;
 }
 
+// Los asesores descansan el domingo: no hay visitas. Es un hecho del negocio,
+// no un hueco de agenda — en toda la historia hay 0 franjas y 0 citas en
+// domingo, sobre 275 franjas y 433 citas. Aun así llegaban solicitudes de
+// apertura para domingo, y las 3 que hubo terminaron igual: dos denegadas a
+// mano ("el día domingo no prestamos servicio", "es el día de descanso de
+// nuestros asesores") y la tercera, aunque figura aprobada, se movió al
+// martes. O sea: el 100% se perdió como domingo, después de hacerle creer al
+// cliente que su solicitud estaba en trámite.
+function esDomingo(fecha: string): boolean {
+  return diaSemana(fecha) === 'domingo';
+}
+
 // ¿Ese bloque ya pasó, o arranca en menos de MARGEN_MIN minutos?
 // Caso real (12/ago 16:37): el agente ofreció "3:00 pm o 3:30 pm" para hoy y
 // el cliente respondió "Hoy ya son las 4y38". La RPC devuelve los bloques del
@@ -310,7 +322,12 @@ export function crearToolsAgenteComercial(
       // filtran acá los que ya no son ofrecibles para que el agente nunca vea
       // —ni pueda ofrecer— un horario imposible.
       const conHorario = filas.filter((f) => f?.fecha && f?.hora_inicio);
-      const vigentes = conHorario.filter((f) => !bloqueDemasiadoPronto(f.fecha, f.hora_inicio));
+      // Se descarta también cualquier bloque en domingo. Hoy no existe ninguno,
+      // pero basta que alguien cree una franja por error para que el agente le
+      // ofrezca al cliente un día en el que nadie va a ir a abrir el inmueble.
+      const vigentes = conHorario.filter(
+        (f) => !bloqueDemasiadoPronto(f.fecha, f.hora_inicio) && !esDomingo(f.fecha)
+      );
       const descartados = conHorario.length - vigentes.length;
 
       // Si TODOS los bloques del inmueble ya pasaron, no es que el inmueble no
@@ -377,6 +394,18 @@ export function crearToolsAgenteComercial(
       // Un horario que ya pasó no se puede agendar aunque el agente lo tuviera
       // de un turno anterior: entre que lo ofreció y el cliente confirmó pudo
       // pasar media hora. La RPC solo valida "fecha pasada", no la hora.
+      if (esDomingo(args.fecha)) {
+        return registrar('agendar_cita', args, {
+          success: false,
+          domingo: true,
+          error:
+            'Los domingos no se hacen visitas: es el día de descanso de los asesores. NO la agendes ni ' +
+            'registres una solicitud de apertura para un domingo. Dile al cliente que ese día no ' +
+            'atendemos y ofrécele el sábado o el lunes EN EL MISMO MENSAJE, consultando los horarios ' +
+            'reales de esos días.',
+        });
+      }
+
       if (bloqueDemasiadoPronto(args.fecha, args.hora_inicio)) {
         return registrar('agendar_cita', args, {
           success: false,
@@ -465,6 +494,20 @@ export function crearToolsAgenteComercial(
 
   const solicitarAperturaDeAgenda = tool(
     async (args) => {
+      // Un domingo no es un horario que un asesor pueda "abrir": no se trabaja.
+      // Registrar la solicitud solo le hace perder el tiempo al cliente y al
+      // asesor, que igual la va a denegar.
+      if (esDomingo(args.fecha)) {
+        return registrar('solicitar_apertura_de_agenda', args, {
+          success: false,
+          domingo: true,
+          error:
+            'Los domingos no se hacen visitas: es el día de descanso de los asesores. NO registres la ' +
+            'solicitud — el asesor la va a denegar igual. Dile al cliente que ese día no atendemos y ' +
+            'ofrécele el sábado o el lunes EN EL MISMO MENSAJE, con horarios reales.',
+        });
+      }
+
       const { data, error } = await supabase.rpc('solicitar_apertura_agenda', {
         p_texto: limpiarTextoInmueble(args.texto).limpio || args.texto,
         p_fecha: args.fecha,
