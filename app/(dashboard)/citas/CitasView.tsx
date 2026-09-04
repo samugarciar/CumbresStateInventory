@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Eye, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send } from 'lucide-react';
-import { cancelarCitaAdmin, confirmarCitas } from '@/app/actions/agenda';
+import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send } from 'lucide-react';
+import { cancelarCitaAdmin, confirmarCitas, marcarCitaRealizada } from '@/app/actions/agenda';
 import ModalNuevaCita from './ModalNuevaCita';
 import SolicitudesApertura from './SolicitudesApertura';
 
@@ -87,6 +87,7 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
   const router = useRouter();
   const [filtroAsesor, setFiltroAsesor] = useState<string>('todos');
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
+  const [realizandoId, setRealizandoId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // Modo "Confirmar citas": selección múltiple para disparar el flujo n8n
   const [seleccionando, setSeleccionando] = useState(false);
@@ -116,6 +117,19 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
     setCancelandoId(null);
     if (!result.success) {
       alert(result.error || 'No se pudo cancelar la cita.');
+      return;
+    }
+    router.refresh();
+  };
+
+  // Solo asesores: marca una de sus visitas como realizada (sale de la lista).
+  const marcarRealizada = async (cita: Cita) => {
+    if (!confirm(`¿Marcar como realizada la visita de ${cita.cliente_nombre} (${cita.hora_inicio.substring(0, 5)})?`)) return;
+    setRealizandoId(cita.id);
+    const result = await marcarCitaRealizada(cita.id);
+    setRealizandoId(null);
+    if (!result.success) {
+      alert(result.error || 'No se pudo marcar la cita como realizada.');
       return;
     }
     router.refresh();
@@ -190,8 +204,8 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
           )}
           {!isAdmin && (
             <span className="badge badge-info" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}>
-              <Eye size={14} style={{ marginRight: 4 }} />
-              Solo lectura
+              <CalendarCheck size={14} style={{ marginRight: 4 }} />
+              Marca cada visita como realizada al terminarla
             </span>
           )}
         </div>
@@ -339,6 +353,20 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
                           {cancelandoId === c.id
                             ? <Loader2 size={13} className="animate-spin" />
                             : 'Cancelar'}
+                        </button>
+                      )}
+                      {!isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => marcarRealizada(c)}
+                          disabled={realizandoId === c.id}
+                          className="btn btn-primary"
+                          style={styles.cancelarBtn}
+                          title="Marcar esta visita como realizada satisfactoriamente"
+                        >
+                          {realizandoId === c.id
+                            ? <Loader2 size={13} className="animate-spin" />
+                            : <><CalendarCheck size={13} style={{ marginRight: 4, verticalAlign: '-2px' }} />Marcar realizada</>}
                         </button>
                       )}
                     </div>

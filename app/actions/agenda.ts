@@ -370,6 +370,39 @@ export async function agendarCitaManual(data: CitaManualData) {
  * Contrato del payload (según el flujo): { citas: [ { Inmueble, Tercero, Telefono, Hora, ... } ] }
  * donde Inmueble debe coincidir con el título del inmueble para que el flujo lo cruce.
  */
+/**
+ * El asesor marca una de SUS citas como realizada (estado='completada').
+ * Va por el RPC marcar_cita_realizada (SECURITY DEFINER) porque los asesores solo
+ * tienen SELECT sobre citas por RLS; el RPC valida que quien llama sea el asesor
+ * dueño de la franja. La cita sale de la lista (que filtra estado='agendada').
+ */
+export async function marcarCitaRealizada(citaId: string) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: 'Sesión expirada.' };
+
+    const { data, error } = await supabase.rpc('marcar_cita_realizada', { p_cita_id: citaId });
+
+    if (error) {
+      console.error('[Agenda] Error al marcar cita realizada:', error.message);
+      return { success: false, error: 'No se pudo marcar la cita como realizada.' };
+    }
+
+    const res = (data ?? {}) as { success?: boolean; error?: string };
+    if (!res.success) {
+      return { success: false, error: res.error || 'No se pudo marcar la cita como realizada.' };
+    }
+
+    revalidatePath('/citas');
+    revalidatePath('/agenda');
+    return { success: true };
+  } catch (err: any) {
+    console.error('[Agenda] Excepción marcarCitaRealizada:', err);
+    return { success: false, error: err.message || 'Error interno.' };
+  }
+}
+
 export async function confirmarCitas(citaIds: string[]) {
   try {
     if (!citaIds || citaIds.length === 0) {
