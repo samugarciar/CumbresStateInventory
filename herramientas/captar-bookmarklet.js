@@ -77,7 +77,44 @@
     'background:#0f172a;color:#f8fafc;font:13px/1.5 system-ui,sans-serif;padding:14px 16px;' +
     'border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.45)';
   document.body.appendChild(panel);
-  function pinta(html) { panel.innerHTML = html; }
+  // POR QUÉ NADA DE innerHTML AQUÍ:
+  // Facebook aplica Trusted Types (require-trusted-types-for 'script'). Chrome
+  // deja que un bookmarklet se EJECUTE pese al CSP, pero la asignación a
+  // innerHTML es un "sink" prohibido y lanza TypeError. El síntoma era
+  // desconcertante: el panel aparecía en el DOM —crearlo y darle estilo sí se
+  // puede— pero vacío, y al usuario "no le pasaba nada" al pulsar Captar.
+  //
+  // Construir los nodos a mano no es un sink, así que funciona en Facebook, en
+  // Mercado Libre y en cualquier sitio con la política estricta.
+  //
+  // OJO al probar: una extensión (o la consola de DevTools) corre en contexto
+  // privilegiado y está EXENTA de Trusted Types. Probar el bookmarklet desde
+  // ahí da un falso positivo — ya pasó. Hay que probarlo pulsando el marcador.
+  function nodo(tag, css, texto) {
+    var e = document.createElement(tag);
+    if (css) e.style.cssText = css;
+    if (texto != null) e.textContent = texto;
+    return e;
+  }
+  var CSS_BOTON = 'width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;' +
+    'color:#fff;font-weight:700;cursor:pointer;margin-top:8px';
+  var CSS_BOTON_2 = 'width:100%;margin-top:6px;padding:6px;border:0;border-radius:8px;' +
+    'background:transparent;color:#94a3b8;cursor:pointer';
+  var CSS_SUAVE = 'opacity:.75;margin:6px 0 2px';
+  function boton(texto, css, alPulsar) {
+    var b = nodo('button', css || CSS_BOTON, texto);
+    b.onclick = alPulsar;
+    return b;
+  }
+  /** Vacía el panel y le cuelga los nodos (o textos) que se le pasen. */
+  function pinta() {
+    panel.textContent = '';
+    for (var i = 0; i < arguments.length; i++) {
+      var x = arguments[i];
+      if (x == null || x === false) continue;
+      panel.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
+    }
+  }
   function cerrar() { if (panel.parentNode) panel.parentNode.removeChild(panel); }
 
   var url = location.href;
@@ -230,8 +267,9 @@
   async function cargarMas() {
     var previos = tarjetasVisibles().length;
     for (var p = 0; p < PASADAS_SCROLL; p++) {
-      pinta('<b>Buscando…</b><div style="opacity:.75;margin-top:4px">' + previos +
-        ' anuncios cargados · pasada ' + (p + 1) + '/' + PASADAS_SCROLL + '</div>');
+      pinta(nodo('b', '', 'Buscando…'),
+        nodo('div', 'opacity:.75;margin-top:4px',
+          previos + ' anuncios cargados · pasada ' + (p + 1) + '/' + PASADAS_SCROLL));
       window.scrollTo(0, document.body.scrollHeight);
       await esperar(1400);
       var ahora = tarjetasVisibles().length;
@@ -261,10 +299,9 @@
 
     if (enPublicacion) {
       var uno = capturarPublicacion();
-      pinta('<b>1 anuncio listo</b><div style="opacity:.75;margin:6px 0 10px">' +
-        (uno[0].titulo || '').slice(0, 70) + '</div>' +
-        '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">Enviar a la bandeja</button>');
-      panel.querySelector('#cap-go').onclick = function () { enviar(uno, [], APP_IMPORTAR); };
+      pinta(nodo('b', '', '1 anuncio listo'),
+        nodo('div', 'opacity:.75;margin:6px 0 4px', (uno[0].titulo || '').slice(0, 70)),
+        boton('Enviar a la bandeja', CSS_BOTON, function () { enviar(uno, [], APP_IMPORTAR); }));
       return;
     }
 
@@ -280,28 +317,34 @@
     var fuera = sinRepetir.length - nuevas.length;
 
     if (!todas.length) {
-      pinta('<b>No encontré anuncios</b><div style="opacity:.75;margin-top:6px">Abre una búsqueda de Marketplace o Mercado Libre, o una publicación.</div>');
+      pinta(nodo('b', '', 'No encontré anuncios'),
+        nodo('div', 'opacity:.75;margin-top:6px',
+          'Abre una búsqueda de Marketplace o Mercado Libre, o una publicación.'));
       setTimeout(cerrar, 4000);
       return;
     }
 
     if (!nuevas.length && fuera) {
-      pinta('<b>Nada dentro de la zona</b><div style="opacity:.75;margin:6px 0 10px">' + fuera +
-        ' anuncio(s) nuevos, todos de municipios fuera de Bello y Robledo.<br><br>' +
-        'Baja el radio de búsqueda de Marketplace: en los filtros de la izquierda, ' +
-        'pon la ubicación en <b>Bello</b> y el radio en <b>10 km</b>.</div>');
+      pinta(nodo('b', '', 'Nada dentro de la zona'),
+        nodo('div', 'opacity:.75;margin:6px 0 8px',
+          fuera + ' anuncio(s) nuevos, todos de municipios fuera de Bello y Robledo.'),
+        nodo('div', 'opacity:.75',
+          'Baja el radio en los filtros de la izquierda: ubicación Bello, radio 10 km.'));
       setTimeout(cerrar, 9000);
       return;
     }
     if (!nuevas.length) {
-      pinta('<b>Nada nuevo por acá</b><div style="opacity:.75;margin:6px 0 10px">Los ' + todas.length +
-        ' anuncios de esta búsqueda ya se enviaron antes.</div>' +
-        '<button id="cap-reset" style="width:100%;padding:8px;border:0;border-radius:8px;background:#334155;color:#fff;cursor:pointer">Olvidar el historial y capturarlos otra vez</button>');
-      panel.querySelector('#cap-reset').onclick = function () {
-        try { localStorage.removeItem(CLAVE); } catch (e) {}
-        pinta('<b>Historial borrado.</b><div style="opacity:.75;margin-top:6px">Vuelve a hacer clic en Captar.</div>');
-        setTimeout(cerrar, 2500);
-      };
+      pinta(nodo('b', '', 'Nada nuevo por acá'),
+        nodo('div', 'opacity:.75;margin:6px 0 4px',
+          'Los ' + todas.length + ' anuncios de esta búsqueda ya se enviaron antes.'),
+        boton('Olvidar el historial y capturarlos otra vez',
+          'width:100%;padding:8px;border:0;border-radius:8px;background:#334155;color:#fff;cursor:pointer;margin-top:8px',
+          function () {
+            try { localStorage.removeItem(CLAVE); } catch (e) {}
+            pinta(nodo('b', '', 'Historial borrado.'),
+              nodo('div', 'opacity:.75;margin-top:6px', 'Vuelve a hacer clic en Captar.'));
+            setTimeout(cerrar, 2500);
+          }));
       return;
     }
 
@@ -328,15 +371,17 @@
       var c = {}; for (var k in x) if (k !== '_id') c[k] = x[k]; return c;
     });
 
-    pinta('<b>' + tanda.length + ' anuncios nuevos</b>' +
-      '<div style="opacity:.75;margin:6px 0 2px">' + todas.length + ' en la búsqueda · ' +
-      repetidas + ' ya enviados antes' +
-      (fuera ? ' · <span style="color:#fbbf24">' + fuera + ' fuera de zona</span>' : '') + '</div>' +
-      (restan ? '<div style="opacity:.75;margin-bottom:8px">Quedan ' + restan + ' para el siguiente clic</div>' : '<div style="margin-bottom:8px"></div>') +
-      '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">' +
-      (aLaCola ? 'Mandar ' + tanda.length + ' a la cola' : 'Enviar ' + tanda.length + ' a la bandeja') + '</button>' +
-      '<button id="cap-x" style="width:100%;margin-top:6px;padding:6px;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer">Cancelar</button>');
-    panel.querySelector('#cap-go').onclick = function () { enviar(limpias, ids, destino); };
-    panel.querySelector('#cap-x').onclick = cerrar;
+    var resumen = nodo('div', CSS_SUAVE,
+      todas.length + ' en la búsqueda · ' + repetidas + ' ya enviados antes');
+    if (fuera) {
+      resumen.appendChild(document.createTextNode(' · '));
+      resumen.appendChild(nodo('span', 'color:#fbbf24', fuera + ' fuera de zona'));
+    }
+    pinta(nodo('b', '', tanda.length + ' anuncios nuevos'),
+      resumen,
+      restan ? nodo('div', 'opacity:.75', 'Quedan ' + restan + ' para el siguiente clic') : null,
+      boton(aLaCola ? 'Mandar ' + tanda.length + ' a la cola' : 'Enviar ' + tanda.length + ' a la bandeja',
+        CSS_BOTON, function () { enviar(limpias, ids, destino); }),
+      boton('Cancelar', CSS_BOTON_2, cerrar));
   })();
 })();
