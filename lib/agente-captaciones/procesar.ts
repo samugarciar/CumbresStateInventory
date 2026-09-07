@@ -8,7 +8,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { correrCaptacion } from './graph';
 import { registrarUso, estadoPresupuesto } from './uso';
 import { listingVacio, type FuenteCaptacion, type ListingCrudo } from './tipos';
-import { obtenerDescripcion, extraerItemId, esUrlMercadoLibre, idCanonico } from './sources/mercadolibre';
+import { celularDelAnuncio } from './telefono';
+import {
+  obtenerDescripcion, extraerItemId, esUrlMercadoLibre, idCanonico,
+  tituloDesdeUrlMercadoLibre, esTituloGenerico,
+} from './sources/mercadolibre';
 
 // Cuántos anuncios se procesan a la vez. Cada uno son 2 llamadas al LLM: en
 // serie un lote grande no cabe en maxDuration, y todos a la vez arriesga
@@ -45,6 +49,14 @@ interface ResumenLote {
   presupuestoAgotado?: boolean;
   detalle: Array<{
     titulo: string;
+    /**
+     * URL del anuncio. Es la única forma FIABLE de correlacionar cada entrada
+     * del detalle con el anuncio que la originó: el lote se procesa en tandas
+     * concurrentes, así que el orden de `detalle` NO sigue al de la entrada.
+     * Quien llama la necesita para saber qué anuncio salió bien (p. ej. la cola,
+     * que solo debe cerrar los que de verdad se atendieron).
+     */
+    url: string | null;
     resultado: string;
     prospecto_id: string | null;
     motivo: string | null;
@@ -56,7 +68,12 @@ interface ResumenLote {
   }>;
 }
 
-function inferirFuente(url: string | null | undefined): FuenteCaptacion {
+/**
+ * Deriva la fuente a partir de la URL. Se exporta porque las server actions
+ * necesitan EXACTAMENTE este criterio para calcular la clave de dedup: tener
+ * dos implementaciones era garantía de que un día dejaran de coincidir.
+ */
+export function inferirFuente(url: string | null | undefined): FuenteCaptacion {
   if (!url) return 'otro';
   if (esUrlMercadoLibre(url)) return 'mercadolibre';
   if (/facebook\.com|fb\.com|fb\.me/i.test(url)) return 'facebook';
@@ -81,6 +98,7 @@ export async function procesarAnuncios(
       resumen.fallidos++;
       resumen.detalle.push({
         titulo: a.titulo || '(sin título)',
+        url: a.url,
         resultado: 'error',
         prospecto_id: null,
         motivo: `Presupuesto mensual agotado (US$${presupuesto.gastadoUsd.toFixed(2)} de US$${presupuesto.limiteUsd?.toFixed(2)}). Ajusta el límite en Agentes.`,
@@ -104,6 +122,7 @@ export async function procesarAnuncios(
         resumen.fallidos++;
         resumen.detalle.push({
           titulo: a.titulo || '(sin título)',
+          url: a.url,
           resultado: 'error',
           prospecto_id: null,
           motivo: 'El anuncio llegó sin título ni descripción utilizables; no se califica para no ensuciar el CRM.',
@@ -125,7 +144,13 @@ export async function procesarAnuncios(
       // Clave de dedup: el id del anuncio, NO la URL (ML mete un fragmento de
       // sesión distinto en cada correo de alerta).
       listing.fuente_id = listing.fuente_id ?? idCanonico(a.url, fuente);
-      listing.titulo = listing.titulo || a.titulo;
+      // Los correos de ML traen "Apartamento en Arriendo" como texto de enlace
+      // en TODOS los anuncios; el slug de la URL sí trae el título real.
+      listing.titulo =
+        listing.titulo ||
+        (fuente === 'mercadolibre' && esTituloGenerico(a.titulo)
+          ? tituloDesdeUrlMercadoLibre(a.url) ?? a.titulo
+          : a.titulo);
       listing.precio = listing.precio ?? a.precio ?? null;
       listing.ciudad = listing.ciudad ?? a.ciudad ?? null;
       listing.barrio = listing.barrio ?? a.barrio ?? null;
@@ -140,6 +165,15 @@ export async function procesarAnuncios(
       // agencia): se conserva completa, no se resume.
       if (a.descripcion) listing.descripcion = `${listing.descripcion}\n${a.descripcion}`.trim();
 
+      // Último recurso para el contacto: el propio texto del anuncio. En
+      // Facebook no hay forma de pedir el teléfono, pero algunos dueños lo
+      // escriben en el título o pegan su wa.me. Va DESPUÉS de armar la
+      // descripción para mirar también lo que aportó el enriquecimiento, y solo
+      // si no vino ya un teléfono de la fuente.
+      if (!listing.contacto_telefono) {
+        listing.contacto_telefono = celularDelAnuncio(listing.titulo, listing.descripcion);
+      }
+
       const salida = await correrCaptacion({ supabase, inmobiliariaId, listing });
       await registrarUso(supabase, inmobiliariaId, salida.prospecto_id, salida.uso);
 
@@ -149,6 +183,7 @@ export async function procesarAnuncios(
 
       resumen.detalle.push({
         titulo: a.titulo,
+        url: a.url,
         resultado: salida.resultado,
         prospecto_id: salida.prospecto_id,
         motivo: salida.motivo,
@@ -161,6 +196,7 @@ export async function procesarAnuncios(
       console.error('[Captaciones] Falló un anuncio:', a.titulo, e);
       resumen.detalle.push({
         titulo: a.titulo,
+        url: a.url,
         resultado: 'error',
         prospecto_id: null,
         motivo: e instanceof Error ? e.message : String(e),

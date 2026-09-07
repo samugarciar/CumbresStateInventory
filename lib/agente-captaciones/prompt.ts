@@ -7,7 +7,7 @@
 // sería peor que arrancar con un default razonable.
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { ZONAS_OBJETIVO, TIPO_OBJETIVO } from './config';
+import { TIPO_OBJETIVO, ZONAS_DETALLE, ZONAS_EXCLUIDAS } from './config';
 
 export const PROMPT_CALIFICAR = `Analizas anuncios de inmuebles en Colombia (Medellín y alrededores) para una inmobiliaria cuyo negocio PRINCIPAL es el ARRIENDO: administrar inmuebles que los propietarios ponen a arrendar. También hace ventas, pero es lo secundario.
 
@@ -32,13 +32,17 @@ Tu tarea es clasificar el anuncio:
 
 2. **tipo_inmueble**: apartamento, casa, lote, local, bodega, oficina u otro (null si no se puede inferir).
 3. **tipo_transaccion**: arriendo o venta (null si no se puede inferir). Ojo con el precio: en Medellín un canon mensual va de cientos de miles a unos pocos millones de pesos, mientras que una venta va en cientos de millones. Un valor bajo casi siempre indica ARRIENDO aunque el texto no lo diga.
-4. **en_zona_objetivo**: ¿está en la zona objetivo (${ZONAS_OBJETIVO.join(', ')}, área de Medellín)? Considera barrios y sectores que pertenezcan a esas zonas.
+4. **en_zona_objetivo**: la zona objetivo son EXACTAMENTE ${ZONAS_DETALLE.length} y ninguna más:
+${ZONAS_DETALLE.map((z) => `   - el/la **${z.nombre}** (${z.barrios.join(', ')}…);`).join('\n')}
+
+   **Estar en Medellín o en el Valle de Aburrá NO es estar en zona.** Quedan FUERA, entre otros: ${ZONAS_EXCLUIDAS.join(', ')} y cualquier otro sector o municipio no listado arriba.
+   Si el anuncio no dice dónde está, marca false y dilo en motivos: es "sin ubicación", que no es lo mismo que "fuera de zona" (ver punto 6).
 5. **score** (0 a 1): qué tan buen prospecto de captación es, combinando: es particular + es ${TIPO_OBJETIVO} + está en zona + tiene datos de contacto, y sobre todo el tipo de operación:
    - **ARRIENDO es el objetivo principal** → puede llegar a score alto (0.85–1.0).
    - **VENTA sirve pero vale menos** → tope alrededor de 0.6, aunque todo lo demás sea perfecto.
 6. **decision**:
-   - "descartar" si NO es el tipo de inmueble objetivo o está claramente fuera de zona.
-   - "revisar" si encaja pero hay dudas (puede ser agencia, faltan datos clave).
+   - "descartar" si NO es el tipo de inmueble objetivo, o si la ubicación es CONOCIDA y está fuera de la zona del punto 4.
+   - "revisar" si encaja pero hay dudas (puede ser agencia, faltan datos clave) y también cuando NO se sabe dónde está: sin ubicación no se descarta, se manda a revisar.
    - "calificado" si es un particular ofreciendo el tipo de inmueble objetivo en la zona (en arriendo o en venta).
 7. **motivos**: una frase breve en español explicando la decisión.
 

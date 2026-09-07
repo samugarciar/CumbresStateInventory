@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Handshake, Plus, Loader2, Check, X, MessageCircle, Phone, MapPin, Link2,
-  UserCheck, AlertTriangle, Clock, ExternalLink, Send, Ban,
+  UserCheck, AlertTriangle, Clock, ExternalLink, Send, Ban, ListChecks,
 } from 'lucide-react';
 import {
   agregarProspecto, aprobarContacto, rechazarProspecto,
@@ -49,6 +50,8 @@ interface Props {
   hoy: string;
   /** Mensaje si la consulta falló: sin esto, un error se ve igual que "no hay prospectos". */
   errorCarga?: string | null;
+  /** Enlaces de Facebook esperando que se abran y capturen ("modo cola"). */
+  colaPendientes?: number;
 }
 
 /**
@@ -60,6 +63,21 @@ function linkWhatsApp(telefono: string, mensaje: string): string {
   const d = telefono.replace(/\D/g, '');
   const numero = d.length === 10 && d.startsWith('3') ? `57${d}` : d;
   return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
+}
+
+/**
+ * Valida que lo tecleado sea un CELULAR colombiano (10 dígitos que empiezan
+ * por 3, con o sin el +57 delante). Devuelve los 10 dígitos, o null.
+ *
+ * Por qué es estricto: el número se usa para abrir un chat de WhatsApp con un
+ * mensaje ya escrito. Un fijo no tiene WhatsApp y un número mal tecleado abre
+ * la conversación con OTRA persona — que recibiría nuestro mensaje de primer
+ * contacto. Es preferible rechazarlo y que el operador lo corrija.
+ */
+function celularValido(entrada: string): string | null {
+  let d = entrada.replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('57')) d = d.slice(2);
+  return d.length === 10 && d.startsWith('3') ? d : null;
 }
 
 function precioCorto(v: number | null): string {
@@ -76,13 +94,17 @@ const ETIQUETA_ESTADO: Record<string, string> = {
   descartado: 'Descartado',
 };
 
-export default function CaptacionesClient({ porAprobar, enSeguimiento, captados, descartados, hoy, errorCarga }: Props) {
+export default function CaptacionesClient({ porAprobar, enSeguimiento, captados, descartados, hoy, errorCarga, colaPendientes = 0 }: Props) {
   const router = useRouter();
   const [url, setUrl] = useState('');
   const [texto, setTexto] = useState('');
   const [telefono, setTelefono] = useState('');
   const [agregando, setAgregando] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  // Error de una acción concreta de una tarjeta. Va aparte del `aviso` general
+  // (que es del formulario de arriba) para que el mensaje salga JUNTO al
+  // prospecto al que se refiere y no descolgado al principio de la página.
+  const [errorTarjeta, setErrorTarjeta] = useState<{ id: string; texto: string } | null>(null);
   const [mensajes, setMensajes] = useState<Record<string, string>>({});
   const [procesando, setProcesando] = useState<string | null>(null);
   const [telefonos, setTelefonos] = useState<Record<string, string>>({});
@@ -117,14 +139,54 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
     router.refresh();
   };
 
+  /**
+   * Guarda el teléfono Y abre WhatsApp de una vez.
+   *
+   * Antes eran dos pasos —Guardar, y luego buscar el botón de WhatsApp— y es el
+   * paso que se hace en TODOS los prospectos de Mercado Libre, donde el número
+   * solo se consigue a mano tras el reCAPTCHA.
+   *
+   * OJO con el orden: window.open tiene que dispararse DENTRO del gesto del
+   * usuario. Si se espera al await del guardado, el navegador ya no lo
+   * considera parte del clic y el bloqueador de ventanas emergentes lo corta.
+   * Por eso el chat se abre primero y el guardado va después: si el guardado
+   * fallara, el operador igual puede escribir, que es lo que quería hacer.
+   */
   const anadirTelefono = async (p: Prospecto) => {
     const tel = (telefonos[p.id] ?? '').trim();
     if (!tel) return;
+
+    const numero = celularValido(tel);
+    if (!numero) {
+      setErrorTarjeta({ id: p.id, texto: 'Debe ser un celular colombiano de 10 dígitos que empiece por 3.' });
+      return;
+    }
+    setErrorTarjeta(null);
+
+    // window.open TIENE que ir aquí, antes del primer await: pasado el await el
+    // navegador ya no lo considera parte del clic y el bloqueador de emergentes
+    // lo corta.
+    window.open(linkWhatsApp(numero, mensajeDe(p).trim()), '_blank', 'noopener,noreferrer');
+
     setProcesando(p.id);
-    const r = await guardarTelefono({ prospecto_id: p.id, telefono: tel });
-    setProcesando(null);
-    if (!r.success) { alert(r.error); return; }
-    router.refresh();
+    try {
+      const r = await guardarTelefono({ prospecto_id: p.id, telefono: numero });
+      if (!r.success) {
+        setErrorTarjeta({ id: p.id, texto: `WhatsApp se abrió, pero el teléfono NO quedó guardado: ${r.error}` });
+        return;
+      }
+      router.refresh();
+    } catch {
+      // Sin este catch el rechazo (red caída, despliegue en curso) dejaba la
+      // tarjeta congelada con el spinner y sin ningún aviso, después de haber
+      // abierto WhatsApp: el operador escribía y el CRM no se enteraba.
+      setErrorTarjeta({
+        id: p.id,
+        texto: 'WhatsApp se abrió, pero no se pudo guardar el teléfono (falló la conexión). Vuelve a intentarlo.',
+      });
+    } finally {
+      setProcesando(null);
+    }
   };
 
   const rechazar = async (p: Prospecto) => {
@@ -173,6 +235,11 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
             Anuncios de dueños directos: el agente los califica y redacta el primer mensaje. Tú apruebas y envías.
           </p>
         </div>
+        {colaPendientes > 0 && (
+          <Link href="/captaciones/cola" className="btn btn-secondary" style={styles.btn}>
+            <ListChecks size={14} /> Cola de revisión ({colaPendientes})
+          </Link>
+        )}
       </div>
 
       {errorCarga && (
@@ -318,9 +385,14 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
                     onKeyDown={(e) => { if (e.key === 'Enter') anadirTelefono(p); }}
                     disabled={ocupado}
                   />
-                  <button className="btn btn-secondary" style={styles.btn} onClick={() => anadirTelefono(p)} disabled={ocupado}>
-                    <Phone size={13} /> Guardar
+                  <button className="btn btn-primary" style={styles.btn} onClick={() => anadirTelefono(p)} disabled={ocupado}>
+                    <Phone size={13} /> Guardar y abrir WhatsApp
                   </button>
+                  {errorTarjeta?.id === p.id && (
+                    <span style={styles.errorTarjeta}>
+                      <AlertTriangle size={12} /> {errorTarjeta.texto}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -508,6 +580,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px dashed rgba(245, 158, 11, 0.4)',
   },
   telefonoHint: { fontSize: '0.74rem', color: '#b45309', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
+  errorTarjeta: { display: 'flex', alignItems: 'center', gap: '0.35rem', width: '100%', marginTop: '0.35rem', fontSize: '0.78rem', color: '#ef4444', fontWeight: 600 },
   telefonoInput: { width: '150px', fontSize: '0.82rem', padding: '0.35rem 0.55rem' },
   mensajeArea: { width: '100%', fontSize: '0.83rem', padding: '0.55rem 0.7rem', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 },
   acciones: { display: 'flex', gap: '0.45rem', flexWrap: 'wrap' },

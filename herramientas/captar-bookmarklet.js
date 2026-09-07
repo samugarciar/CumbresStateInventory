@@ -25,7 +25,12 @@
  * igual deduplica, pero eso gastaba LLM al pedo y ensuciaba la vista previa.
  */
 (function () {
-  var APP = 'https://cumbres-state-inventory.vercel.app/captaciones/importar';
+  var BASE = 'https://cumbres-state-inventory.vercel.app/captaciones';
+  // Dos destinos, porque no todo lo capturado vale lo mismo:
+  //   importar → captura completa (con descripción): se califica ya.
+  //   cola     → solo el link: se califica cuando se abra la publicación.
+  var APP_IMPORTAR = BASE + '/importar';
+  var APP_COLA = BASE + '/cola';
   var POR_TANDA = 25;      // tope por envío (el servidor también corta en 25)
   var PASADAS_SCROLL = 10; // cuántas veces intenta cargar más resultados
   var CLAVE = 'captar:vistos:' + location.hostname;
@@ -85,6 +90,23 @@
       // marcador suelto "Ubicación": en Marketplace también titula el filtro
       // de la barra lateral (la búsqueda del usuario), y guardaría la ciudad
       // equivocada en el prospecto.
+      // Perfil del vendedor: es el ÚNICO camino real de contacto en Facebook
+      // (no hay teléfono nunca). Antes aquí se guardaba la URL del propio
+      // anuncio, así que el botón "Abrir perfil" de la bandeja no llevaba al
+      // vendedor: reabría el anuncio.
+      var perfil = null;
+      var enlaces = document.querySelectorAll('a[href*="/marketplace/profile/"], a[href*="/profile.php?id="]');
+      for (var pi = 0; pi < enlaces.length && !perfil; pi++) {
+        var h = enlaces[pi].href;
+        if (!h || h.indexOf('/marketplace/item/') >= 0) continue;
+        // OJO: en /profile.php la identidad va en ?id=, así que cortar por "?"
+        // deja un enlace a ninguna parte. Se conserva SOLO ese parámetro.
+        var mid = h.match(/[?&]id=(\d+)/);
+        perfil = mid
+          ? h.split('?')[0] + '?id=' + mid[1]
+          : h.split('?')[0].replace(/\/$/, '');
+      }
+
       var ciudad = null, marcas = ['Ubicación de la vivienda', 'Ubicación del alquiler', 'Ubicación de la propiedad'];
       for (var mi = 0; mi < marcas.length && !ciudad; mi++) {
         ciudad = bloque(t, marcas[mi], ['La ubicación es aproximada', 'Descripción', 'Publicidad']);
@@ -92,7 +114,8 @@
       if (ciudad && ciudad.length > 60) ciudad = null;
       return [{
         url: location.origin + location.pathname,
-        contacto_perfil: location.origin + location.pathname,
+        // null si no se encontró: mejor sin botón que con un botón que miente.
+        contacto_perfil: perfil,
         titulo: titulo,
         precio: num((t.match(/\$\s?[\d.,]{4,}/) || [])[0]),
         ciudad: ciudad || null,
@@ -198,12 +221,12 @@
   }
 
   // ---------- enviar ----------
-  function enviar(anuncios, ids) {
+  function enviar(anuncios, ids, destino) {
     var payload = encodeURIComponent(JSON.stringify({ anuncios: anuncios }));
     if (payload.length > 1500000) { alert('Demasiados datos de una vez. Reduce la tanda.'); return; }
     // window.open debe dispararse desde el clic del usuario (si no, el bloqueador
     // de ventanas emergentes lo corta), por eso esto va dentro del botón.
-    var w = window.open(APP + '#' + payload, '_blank');
+    var w = window.open((destino || APP_IMPORTAR) + '#' + payload, '_blank');
     if (!w) { alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio.'); return; }
     recordar(ids);
     cerrar();
@@ -219,7 +242,7 @@
       pinta('<b>1 anuncio listo</b><div style="opacity:.75;margin:6px 0 10px">' +
         (uno[0].titulo || '').slice(0, 70) + '</div>' +
         '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">Enviar a la bandeja</button>');
-      panel.querySelector('#cap-go').onclick = function () { enviar(uno, []); };
+      panel.querySelector('#cap-go').onclick = function () { enviar(uno, [], APP_IMPORTAR); };
       return;
     }
 
@@ -247,18 +270,37 @@
       return;
     }
 
+    // A DÓNDE VA UNA LISTA DE RESULTADOS
+    // Mercado Libre → directo a la bandeja: procesarAnuncios completa la
+    //   descripción por API (/items/{id}/description), así que hay material
+    //   real para calificar sin abrir nada.
+    // Facebook → a la cola: Meta no expone ninguna API equivalente, y sin
+    //   descripción el calificador no puede distinguir dueño de agencia. Se
+    //   comprobó con datos reales: 33 filas capturadas así salieron TODAS con
+    //   el mismo score 0.85 y probabilidad 0.5, y ninguna era accionable.
+    var aLaCola = esFB;
+    var destino = aLaCola ? APP_COLA : APP_IMPORTAR;
+
     var tanda = nuevas.slice(0, POR_TANDA);
     var restan = nuevas.length - tanda.length;
     var ids = tanda.map(function (x) { return x._id; });
-    var limpias = tanda.map(function (x) { var c = {}; for (var k in x) if (k !== '_id') c[k] = x[k]; return c; });
+    var limpias = tanda.map(function (x) {
+      if (aLaCola) {
+        // Solo lo justo para reconocerlo en la lista de trabajo. El resto de
+        // datos se toma al abrir la publicación, que es cuando son fiables.
+        return { url: x.url, titulo: x.titulo, precio: x.precio };
+      }
+      var c = {}; for (var k in x) if (k !== '_id') c[k] = x[k]; return c;
+    });
 
     pinta('<b>' + tanda.length + ' anuncios nuevos</b>' +
       '<div style="opacity:.75;margin:6px 0 2px">' + todas.length + ' en la búsqueda · ' +
       repetidas + ' ya enviados antes</div>' +
       (restan ? '<div style="opacity:.75;margin-bottom:8px">Quedan ' + restan + ' para el siguiente clic</div>' : '<div style="margin-bottom:8px"></div>') +
-      '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">Enviar ' + tanda.length + ' a la bandeja</button>' +
+      '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">' +
+      (aLaCola ? 'Mandar ' + tanda.length + ' a la cola' : 'Enviar ' + tanda.length + ' a la bandeja') + '</button>' +
       '<button id="cap-x" style="width:100%;margin-top:6px;padding:6px;border:0;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer">Cancelar</button>');
-    panel.querySelector('#cap-go').onclick = function () { enviar(limpias, ids); };
+    panel.querySelector('#cap-go').onclick = function () { enviar(limpias, ids, destino); };
     panel.querySelector('#cap-x').onclick = cerrar;
   })();
 })();

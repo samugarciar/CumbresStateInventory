@@ -71,6 +71,47 @@ export function idCanonico(url: string | null | undefined, fuente: string): stri
   }
 }
 
+/**
+ * Reconstruye el título del anuncio a partir del slug de la URL de Mercado
+ * Libre.
+ *
+ * POR QUÉ HACE FALTA: en los correos de alerta ML pone el MISMO texto de enlace
+ * genérico ("Apartamento en Arriendo") en todos los anuncios, así que la bandeja
+ * quedaba con cuatro tarjetas indistinguibles. Se le pidió al extractor que
+ * compusiera un título con zona/área/habitaciones y no lo cumplió de forma
+ * fiable: es una instrucción que el modelo puede ignorar.
+ *
+ * El slug, en cambio, ES el título que el vendedor escribió
+ * (`MCO-2092704091-arriendo-apartamento-urb-agua-clara-bello-_JM`), viene en la
+ * misma URL que ya tenemos y no cuesta ni una llamada. Determinista y gratis
+ * gana a pedírselo al modelo.
+ */
+export function tituloDesdeUrlMercadoLibre(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let ruta = url;
+  try {
+    ruta = new URL(url).pathname;
+  } catch {
+    /* si no es una URL absoluta se trabaja sobre el texto tal cual */
+  }
+  const m = ruta.match(/MCO-?\d{6,}-(.+?)(?:-_JM|_JM|\/|$)/i);
+  if (!m) return null;
+  const texto = m[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+  // Un slug de una o dos palabras no aporta más que el título genérico.
+  if (texto.length < 12 || texto.split(' ').length < 3) return null;
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+/**
+ * ¿El título es el relleno genérico del portal ("Apartamento en Arriendo",
+ * "Casa en Venta") en vez del que escribió el vendedor?
+ */
+export function esTituloGenerico(titulo: string | null | undefined): boolean {
+  if (!titulo) return true;
+  const t = titulo.toLowerCase().replace(/\s+/g, ' ').trim();
+  return /^(apartamento|apartaestudio|casa|local|oficina|bodega|lote|inmueble|departamento)s?( en| para)? (arriendo|venta|alquiler|arrendar|vender|rentar)$/.test(t);
+}
+
 async function get(url: string, token: string): Promise<any> {
   const r = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, accept: 'application/json' },

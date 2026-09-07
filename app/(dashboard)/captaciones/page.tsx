@@ -36,6 +36,7 @@ export default async function CaptacionesPage() {
     { data: enSeguimiento, error: errSeguimiento },
     { count: captados },
     { count: descartados },
+    { count: colaPendientes, error: errCola },
   ] = await Promise.all([
       supabase
         .from('captacion_prospectos')
@@ -58,7 +59,19 @@ export default async function CaptacionesPage() {
         .from('captacion_prospectos')
         .select('id', { count: 'exact', head: true })
         .eq('estado', 'descartado'),
+      // Cola del "modo cola": enlaces de Facebook pendientes de abrir. Se
+      // cuenta aquí para que el acceso a la cola sea visible desde la bandeja;
+      // si nadie la ve, nadie la usa.
+      supabase
+        .from('captacion_cola')
+        .select('id', { count: 'exact', head: true })
+        .eq('estado', 'pendiente'),
     ]);
+
+  // Si el conteo de la cola falla, el acceso a /captaciones/cola desaparecería
+  // de la bandeja sin explicación. No rompe la página, pero tiene que quedar
+  // rastro para poder diagnosticarlo.
+  if (errCola) console.error('[Captaciones] Error contando la cola:', errCola.message);
 
   // Un error de consulta NO puede parecerse a "no hay prospectos": se propaga a
   // la UI. (Pasó de verdad: faltaba la columna fecha_contacto y la bandeja se
@@ -73,6 +86,7 @@ export default async function CaptacionesPage() {
       porAprobar={porAprobar ?? []}
       enSeguimiento={enSeguimiento ?? []}
       captados={captados ?? 0}
+      colaPendientes={colaPendientes ?? 0}
       descartados={descartados ?? 0}
       hoy={hoyBogota()}
       errorCarga={errorCarga}

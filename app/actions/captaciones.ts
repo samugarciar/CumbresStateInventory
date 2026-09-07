@@ -4,8 +4,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { revalidatePath } from 'next/cache';
 
-import { procesarAnuncios, type AnuncioEntrante } from '@/lib/agente-captaciones/procesar';
+import { procesarAnuncios, inferirFuente, type AnuncioEntrante } from '@/lib/agente-captaciones/procesar';
 import { DIAS_PRIMER_SEGUIMIENTO } from '@/lib/agente-captaciones/config';
+import { idCanonico } from '@/lib/agente-captaciones/sources/mercadolibre';
 
 // Estados del pipeline a los que se puede mover un prospecto desde la bandeja.
 export type EstadoProspecto =
@@ -166,8 +167,45 @@ export async function importarAnuncios(anuncios: AnuncioEntrante[]) {
   }
 
   try {
-    const resumen = await procesarAnuncios(supabase, inmobiliariaId, anuncios.slice(0, 25));
+    const lote = anuncios.slice(0, 25);
+    const resumen = await procesarAnuncios(supabase, inmobiliariaId, lote);
+
+    // Cierra el circuito del "modo cola": sale de los pendientes lo que SÍ se
+    // atendió —creado, duplicado o descartado son los tres desenlaces válidos:
+    // en los tres el anuncio ya se juzgó y no hay que volver a abrirlo—.
+    //
+    // Lo que NO puede salir de la cola es lo que falló ('error'). Si el techo de
+    // gasto está agotado, procesarAnuncios devuelve los 25 como 'error' sin
+    // llamar al modelo: marcarlos igual habría vaciado la cola entera sin haber
+    // mirado un solo anuncio, y sin forma de recuperarlos.
+    //
+    // La correlación va por URL y no por posición: el lote se procesa en tandas
+    // concurrentes, así que el orden de `detalle` no sigue al de la entrada.
+    const atendidos = resumen.detalle.filter((d) => d.resultado !== 'error' && d.url);
+    if (atendidos.length) {
+      const ahora = new Date().toISOString();
+      await Promise.all(
+        atendidos.map((d) => {
+          const fuenteId = idCanonico(d.url, inferirFuente(d.url));
+          if (!fuenteId) return null;
+          return supabase
+            .from('captacion_cola')
+            .update({
+              estado: 'capturado',
+              // Enlaza la fila de la cola con el prospecto que produjo. Sin
+              // esto la columna quedaba declarada y nunca escrita.
+              prospecto_id: d.prospecto_id,
+              updated_at: ahora,
+            })
+            .eq('inmobiliaria_id', inmobiliariaId)
+            .eq('estado', 'pendiente')
+            .eq('fuente_id', fuenteId);
+        })
+      );
+    }
+
     revalidatePath('/captaciones');
+    revalidatePath('/captaciones/cola');
     return { success: true as const, ...resumen, recortados: Math.max(0, anuncios.length - 25) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -312,4 +350,143 @@ export async function registrarSeguimiento(datos: { prospecto_id: string; dias?:
   }
   revalidatePath('/captaciones');
   return { success: true as const, message: 'Seguimiento registrado.' };
+}
+
+// =====================================================================
+// Cola de revisión ("modo cola")
+//
+// Separa DESCUBRIR de CALIFICAR. Una lista de resultados de Facebook no trae
+// descripción, y sin ella el calificador no puede distinguir un dueño de una
+// agencia: se comprobó que 33 anuncios capturados así salieron todos con el
+// mismo score. Ahora la lista solo deja el link aquí —gratis, sin LLM— y el
+// prospecto nace cuando el asesor abre la publicación y la captura completa.
+// =====================================================================
+
+export interface ItemCola {
+  id: string;
+  url: string;
+  titulo: string | null;
+  precio: number | null;
+  fuente: string;
+  created_at: string;
+}
+
+/**
+ * Mete anuncios en la cola de revisión. No llama al modelo ni crea prospectos.
+ *
+ * Salta los que ya están en la cola y los que YA son prospectos (para no
+ * mandar a abrir a mano algo que ya se capturó o que ya se descartó).
+ */
+export async function encolarAnuncios(anuncios: Array<{ url: string; titulo?: string | null; precio?: number | null }>) {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden usar la cola.' };
+  if (!Array.isArray(anuncios) || anuncios.length === 0) {
+    return { success: false as const, error: 'No llegó ningún anuncio.' };
+  }
+
+  const inmobiliariaId = user.profile.inmobiliaria_id;
+  const supabase = createAdminClient();
+
+  const filas = anuncios
+    .filter((a) => a?.url)
+    .map((a) => {
+      const fuente = inferirFuente(a.url);
+      return {
+        inmobiliaria_id: inmobiliariaId,
+        fuente,
+        fuente_id: idCanonico(a.url, fuente),
+        url: a.url,
+        titulo: a.titulo?.trim() || null,
+        precio: typeof a.precio === 'number' ? a.precio : null,
+      };
+    })
+    .filter((f) => f.fuente_id);
+
+  if (!filas.length) return { success: false as const, error: 'Ninguno de los enlaces era reconocible.' };
+
+  // Ya capturados o ya descartados: no tiene sentido pedir que se abran otra vez.
+  const ids = filas.map((f) => f.fuente_id as string);
+  const { data: yaProspectos, error: errConocidos } = await supabase
+    .from('captacion_prospectos')
+    .select('fuente_id')
+    .eq('inmobiliaria_id', inmobiliariaId)
+    .in('fuente_id', ids);
+  // Si esta consulta falla no se puede seguir: `conocidos` quedaría vacío y se
+  // encolarían anuncios que YA son prospectos, mandando al operador a abrir a
+  // mano cosas que ya se capturaron o se descartaron.
+  if (errConocidos) {
+    console.error('[Captaciones] Error comprobando prospectos existentes:', errConocidos.message);
+    return { success: false as const, error: 'No se pudo comprobar qué anuncios ya estaban en el CRM.' };
+  }
+  const conocidos = new Set((yaProspectos ?? []).map((p) => p.fuente_id));
+  const nuevas = filas.filter((f) => !conocidos.has(f.fuente_id));
+
+  if (!nuevas.length) {
+    return {
+      success: true as const,
+      encolados: 0,
+      repetidos: filas.length,
+      message: 'Todos esos anuncios ya estaban en el CRM.',
+    };
+  }
+
+  // onConflict sobre la clave de dedup: reencolar la misma búsqueda no duplica.
+  const { data, error } = await supabase
+    .from('captacion_cola')
+    .upsert(nuevas, { onConflict: 'inmobiliaria_id,fuente,fuente_id', ignoreDuplicates: true })
+    .select('id');
+
+  if (error) {
+    console.error('[Captaciones] Error encolando:', error.message);
+    return { success: false as const, error: 'No se pudo guardar la cola.' };
+  }
+
+  revalidatePath('/captaciones/cola');
+  const encolados = data?.length ?? 0;
+  return {
+    success: true as const,
+    encolados,
+    repetidos: filas.length - encolados,
+  };
+}
+
+/** Saca un anuncio de la cola sin capturarlo (no interesa). */
+export async function omitirDeCola(datos: { cola_id: string }) {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden usar la cola.' };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('captacion_cola')
+    .update({ estado: 'omitido', updated_at: new Date().toISOString() })
+    .eq('id', datos.cola_id)
+    .eq('inmobiliaria_id', user.profile.inmobiliaria_id)
+    // Solo se omite lo que sigue pendiente: si entretanto se capturó (otra
+    // pestaña, o el botón pulsado sobre una lista ya vieja), marcarlo 'omitido'
+    // borraría el vínculo con el prospecto que ya se creó.
+    .eq('estado', 'pendiente');
+
+  if (error) {
+    console.error('[Captaciones] Error omitiendo de la cola:', error.message);
+    return { success: false as const, error: 'No se pudo omitir.' };
+  }
+  revalidatePath('/captaciones/cola');
+  return { success: true as const };
+}
+
+/** Vacía la cola de pendientes (empezar de nuevo). */
+export async function vaciarCola() {
+  const user = await requireAdmin();
+  if (!user) return { success: false as const, error: 'Solo los administradores pueden usar la cola.' };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('captacion_cola')
+    .update({ estado: 'omitido', updated_at: new Date().toISOString() })
+    .eq('inmobiliaria_id', user.profile.inmobiliaria_id)
+    .eq('estado', 'pendiente');
+
+  if (error) return { success: false as const, error: 'No se pudo vaciar la cola.' };
+  revalidatePath('/captaciones/cola');
+  return { success: true as const };
 }

@@ -18,7 +18,7 @@ import { SystemMessage, HumanMessage, type BaseMessage, type AIMessage } from '@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { MODELO_CALIFICAR, MODELO_REDACTAR, BASE_TRATAMIENTO, UMBRAL_DUENO_DIRECTO } from './config';
+import { MODELO_CALIFICAR, MODELO_REDACTAR, BASE_TRATAMIENTO, UMBRAL_DUENO_DIRECTO, TIPO_OBJETIVO } from './config';
 import { PROMPT_CALIFICAR, cargarPromptRedaccion, fichaInmueble, bloqueIdentidad } from './prompt';
 import type { Calificacion, ListingCrudo, SalidaCaptacion, UsoRegistrado } from './tipos';
 
@@ -206,12 +206,18 @@ export async function correrCaptacion(params: {
     // Se descarta por criterio (zona/tipo) o por no alcanzar el umbral de
     // dueño directo. Igual se guarda la fila, para trazabilidad y para que el
     // dedup no lo vuelva a procesar.
-    const noPasaUmbral = c?.decision !== 'descartar' && !pasaFiltroDueno(c);
-    const descartado = c?.decision === 'descartar' || noPasaUmbral;
+    //
+    // OJO: estas tres condiciones tienen que ser LAS MISMAS que usa
+    // `trasCalificar` para rutear. Si divergen, un anuncio puede llegar aquí
+    // por la rama de descarte y guardarse igualmente como 'por_aprobar'.
+    const tipoMalo = tipoIncompatible(c);
+    const noPasaUmbral = c?.decision !== 'descartar' && !tipoMalo && !pasaFiltroDueno(c);
+    const descartado = c?.decision === 'descartar' || tipoMalo || noPasaUmbral;
     const pct = c?.probabilidad_dueno_directo != null
       ? `${Math.round(c.probabilidad_dueno_directo * 100)}%`
       : 'sin dato';
     const motivoUmbral = `Probabilidad de dueño directo ${pct}, por debajo del mínimo de ${Math.round(UMBRAL_DUENO_DIRECTO * 100)}%. ${c?.motivos ?? ''}`.trim();
+    const motivoTipo = `No es ${TIPO_OBJETIVO}: la fuente lo clasifica como ${c?.tipo_inmueble}. ${c?.motivos ?? ''}`.trim();
 
     const fila = {
       inmobiliaria_id: inmobiliariaId,
@@ -233,7 +239,7 @@ export async function correrCaptacion(params: {
       // 0 = seguro agencia. Distinto del score, que mide la calidad global.
       confianza_particular: c?.probabilidad_dueno_directo ?? null,
       score: c?.score ?? null,
-      motivos: noPasaUmbral ? motivoUmbral : (c?.motivos ?? null),
+      motivos: tipoMalo ? motivoTipo : noPasaUmbral ? motivoUmbral : (c?.motivos ?? null),
       contacto_nombre: l.contacto_nombre,
       contacto_telefono: l.contacto_telefono,
       contacto_perfil: l.contacto_perfil,
@@ -278,8 +284,28 @@ export async function correrCaptacion(params: {
     return p >= UMBRAL_DUENO_DIRECTO;
   }
 
+  /**
+   * El tipo de inmueble es un criterio DURO y se comprueba en código, no
+   * confiando en que el modelo lo aplique.
+   *
+   * Por qué: el prompt ya pedía descartar lo que no fuera el tipo objetivo, y
+   * aun así una casa en Bello salía como "revisar" —el modelo priorizó la duda
+   * sobre el propietario y se le olvidó la regla del tipo—. Una inmobiliaria
+   * que capta apartamentos no quiere casas en la bandeja.
+   *
+   * Solo descarta cuando el tipo es CONOCIDO y distinto del objetivo: null y
+   * 'otro' significan "no se pudo clasificar", y ahí manda el criterio del
+   * modelo (igual que con la ubicación desconocida).
+   */
+  function tipoIncompatible(c: Calificacion | null): boolean {
+    const t = c?.tipo_inmueble;
+    if (!t || t === 'otro') return false;
+    return t !== TIPO_OBJETIVO;
+  }
+
   function trasCalificar(estado: Estado): 'descartar' | 'seguir' {
     if (estado.calificacion?.decision === 'descartar') return 'descartar';
+    if (tipoIncompatible(estado.calificacion)) return 'descartar';
     return pasaFiltroDueno(estado.calificacion) ? 'seguir' : 'descartar';
   }
   function trasDeduplicar(estado: Estado): 'duplicado' | 'nuevo' {
