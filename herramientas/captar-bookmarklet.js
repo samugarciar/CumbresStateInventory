@@ -34,6 +34,11 @@
   var POR_TANDA = 25;      // tope por envío (el servidor también corta en 25)
   var PASADAS_SCROLL = 10; // cuántas veces intenta cargar más resultados
   var CLAVE = 'captar:vistos:' + location.hostname;
+  // Versión visible en el panel. Sirve para saber de un vistazo si el marcador
+  // instalado en el navegador es el actual: ya hubo una confusión en la que no
+  // se distinguía "el bookmarklet falla" de "tengo instalada una versión vieja".
+  // Súbela al cambiar el comportamiento del recolector.
+  var VERSION = 'v4';
 
   // ZONA OBJETIVO, POR LISTA DE PERMITIDOS.
   // Facebook no filtra por el texto que buscas: filtra por la ubicación
@@ -72,6 +77,35 @@
     return true;
   }
 
+  function limpio(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  function num(s) { var m = String(s == null ? '' : s).replace(/[^\d]/g, ''); return m ? Number(m) : null; }
+  function esperar(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // Texto entre dos marcas del innerText (así se leen "Descripción" y
+  // "Detalles del vendedor" sin depender de clases de CSS ofuscadas).
+  function bloque(txt, desde, hasta) {
+    var i = txt.indexOf(desde); if (i < 0) return null;
+    var d = i + desde.length, j = -1;
+    for (var k = 0; k < hasta.length; k++) {
+      var p = txt.indexOf(hasta[k], d);
+      if (p > 0 && (j < 0 || p < j)) j = p;
+    }
+    return limpio(txt.slice(d, j > 0 ? j : d + 1500));
+  }
+
+  // ---------- memoria de lo ya enviado ----------
+  function vistos() {
+    try { return JSON.parse(localStorage.getItem(CLAVE) || '[]'); } catch (e) { return []; }
+  }
+  function recordar(ids) {
+    try {
+      var todos = vistos().concat(ids);
+      // Se conservan los últimos 3000 para no crecer sin límite.
+      localStorage.setItem(CLAVE, JSON.stringify(todos.slice(-3000)));
+    } catch (e) { /* modo incógnito o storage lleno: no es crítico */ }
+  }
+
+  // ---------- panel en pantalla ----------
   var panel = document.createElement('div');
   panel.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;width:320px;' +
     'background:#0f172a;color:#f8fafc;font:13px/1.5 system-ui,sans-serif;padding:14px 16px;' +
@@ -114,6 +148,8 @@
       if (x == null || x === false) continue;
       panel.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
     }
+    panel.appendChild(nodo('div', 'opacity:.35;font-size:11px;margin-top:8px;text-align:right',
+      'Captar ' + VERSION));
   }
   function cerrar() { if (panel.parentNode) panel.parentNode.removeChild(panel); }
 
@@ -293,7 +329,13 @@
   }
 
   // ---------- flujo ----------
+  //
+  // TODO va dentro de un try/catch que PINTA el error. Sin esto, cualquier
+  // excepción dejaba el panel creado pero vacío y el síntoma para quien lo usa
+  // era "no pasa nada" — imposible de diagnosticar sin abrir DevTools. Pasó de
+  // verdad con Trusted Types bloqueando innerHTML.
   (async function () {
+   try {
     var enPublicacion = (esFB && /\/marketplace\/item\//.test(location.pathname)) ||
                         (esML && /MCO-?\d{6,}/.test(url));
 
@@ -383,5 +425,12 @@
       boton(aLaCola ? 'Mandar ' + tanda.length + ' a la cola' : 'Enviar ' + tanda.length + ' a la bandeja',
         CSS_BOTON, function () { enviar(limpias, ids, destino); }),
       boton('Cancelar', CSS_BOTON_2, cerrar));
+   } catch (e) {
+    pinta(nodo('b', 'color:#fca5a5', 'Algo falló al recolectar'),
+      nodo('div', 'opacity:.8;margin-top:6px;word-break:break-word', String(e && e.message || e)),
+      nodo('div', 'opacity:.6;margin-top:8px;font-size:11px',
+        'Copia este mensaje y repórtalo. El panel ya no se queda en blanco.'),
+      boton('Cerrar', CSS_BOTON_2, cerrar));
+   }
   })();
 })();

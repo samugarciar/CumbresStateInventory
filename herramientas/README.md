@@ -89,20 +89,34 @@ vista previa salía llena de repetidos.
 
 ## Mantenimiento
 
-`captar-bookmarklet.js` es la fuente legible. Para regenerar la URL tras editarlo:
+`captar-bookmarklet.js` es la fuente legible. Tras editarlo, regenera la URL:
 
 ```bash
-node -e '
-const fs=require("fs");
-const src=fs.readFileSync("herramientas/captar-bookmarklet.js","utf8");
-const codigo=src.replace(/^\/\*\*[\s\S]*?\*\/\s*/,"").split("\n").filter(l=>!/^\s*\/\//.test(l)&&l.trim()!=="").join("\n");
-new Function(codigo);   // valida la sintaxis ANTES de generar
-fs.writeFileSync("herramientas/captar-bookmarklet.url.txt","javascript:"+encodeURIComponent(codigo));
-console.log("ok");
-'
+node herramientas/regenerar.js
 ```
+
+Eso minifica, valida la sintaxis y **ejecuta el resultado contra un DOM
+simulado** (una lista de resultados y una publicación), pulsando los botones que
+pinta. Si algo revienta, **no escribe el `.url.txt`**.
+
+> [!warning] Por qué la prueba de ejecución
+> Una edición borró seis funciones auxiliares del archivo (`limpio`, `num`,
+> `esperar`, `bloque`, `vistos`, `recordar`) y no lo notó nadie: `new Function()`
+> valida la **sintaxis**, no las **referencias**. El `.url.txt` se generaba sin
+> quejarse y el bookmarklet moría con `ReferenceError` al usarlo. Para quien lo
+> usa el síntoma es un panel negro en blanco, imposible de diagnosticar sin
+> DevTools.
+
+> [!caution] No pruebes el bookmarklet desde la extensión del navegador
+> Es un contexto **privilegiado**, exento del CSP de la página y de Trusted
+> Types. Valida en un entorno más permisivo que el real y da falsos positivos:
+> así se dio por bueno un bookmarklet que usaba `innerHTML` y que Facebook
+> bloqueaba. Pruébalo pulsando el marcador de verdad, o simula el bloqueo.
+
+Al cambiar el comportamiento del recolector, sube `VERSION` en el fuente: se
+muestra en la esquina del panel y sirve para saber si el marcador instalado en
+un navegador es el actual.
 
 > El minificado solo quita comentarios de **línea completa**. No intentes quitar
 > comentarios en medio de una línea: un `//` dentro de una expresión regular
-> (p. ej. `/\/marketplace\/item\//`) rompe el código — ya pasó una vez, por eso
-> el `new Function()` valida antes de escribir el archivo.
+> (p. ej. `/\/marketplace\/item\//`) rompe el código — ya pasó una vez.
