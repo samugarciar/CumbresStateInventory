@@ -35,36 +35,43 @@
   var PASADAS_SCROLL = 10; // cuántas veces intenta cargar más resultados
   var CLAVE = 'captar:vistos:' + location.hostname;
 
-  // ---------- utilidades ----------
-  function limpio(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
-  function num(s) { var m = String(s == null ? '' : s).replace(/[^\d]/g, ''); return m ? Number(m) : null; }
-  function esperar(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  // ZONA OBJETIVO, POR LISTA DE PERMITIDOS.
+  // Facebook no filtra por el texto que buscas: filtra por la ubicación
+  // configurada de Marketplace y su radio. Con el radio en 65 km desde Medellín,
+  // "arriendo en Bello" devuelve medio departamento.
+  //
+  // Se probó primero con una lista de EXCLUSIONES y no sirve: se coló San Pedro
+  // de los Milagros por no estar en ella, y Antioquia tiene 125 municipios —esa
+  // lista nunca va a estar completa—. Al revés sí es exhaustivo: la zona son
+  // Bello y la comuna de Robledo, que es Medellín. Cualquier otro municipio
+  // sobra.
+  //
+  // OJO: esto es un colador grueso por MUNICIPIO. Belén, Laureles o El Poblado
+  // aparecen rotulados "Medellín" y pasan; a esos los sigue atrapando el
+  // calificador al capturar la publicación, con el criterio real que vive en
+  // lib/agente-captaciones/config.ts.
+  var CIUDADES_OBJETIVO = ['bello', 'medellin', 'robledo', 'niquia'];
 
-  // Texto entre dos marcas del innerText (así se leen "Descripción" y
-  // "Detalles del vendedor" sin depender de clases de CSS ofuscadas).
-  function bloque(txt, desde, hasta) {
-    var i = txt.indexOf(desde); if (i < 0) return null;
-    var d = i + desde.length, j = -1;
-    for (var k = 0; k < hasta.length; k++) {
-      var p = txt.indexOf(hasta[k], d);
-      if (p > 0 && (j < 0 || p < j)) j = p;
+  // Sin tildes y en minúsculas, para que "Itagüí" y "itagui" sean lo mismo.
+  function sinTildes(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+
+  /**
+   * true solo si SABEMOS que está fuera. Sin ciudad se conserva: Facebook rotula
+   * mal a menudo (vimos anuncios que dicen "EN BELLO" en el título y aparecen
+   * como Medellín), y perder uno bueno es peor que omitir uno malo a mano.
+   */
+  function estaFueraDeZona(ciudad) {
+    var c = sinTildes(ciudad);
+    if (!c) return false;
+    for (var i = 0; i < CIUDADES_OBJETIVO.length; i++) {
+      if (c.indexOf(CIUDADES_OBJETIVO[i]) >= 0) return false;
     }
-    return limpio(txt.slice(d, j > 0 ? j : d + 1500));
+    return true;
   }
 
-  // ---------- memoria de lo ya enviado ----------
-  function vistos() {
-    try { return JSON.parse(localStorage.getItem(CLAVE) || '[]'); } catch (e) { return []; }
-  }
-  function recordar(ids) {
-    try {
-      var todos = vistos().concat(ids);
-      // Se conservan los últimos 3000 para no crecer sin límite.
-      localStorage.setItem(CLAVE, JSON.stringify(todos.slice(-3000)));
-    } catch (e) { /* modo incógnito o storage lleno: no es crítico */ }
-  }
-
-  // ---------- panel en pantalla ----------
   var panel = document.createElement('div');
   panel.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;width:320px;' +
     'background:#0f172a;color:#f8fafc;font:13px/1.5 system-ui,sans-serif;padding:14px 16px;' +
@@ -168,10 +175,25 @@
       // fiable que parsear el texto, donde el precio va ANTES del título
       // (al revés que en Mercado Libre) y romperia un split por '$'.
       if (esFB) {
-        var etiqueta = a.getAttribute('aria-label') || '';
-        var m = etiqueta.replace(/,\s*publicaci[óo]n\s*\d+\s*$/i, '')
-                        .match(/^(.*?),\s*(\$\s?[\d.,]+)\s*,\s*(.*)$/);
-        if (m) { titulo = limpio(m[1]); precio = num(m[2]); ciudad = limpio(m[3]) || null; }
+        // El aria-label tiene DOS formas:
+        //   "titulo, $ precio, ciudad, publicación N"
+        //   "titulo, $ precio, reducido de $ anterior, ciudad, publicación N"
+        // Por eso no se toma "lo que va después del precio" como ciudad: en los
+        // anuncios rebajados eso capturaba "reducido de $ 1.700.000, Bello".
+        // La ciudad es SIEMPRE el último trozo, así que se lee desde el final.
+        var etiqueta = limpio(a.getAttribute('aria-label') || '')
+          .replace(/,\s*publicaci[óo]n\s*\d+\s*$/i, '');
+        if (etiqueta) {
+          var trozos = etiqueta.split(',');
+          if (trozos.length >= 3) {
+            ciudad = limpio(trozos[trozos.length - 1]) || null;
+            var iPrecio = etiqueta.search(/,\s*\$\s?[\d.,]+/);
+            if (iPrecio > 0) {
+              titulo = limpio(etiqueta.slice(0, iPrecio));
+              precio = num((etiqueta.match(/\$\s?[\d.,]+/) || [])[0]);
+            }
+          }
+        }
       }
 
       var card = contenedor(a);
@@ -249,8 +271,13 @@
     // Lista de resultados
     var todas = await cargarMas();
     var ya = {}; vistos().forEach(function (id) { ya[id] = 1; });
-    var nuevas = todas.filter(function (x) { return !ya[x._id]; });
-    var repetidas = todas.length - nuevas.length;
+    var sinRepetir = todas.filter(function (x) { return !ya[x._id]; });
+    var repetidas = todas.length - sinRepetir.length;
+    // Se apartan los de municipios que no son zona. No se marcan como "vistos":
+    // no cuestan nada (ni modelo ni base de datos) y recordarlos crearía un
+    // estado invisible que estorbaría si algún día se amplía la zona.
+    var nuevas = sinRepetir.filter(function (x) { return !estaFueraDeZona(x.ciudad); });
+    var fuera = sinRepetir.length - nuevas.length;
 
     if (!todas.length) {
       pinta('<b>No encontré anuncios</b><div style="opacity:.75;margin-top:6px">Abre una búsqueda de Marketplace o Mercado Libre, o una publicación.</div>');
@@ -258,6 +285,14 @@
       return;
     }
 
+    if (!nuevas.length && fuera) {
+      pinta('<b>Nada dentro de la zona</b><div style="opacity:.75;margin:6px 0 10px">' + fuera +
+        ' anuncio(s) nuevos, todos de municipios fuera de Bello y Robledo.<br><br>' +
+        'Baja el radio de búsqueda de Marketplace: en los filtros de la izquierda, ' +
+        'pon la ubicación en <b>Bello</b> y el radio en <b>10 km</b>.</div>');
+      setTimeout(cerrar, 9000);
+      return;
+    }
     if (!nuevas.length) {
       pinta('<b>Nada nuevo por acá</b><div style="opacity:.75;margin:6px 0 10px">Los ' + todas.length +
         ' anuncios de esta búsqueda ya se enviaron antes.</div>' +
@@ -295,7 +330,8 @@
 
     pinta('<b>' + tanda.length + ' anuncios nuevos</b>' +
       '<div style="opacity:.75;margin:6px 0 2px">' + todas.length + ' en la búsqueda · ' +
-      repetidas + ' ya enviados antes</div>' +
+      repetidas + ' ya enviados antes' +
+      (fuera ? ' · <span style="color:#fbbf24">' + fuera + ' fuera de zona</span>' : '') + '</div>' +
       (restan ? '<div style="opacity:.75;margin-bottom:8px">Quedan ' + restan + ' para el siguiente clic</div>' : '<div style="margin-bottom:8px"></div>') +
       '<button id="cap-go" style="width:100%;padding:8px;border:0;border-radius:8px;background:#00abd8;color:#fff;font-weight:700;cursor:pointer">' +
       (aLaCola ? 'Mandar ' + tanda.length + ' a la cola' : 'Enviar ' + tanda.length + ' a la bandeja') + '</button>' +
