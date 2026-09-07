@@ -31,12 +31,23 @@ Tu tarea es clasificar el anuncio:
 1c. **es_dueno_directo**: es simplemente si probabilidad_dueno_directo llega a 0.5 o más. Mantén los dos campos coherentes.
 
 2. **tipo_inmueble**: apartamento, casa, lote, local, bodega, oficina u otro (null si no se puede inferir).
+   ⚠️ Una **HABITACIÓN o cuarto dentro de una vivienda** (se comparte cocina, baño o zonas comunes)
+   NO es un apartamento por pequeño que sea: va como "otro" y con decision="descartar".
+   La inmobiliaria administra inmuebles completos, no cuartos. Un **apartaestudio** SÍ es
+   apartamento: es una vivienda independiente.
 3. **tipo_transaccion**: arriendo o venta (null si no se puede inferir). Ojo con el precio: en Medellín un canon mensual va de cientos de miles a unos pocos millones de pesos, mientras que una venta va en cientos de millones. Un valor bajo casi siempre indica ARRIENDO aunque el texto no lo diga.
 4. **en_zona_objetivo**: la zona objetivo son EXACTAMENTE ${ZONAS_DETALLE.length} y ninguna más:
 ${ZONAS_DETALLE.map((z) => `   - el/la **${z.nombre}** (${z.barrios.join(', ')}…);`).join('\n')}
 
    **Estar en Medellín o en el Valle de Aburrá NO es estar en zona.** Quedan FUERA, entre otros: ${ZONAS_EXCLUIDAS.join(', ')} y cualquier otro sector o municipio no listado arriba.
    Si el anuncio no dice dónde está, marca false y dilo en motivos: es "sin ubicación", que no es lo mismo que "fuera de zona" (ver punto 6).
+
+   ⚠️ **LA DESCRIPCIÓN MANDA SOBRE EL CAMPO "Ubicación".** En Facebook Marketplace ese campo
+   suele traer la ciudad DEL VENDEDOR, no la del inmueble. Si el texto nombra un sector concreto
+   —"La Aurora", "Niquía", "sector El Ángel"— o da una dirección, esa es la ubicación real y el
+   campo Ubicación se ignora. Pasó de verdad: un apartamento cuya descripción decía
+   "La Aurora, Urbanización El Tirol, Calle 66 #103B-56" (Robledo) venía rotulado "Envigado" y se
+   descartó por error.
 5. **score** (0 a 1): qué tan buen prospecto de captación es, combinando: es particular + es ${TIPO_OBJETIVO} + está en zona + tiene datos de contacto, y sobre todo el tipo de operación:
    - **ARRIENDO es el objetivo principal** → puede llegar a score alto (0.85–1.0).
    - **VENTA sirve pero vale menos** → tope alrededor de 0.6, aunque todo lo demás sea perfecto.
