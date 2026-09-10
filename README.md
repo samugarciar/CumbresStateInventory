@@ -2,7 +2,7 @@
 
 Plataforma de gestión inmobiliaria de **Cumbres Inmobiliaria** (Medellín / Bello): catálogo de inmuebles sincronizado con el ERP, agenda de visitas, captación de propiedades, firma biométrica de contratos y un **sistema de tres agentes de IA** que atienden clientes por WhatsApp, responden inteligencia de negocio y descubren propiedades de dueño directo.
 
-> **Stack:** Next.js 16.2.6 (App Router + Turbopack) · React 19 · TypeScript · Supabase (PostgreSQL + RLS + Auth + Storage) · LangGraph / LangChain · OpenAI + Anthropic · n8n · Vercel · ERP ArrendaSoft/Nuby.
+> **Stack:** Next.js 16.3.4 (App Router + Turbopack) · React 19 · TypeScript · Supabase (PostgreSQL + RLS + Auth + Storage) · LangGraph / LangChain · OpenAI + Anthropic · n8n · Vercel · ERP ArrendaSoft/Nuby.
 
 ---
 
