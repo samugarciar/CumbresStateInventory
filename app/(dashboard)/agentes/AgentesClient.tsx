@@ -89,7 +89,7 @@ function Interruptor({
       title={activo ? 'Apagar agente' : 'Prender agente'}
       style={{
         ...styles.switchTrack,
-        backgroundColor: activo ? '#22c55e' : 'var(--border-color)',
+        backgroundColor: activo ? 'var(--success)' : 'var(--border-color)',
         opacity: cambiando ? 0.6 : 1,
       }}
     >
@@ -275,7 +275,7 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
                       ...styles.barraRelleno,
                       width: `${porcentajeLimite}%`,
                       backgroundColor:
-                        porcentajeLimite >= 100 ? '#ef4444' : porcentajeLimite >= 80 ? '#f59e0b' : '#22c55e',
+                        porcentajeLimite >= 100 ? 'var(--danger)' : porcentajeLimite >= 80 ? '#f59e0b' : '#22c55e',
                     }}
                   />
                 </div>
@@ -317,7 +317,7 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
         <div className="glass-card" style={styles.card}>
           <div style={styles.cardHeader}>
             <div style={styles.cardIcono}>
-              <MessageCircle size={22} color="#22c55e" />
+              <MessageCircle size={22} color="var(--success)" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <h2 style={styles.cardTitulo}>Agente comercial · WhatsApp</h2>
@@ -488,7 +488,7 @@ export default function AgentesClient({ config, bi, n8n, comercial, captaciones 
                       ...styles.barraRelleno,
                       width: `${Math.min(100, (captaciones.gastoMesUsd / captaciones.limiteMensualUsd) * 100)}%`,
                       backgroundColor:
-                        captaciones.gastoMesUsd >= captaciones.limiteMensualUsd ? '#ef4444'
+                        captaciones.gastoMesUsd >= captaciones.limiteMensualUsd ? 'var(--danger)'
                           : captaciones.gastoMesUsd / captaciones.limiteMensualUsd >= 0.8 ? '#f59e0b' : '#22c55e',
                     }}
                   />

@@ -36,7 +36,7 @@ export default function AsesorSelector({
 
   return (
     <div style={styles.container}>
-      <UserCheck size={14} color={selectedVal !== 'default' ? '#10b981' : '#64748b'} style={{ marginRight: '0.2rem' }} />
+      <UserCheck size={14} color={selectedVal !== 'default' ? 'var(--success)' : 'var(--text-secondary)'} style={{ marginRight: '0.2rem' }} />
       <select
         value={selectedVal}
         onChange={handleChange}
@@ -44,7 +44,7 @@ export default function AsesorSelector({
         className="form-select"
         style={{
           ...styles.select,
-          color: selectedVal !== 'default' ? '#10b981' : '#475569',
+          color: selectedVal !== 'default' ? 'var(--success)' : '#475569',
           borderColor: selectedVal !== 'default' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)',
           backgroundColor: '#ffffff',
         }}

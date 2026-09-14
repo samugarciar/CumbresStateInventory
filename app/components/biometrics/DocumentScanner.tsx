@@ -205,7 +205,7 @@ export default function DocumentScanner({
               <>
                 <div style={styles.laserBar} />
                 <div style={styles.scanningOverlay}>
-                  <ScanLine size={32} className="animate-pulse" style={{ color: '#00abd8', marginBottom: '0.5rem' }} />
+                  <ScanLine size={32} className="animate-pulse" style={{ color: 'var(--on-dark-primary)', marginBottom: '0.5rem' }} />
                   <span style={styles.scanningText}>PROCESANDO OCR IN-APP...</span>
                 </div>
               </>
@@ -214,7 +214,7 @@ export default function DocumentScanner({
         ) : permissionGranted === false ? (
           // Sin cámara
           <div style={styles.errorBox} className="glass-card">
-            <AlertCircle size={36} color="var(--danger)" style={{ marginBottom: '0.75rem' }} />
+            <AlertCircle size={36} color="var(--on-dark-danger)" style={{ marginBottom: '0.75rem' }} />
             <span style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Cámara trasera no disponible</span>
             <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 1.4 }}>
               No se pudo abrir la cámara. Para continuar en modo manual, haz clic en el botón de abajo.
@@ -227,7 +227,7 @@ export default function DocumentScanner({
                 triggerOcrProcessing();
               }}
               className="btn btn-outline"
-              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--on-dark-primary)', color: 'var(--on-dark-primary)' }}
             >
               Pasar a Captura Manual
             </button>
@@ -368,7 +368,7 @@ const styles: Record<string, React.CSSProperties> = {
   cornerBL: { position: 'absolute', bottom: '-2px', left: '-2px', width: '18px', height: '18px', borderLeft: '4px solid #00abd8', borderBottom: '4px solid #00abd8', borderBottomLeftRadius: '6px' },
   cornerBR: { position: 'absolute', bottom: '-2px', right: '-2px', width: '18px', height: '18px', borderRight: '4px solid #00abd8', borderBottom: '4px solid #00abd8', borderBottomRightRadius: '6px' },
   guideText: {
-    color: '#00abd8',
+    color: 'var(--on-dark-primary)',
     fontSize: '0.75rem',
     fontWeight: '800',
     letterSpacing: '1px',
@@ -459,7 +459,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   previewAttachmentRow: {
     fontSize: '0.75rem',
-    color: '#10b981',
+    color: 'var(--on-dark-success)',
     fontWeight: '600',
     textAlign: 'right',
     marginTop: '0.2rem',

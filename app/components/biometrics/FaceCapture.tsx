@@ -142,7 +142,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
         </header>
 
         <div style={styles.consentCard} className="glass-card">
-          <ShieldAlert size={40} color="var(--warning)" style={{ marginBottom: '1rem' }} />
+          <ShieldAlert size={40} color="var(--on-dark-warning)" style={{ marginBottom: '1rem' }} />
           <p style={styles.consentText}>
             Para garantizar la validez legal del acta de entrega, Cumbres Inmobiliaria recopilará una fotografía facial de seguridad en vivo (selfie) y una firma digital.
           </p>
@@ -197,7 +197,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
         ) : permissionGranted === false ? (
           // Mensaje de error de permisos de cámara
           <div style={styles.errorBox} className="glass-card">
-            <AlertCircle size={36} color="var(--danger)" style={{ marginBottom: '0.75rem' }} />
+            <AlertCircle size={36} color="var(--on-dark-danger)" style={{ marginBottom: '0.75rem' }} />
             <span style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Cámara no disponible</span>
             <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 1.4 }}>
               No pudimos acceder a tu cámara frontal. Asegúrate de conceder permisos de cámara en tu navegador o dispositivo móvil.
@@ -210,7 +210,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
                 setCapturedImage('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 100 100" fill="%2300abd8"><circle cx="50" cy="50" r="40" fill="opacity-10"/><circle cx="50" cy="40" r="18"/><path d="M20 80c0-15 15-20 30-20s30 5 30 20z"/></svg>');
               }}
               className="btn btn-outline"
-              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--on-dark-primary)', color: 'var(--on-dark-primary)' }}
             >
               Usar Captura Simulada (Modo Pruebas)
             </button>

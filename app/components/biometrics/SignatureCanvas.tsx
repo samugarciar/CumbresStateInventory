@@ -178,7 +178,7 @@ export default function SignatureCanvas({ title, subtitle, onSave, onBack }: Sig
         <button 
           onClick={clear} 
           className="btn btn-secondary" 
-          style={{ ...styles.btnAction, color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
+          style={{ ...styles.btnAction, color: 'var(--on-dark-danger)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
           disabled={isEmpty}
         >
           <Trash2 size={16} />

@@ -294,7 +294,7 @@ export default function CaptacionesClient({ porAprobar, enSeguimiento, captados,
             {agregando ? 'Calificando…' : 'Calificar y agregar'}
           </button>
           {aviso && (
-            <span style={{ ...styles.aviso, color: aviso.tipo === 'ok' ? '#16a34a' : '#ef4444' }}>
+            <span style={{ ...styles.aviso, color: aviso.tipo === 'ok' ? 'var(--success)' : 'var(--danger)' }}>
               {aviso.tipo === 'ok' ? <Check size={13} /> : <AlertTriangle size={13} />} {aviso.texto}
             </span>
           )}
@@ -552,7 +552,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   pBadges: { display: 'flex', gap: '0.35rem', flexShrink: 0, alignItems: 'center' },
   badgeDueno: {
-    fontSize: '0.66rem', fontWeight: 700, color: '#16a34a', backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    fontSize: '0.66rem', fontWeight: 700, color: 'var(--success)', backgroundColor: 'rgba(22, 163, 74, 0.08)', /* al 10% el texto se queda en 4,49:1 */
     borderRadius: '999px', padding: '0.15rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
   },
   badgeAgencia: {
@@ -573,14 +573,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-muted)', alignItems: 'center',
   },
   link: { color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' },
-  sinContacto: { color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 },
+  sinContacto: { color: 'var(--warning)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 600 },
   telefonoFila: {
     display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap',
     padding: '0.5rem 0.65rem', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.08)',
     border: '1px dashed rgba(245, 158, 11, 0.4)',
   },
   telefonoHint: { fontSize: '0.74rem', color: '#b45309', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
-  errorTarjeta: { display: 'flex', alignItems: 'center', gap: '0.35rem', width: '100%', marginTop: '0.35rem', fontSize: '0.78rem', color: '#ef4444', fontWeight: 600 },
+  errorTarjeta: { display: 'flex', alignItems: 'center', gap: '0.35rem', width: '100%', marginTop: '0.35rem', fontSize: '0.78rem', color: 'var(--danger)', fontWeight: 600 },
   telefonoInput: { width: '150px', fontSize: '0.82rem', padding: '0.35rem 0.55rem' },
   mensajeArea: { width: '100%', fontSize: '0.83rem', padding: '0.55rem 0.7rem', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 },
   acciones: { display: 'flex', gap: '0.45rem', flexWrap: 'wrap' },
@@ -593,6 +593,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.64rem', fontWeight: 700, color: 'var(--primary)', backgroundColor: 'rgba(0, 171, 216, 0.1)',
     borderRadius: '8px', padding: '0.05rem 0.45rem',
   },
-  seguimientoVencido: { color: '#ef4444', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.2rem' },
+  seguimientoVencido: { color: 'var(--danger)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '0.2rem' },
   seguimientoOk: { display: 'inline-flex', alignItems: 'center', gap: '0.2rem' },
 };

@@ -413,7 +413,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
   reasignado: {
-    color: '#10b981',
+    color: 'var(--success)',
     fontWeight: '700',
   },
   acciones: {

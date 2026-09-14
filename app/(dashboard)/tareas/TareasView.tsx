@@ -262,9 +262,9 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              backgroundColor: selectedTasks.size > 0 ? '#00abd8' : 'var(--bg-secondary)',
+              backgroundColor: selectedTasks.size > 0 ? 'var(--primary)' : 'var(--bg-secondary)',
               color: selectedTasks.size > 0 ? '#fff' : 'var(--text-muted)',
-              border: selectedTasks.size > 0 ? '1px solid #00abd8' : '1px solid var(--border-color)',
+              border: selectedTasks.size > 0 ? '1px solid var(--primary)' : '1px solid var(--border-color)',
               fontWeight: 600,
               cursor: selectedTasks.size > 0 && !isBulkCompleting ? 'pointer' : 'not-allowed',
               transition: 'all 0.2s',
@@ -398,14 +398,14 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
                               onClick={(task.titulo === 'Firmar inventario' || task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted ? undefined : () => handleToggleTaskSelection(task.id, task.estado)}
                             >
                               {(task.titulo === 'Firmar inventario' || task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted ? (
-                                <div style={{ marginRight: '0.5rem', color: task.titulo === 'Firmar inventario' ? '#8b5cf6' : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                                <div style={{ marginRight: '0.5rem', color: task.titulo === 'Firmar inventario' ? '#7c3aed' : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
                                   {task.titulo === 'Firmar inventario' ? <PenTool size={20} /> : <Lock size={20} />}
                                 </div>
                               ) : (
                                 <div
                                   style={{
                                     ...styles.checkboxBtn,
-                                    color: isTaskCompleted || selectedTasks.has(task.id) ? '#00abd8' : 'var(--text-muted)',
+                                    color: isTaskCompleted || selectedTasks.has(task.id) ? 'var(--primary)' : 'var(--text-muted)',
                                     display: 'inline-flex',
                                     alignItems: 'center',
                                     marginRight: '0.5rem',
@@ -415,7 +415,7 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
                                   {isUpdating ? (
                                     <RefreshCw size={20} className="animate-spin" color="var(--primary)" />
                                   ) : isTaskCompleted || selectedTasks.has(task.id) ? (
-                                    <CheckSquare size={20} color="#00abd8" />
+                                    <CheckSquare size={20} color="var(--primary)" />
                                   ) : (
                                     <Square size={20} />
                                   )}
@@ -438,7 +438,7 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
                                   <span style={{
                                     ...styles.signatureBadge,
                                     backgroundColor: 'rgba(0, 171, 216, 0.1)',
-                                    color: '#00abd8',
+                                    color: 'var(--primary)',
                                     borderColor: 'rgba(0, 171, 216, 0.2)'
                                   }}>
                                     Automática
@@ -456,7 +456,7 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
                                 style={{
                                   padding: '0.45rem 0.85rem',
                                   fontSize: '0.8rem',
-                                  background: 'linear-gradient(135deg, #8b5cf6 0%, #00abd8 100%)',
+                                  background: 'linear-gradient(135deg, #7c3aed 0%, var(--primary) 100%)',
                                   color: '#ffffff',
                                   border: 'none',
                                   borderRadius: '8px',
@@ -588,8 +588,8 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all var(--transition-fast)',
   },
   filterBtnActive: {
-    backgroundColor: '#00abd8',
-    borderColor: '#00abd8',
+    backgroundColor: 'var(--primary)',
+    borderColor: 'var(--primary)',
     color: '#ffffff',
   },
   groupsContainer: {
@@ -767,7 +767,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   signatureBadge: {
     fontSize: '0.75rem',
-    color: '#8b5cf6',
+    color: '#7c3aed',
     backgroundColor: 'rgba(139, 92, 246, 0.08)',
     border: '1px solid rgba(139, 92, 246, 0.2)',
     padding: '0.2rem 0.5rem',

@@ -615,7 +615,7 @@ const styles: Record<string, React.CSSProperties> = {
   confirmadaBadge: {
     fontSize: '0.7rem',
     fontWeight: '700',
-    color: '#22c55e',
+    color: 'var(--success)',
     backgroundColor: 'rgba(34, 197, 94, 0.1)',
     border: '1px solid rgba(34, 197, 94, 0.35)',
     borderRadius: '12px',

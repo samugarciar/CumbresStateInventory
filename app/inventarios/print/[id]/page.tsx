@@ -447,7 +447,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoTitle: {
     fontSize: '22px',
     fontWeight: '800',
-    color: '#00abd8',
+    color: '#00728f',
     letterSpacing: '-1px',
     lineHeight: '1',
   },

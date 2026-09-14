@@ -218,7 +218,7 @@ const styles: Record<string, React.CSSProperties> = {
   error: {
     fontSize: '0.72rem',
     fontWeight: 600,
-    color: '#dc2626',
+    color: 'var(--danger)',
     maxWidth: 240,
   },
   aviso: {

@@ -1121,7 +1121,7 @@ const styles: Record<string, React.CSSProperties> = {
   deleteThBtn: {
     background: 'none',
     border: 'none',
-    color: '#ef4444',
+    color: 'var(--danger)',
     cursor: 'pointer',
     padding: '0.1rem',
     display: 'flex',

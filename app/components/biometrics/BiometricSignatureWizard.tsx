@@ -113,25 +113,25 @@ export default function BiometricSignatureWizard({
             <div style={styles.partyIndicator}>
               <span style={{ 
                 ...styles.partyText, 
-                color: currentStep.startsWith('asesor') ? 'var(--primary)' : 'rgba(255,255,255,0.4)' 
+                color: currentStep.startsWith('asesor') ? 'var(--on-dark-primary)' : 'rgba(255,255,255,0.4)' 
               }}>
                 1. ASESOR
               </span>
               <div style={{ 
                 ...styles.partyLine, 
-                backgroundColor: currentStep.startsWith('asesor') ? 'var(--primary)' : 'rgba(255,255,255,0.15)' 
+                backgroundColor: currentStep.startsWith('asesor') ? 'var(--on-dark-primary)' : 'rgba(255,255,255,0.15)' 
               }} />
             </div>
             <div style={styles.partyIndicator}>
               <span style={{ 
                 ...styles.partyText, 
-                color: currentStep.startsWith('inquilino') ? '#8b5cf6' : 'rgba(255,255,255,0.4)' 
+                color: currentStep.startsWith('inquilino') ? 'var(--on-dark-accent)' : 'rgba(255,255,255,0.4)' 
               }}>
                 2. INQUILINO / CLIENTE
               </span>
               <div style={{ 
                 ...styles.partyLine, 
-                backgroundColor: currentStep.startsWith('inquilino') ? '#8b5cf6' : 'rgba(255,255,255,0.15)' 
+                backgroundColor: currentStep.startsWith('inquilino') ? 'var(--on-dark-accent)' : 'rgba(255,255,255,0.15)' 
               }} />
             </div>
           </div>
@@ -149,7 +149,7 @@ export default function BiometricSignatureWizard({
             ============================================== */}
         {currentStep === 'welcome' && (
           <div style={styles.centerContent} className="animate-scale-up">
-            <ShieldCheck size={56} color="var(--primary)" style={{ marginBottom: '1rem', filter: 'drop-shadow(0 0 10px rgba(0, 171, 216, 0.4))' }} />
+            <ShieldCheck size={56} color="var(--on-dark-primary)" style={{ marginBottom: '1rem', filter: 'drop-shadow(0 0 10px rgba(0, 171, 216, 0.4))' }} />
             <h2 style={styles.mainTitle}>Firma Biométrica In-App</h2>
             <p style={styles.mainSubtitle}>
               Comenzaremos un proceso seguro y estructurado para registrar la validez legal del acta directamente en este dispositivo físico.
@@ -217,13 +217,13 @@ export default function BiometricSignatureWizard({
             ============================================== */}
         {currentStep === 'transition' && (
           <div style={styles.centerContent} className="animate-scale-up">
-            <Smartphone size={58} color="#8b5cf6" style={{ marginBottom: '1.25rem', animation: 'bounce 2s infinite' }} />
+            <Smartphone size={58} color="var(--on-dark-accent)" style={{ marginBottom: '1.25rem', animation: 'bounce 2s infinite' }} />
             <h2 style={styles.mainTitle}>Turno del Inquilino</h2>
             <p style={styles.mainSubtitle}>
               Las pruebas del asesor se guardaron con éxito. Por favor, **entrega este dispositivo móvil al inquilino / cliente** para que continúe su secuencia de firma.
             </p>
             <div style={styles.transitionAlertCard}>
-              <UserCheck size={20} color="#8b5cf6" style={{ flexShrink: 0 }} />
+              <UserCheck size={20} color="var(--on-dark-accent)" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '0.85rem', color: '#ffffff', lineHeight: 1.4 }}>
                 Estimado Cliente: A continuación, el sistema te guiará en la recolección de tu firma, selfie y foto de documento de identidad.
               </span>
@@ -231,7 +231,7 @@ export default function BiometricSignatureWizard({
             <button 
               onClick={() => setCurrentStep('inquilino_firma')} 
               className="btn btn-primary" 
-              style={{ ...styles.startBtn, backgroundColor: '#8b5cf6', boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}
+              style={{ ...styles.startBtn, backgroundColor: '#7c3aed', boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}
             >
               Soy el Inquilino: Iniciar Firma ➔
             </button>
@@ -284,7 +284,7 @@ export default function BiometricSignatureWizard({
             ============================================== */}
         {currentStep === 'submitting' && (
           <div style={styles.centerContent} className="animate-fade-in">
-            <Loader2 size={52} className="animate-spin" color="var(--primary)" style={{ marginBottom: '1.25rem' }} />
+            <Loader2 size={52} className="animate-spin" color="var(--on-dark-primary)" style={{ marginBottom: '1.25rem' }} />
             <h3 style={styles.loadingTitle}>Consolidando Acta Biométrica</h3>
             <p style={styles.loadingSubtitle}>
               Cifrando firmas, empaquetando selfies y escaneos de identidad. Subiendo evidencias a Supabase Storage y actualizando el inventario...
@@ -300,7 +300,7 @@ export default function BiometricSignatureWizard({
             <div style={styles.successIndicatorCircle}>
               <ShieldCheck size={42} color="#ffffff" />
             </div>
-            <h3 style={{ ...styles.loadingTitle, color: '#10b981', marginTop: '1rem' }}>¡Firma Registrada Exitosamente!</h3>
+            <h3 style={{ ...styles.loadingTitle, color: 'var(--on-dark-success)', marginTop: '1rem' }}>¡Firma Registrada Exitosamente!</h3>
             <p style={styles.loadingSubtitle}>
               El inventario de entrega y sus tareas operativas han sido marcados como **Completados** de forma biométrica in-app. Refrescando datos...
             </p>
@@ -461,7 +461,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '76px',
     height: '76px',
     borderRadius: '50%',
-    backgroundColor: '#10b981',
+    backgroundColor: 'var(--success)', /* el icono de dentro es blanco: 5,02:1 */
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

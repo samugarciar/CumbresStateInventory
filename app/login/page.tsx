@@ -174,14 +174,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '1.75rem',
     fontWeight: '800',
     letterSpacing: '-0.03em',
-    background: 'linear-gradient(135deg, #ffffff 40%, var(--primary) 100%)',
+    background: 'linear-gradient(135deg, var(--text-primary) 40%, var(--primary) 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
   },
   title: {
     fontSize: '1.5rem',
     fontWeight: '700',
-    color: '#ffffff',
+    /* Iba en blanco sobre la tarjeta blanca: 1,01:1, es decir invisible. */
+    color: 'var(--text-primary)',
   },
   subtitle: {
     fontSize: '0.9rem',

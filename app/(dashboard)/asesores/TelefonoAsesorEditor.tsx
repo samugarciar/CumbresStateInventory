@@ -42,8 +42,8 @@ export default function TelefonoAsesorEditor({ asesorId, telefono }: TelefonoAse
         style={styles.display}
         title="Editar el teléfono del asesor (se usa al confirmar citas)"
       >
-        <Phone size={12} color={telefono ? 'var(--primary)' : '#94a3b8'} />
-        <span style={{ color: telefono ? 'var(--text-secondary)' : '#94a3b8' }}>
+        <Phone size={12} color={telefono ? 'var(--primary)' : 'var(--text-muted)'} />
+        <span style={{ color: telefono ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
           {telefono || 'Agregar teléfono'}
         </span>
       </button>
@@ -67,10 +67,10 @@ export default function TelefonoAsesorEditor({ asesorId, telefono }: TelefonoAse
         style={styles.input}
       />
       <button type="button" onClick={guardar} disabled={isPending} style={styles.iconBtn} title="Guardar">
-        {isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={14} color="#10b981" />}
+        {isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={14} color="var(--success)" />}
       </button>
       <button type="button" onClick={cancelar} disabled={isPending} style={styles.iconBtn} title="Cancelar">
-        <X size={14} color="#ef4444" />
+        <X size={14} color="var(--danger)" />
       </button>
     </div>
   );

@@ -37,7 +37,7 @@ export default function InventarioActions({
   if (isBiometricamenteFirmado) {
     return (
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="badge badge-success" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.25)', padding: '0.4rem 0.75rem', fontWeight: 700 }}>
+        <span className="badge badge-success" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: 'var(--success)', borderColor: 'rgba(16, 185, 129, 0.25)', padding: '0.4rem 0.75rem', fontWeight: 700 }}>
           <CheckCircle2 size={12} /> Firmado Biométricamente
         </span>
         
@@ -79,7 +79,7 @@ export default function InventarioActions({
           style={{
             padding: '0.48rem 0.95rem',
             fontSize: '0.82rem',
-            background: 'linear-gradient(135deg, #8b5cf6 0%, #00abd8 100%)', // Degradado premium de violeta a cyan
+            background: 'linear-gradient(135deg, #7c3aed 0%, var(--primary) 100%)', // Degradado premium de violeta a cyan (ambos extremos bajo texto blanco)
             color: '#ffffff',
             border: 'none',
             borderRadius: '8px',
@@ -99,7 +99,7 @@ export default function InventarioActions({
 
       {/* Estado o Botón de Asociación de Contrato */}
       {arrendasoftContratoId ? (
-        <span className="badge badge-success" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(0, 171, 216, 0.2)', backgroundColor: 'rgba(0, 171, 216, 0.1)', color: '#00abd8', fontWeight: 600 }}>
+        <span className="badge badge-success" style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '0.4rem 0.75rem', borderRadius: '6px', border: '1px solid rgba(0, 171, 216, 0.2)', backgroundColor: 'rgba(0, 171, 216, 0.1)', color: 'var(--primary)', fontWeight: 600 }}>
           <FileText size={12} /> Contrato: {arrendasoftContratoId}
         </span>
       ) : contratoIdPropuesto ? (
