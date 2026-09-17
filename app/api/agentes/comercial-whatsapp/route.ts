@@ -151,6 +151,42 @@ export async function POST(request: Request) {
     return Response.json({ estado: 'pausado', output: texto, response: { part_1: texto }, etapa: 'CONTACTO INICIAL', escalado: false });
   }
 
+  // Segundo interruptor: por LEAD, no por inmobiliaria. Lo vive el CRM
+  // (crm.contactos.bot_activo) y se consulta con una función pensada como
+  // contrato del agente: firma estable, SECURITY DEFINER, documentada.
+  //
+  // La regla de negocio es de Samuel: quien lidera la comunicación con el
+  // cliente es el asesor. El bot sigue siendo opt-out —contesta por
+  // defecto— pero se calla en cuanto alguien toma la conversación, y se
+  // calla solo cuando el lead escala, que es literalmente pedir hablar
+  // con una persona.
+  //
+  // FALLA HACIA "SÍ RESPONDE", A PROPÓSITO. Si la consulta se cae, el
+  // cliente recibe respuesta. El daño de que el bot hable de más está
+  // acotado —un asesor lo corrige— y el de dejar mudo el canal entero por
+  // un error del CRM no lo está. Es la misma dirección que el patrón
+  // a prueba de fallos de los triggers de proyección.
+  let botSilenciado = false;
+  try {
+    const { data: puede, error: errorBot } = await supabase
+      .schema('crm')
+      .rpc('bot_puede_responder', {
+        p_inmobiliaria_id: inmobiliariaId,
+        p_telefono: telefono,
+      });
+    if (!errorBot && puede === false) botSilenciado = true;
+  } catch (error) {
+    console.error('[AgenteComercial] No se pudo consultar el interruptor del CRM:', error);
+  }
+
+  if (botSilenciado) {
+    // Se devuelve el mismo contrato que la pausa global, que n8n ya sabe
+    // tratar. No se inventa un estado nuevo: el flujo de n8n no se puede
+    // leer desde el repo y romperlo dejaría sin canal a clientes reales.
+    const texto = 'Un asesor está atendiendo personalmente esta conversación.';
+    return Response.json({ estado: 'pausado', output: texto, response: { part_1: texto }, etapa: 'CONTACTO INICIAL', escalado: false });
+  }
+
   let promptSistema: string;
   try {
     promptSistema = await cargarPromptSistema(inmobiliariaId);
