@@ -156,33 +156,51 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
       const mensajes = (valor.messages ?? []) as MensajeMeta[];
       if (mensajes.length === 0) continue;
 
-      const { data: inmobiliaria } = await supabase
-        .from('inmobiliarias')
-        .select('id')
-        .eq('wa_phone_number_id', metadata.phone_number_id)
-        .maybeSingle();
+      // De qué línea es este mensaje. El CRM es dueño del concepto de
+      // embudo, así que la traducción vive allí: un phone_number_id
+      // devuelve la inmobiliaria, el embudo que alimenta y si el bot
+      // puede contestar en esa línea.
+      //
+      // Antes esto miraba `inmobiliarias.wa_phone_number_id`, o sea UN
+      // número por inmobiliaria. Son varios —comercial, administrativa,
+      // captación—, cada uno con su embudo.
+      const { data: lineas } = await supabase
+        .schema('crm')
+        .rpc('linea_por_numero', {
+          p_wa_phone_number_id: metadata.phone_number_id,
+        });
 
-      if (!inmobiliaria) {
+      const linea = Array.isArray(lineas) ? lineas[0] : lineas;
+
+      if (!linea) {
         console.error(
-          '[WhatsApp] Llegó un mensaje para un número que no está asignado a ninguna inmobiliaria:',
+          '[WhatsApp] Llegó un mensaje a un número sin línea configurada en crm.lineas:',
           metadata.phone_number_id
         );
         continue;
       }
 
       for (const m of mensajes) {
-        await guardarEntrante(supabase, inmobiliaria.id, m, origen);
+        await guardarEntrante(supabase, linea, m, origen);
       }
     }
   }
 }
 
+interface Linea {
+  inmobiliaria_id: string;
+  embudo: string;
+  nombre: string;
+  bot_atiende: boolean;
+}
+
 async function guardarEntrante(
   supabase: ReturnType<typeof createAdminClient>,
-  inmobiliariaId: string,
+  linea: Linea,
   m: MensajeMeta,
   origen: string
 ) {
+  const inmobiliariaId = linea.inmobiliaria_id;
   const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
 
   // Solo texto despierta al agente. Una foto o un audio se guardan para
@@ -256,6 +274,11 @@ async function guardarEntrante(
   // ── Y ahora el bot, si le dejan ──────────────────────────────────
   // Va en after() para que Meta ya tenga su 200: el agente puede tardar
   // segundos, y Meta reintenta lo que no se contesta rápido.
+  // La línea manda: en administrativa y en captación no contesta nadie
+  // automático, por decisión de producto. Se comprueba ANTES que el
+  // interruptor por lead porque es más barato y más categórico.
+  if (!linea.bot_atiende) return;
+
   after(async () => {
     try {
       const { data: puede } = await supabase
