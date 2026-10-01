@@ -166,38 +166,27 @@ export async function POST(request: Request) {
     console.error('[AgenteComercial] No se pudo consultar el interruptor del CRM:', error);
   }
 
-  if (botSilenciado) {
-    // Se devuelve el mismo contrato que la pausa global, que n8n ya sabe
-    // tratar. No se inventa un estado nuevo: el flujo de n8n no se puede
-    // leer desde el repo y romperlo dejaría sin canal a clientes reales.
-    const texto = 'Un asesor está atendiendo personalmente esta conversación.';
-    return Response.json({ estado: 'pausado', output: texto, response: { part_1: texto }, etapa: 'CONTACTO INICIAL', escalado: false });
-  }
-
-  let promptSistema: string;
-  try {
-    promptSistema = await cargarPromptSistema(inmobiliariaId);
-  } catch (error) {
-    console.error('[AgenteComercial] Error cargando el prompt:', error);
-    return Response.json(
-      {
-        estado: 'error',
-        error: error instanceof Error ? error.message : 'No se pudo cargar el prompt del agente.',
-      },
-      { status: 500 }
-    );
-  }
+  // El `return` del silencio NO va aquí, aunque la pregunta sí. Primero se
+  // guarda lo que escribió el cliente: cortando antes del upsert, los
+  // mensajes que llegaban durante el silencio no quedaban en ninguna parte
+  // —ni en agente_comercial_mensajes, ni por tanto en el CRM, que los lee de
+  // ahí—, así que el CRM quedaba ciego justo en la ventana donde afirma que
+  // un humano atiende, y crm.bot_atendido_desde() no podía ver nada. El
+  // corte está más abajo, después de guardar el mensaje.
 
   // ---- Resolver o crear la conversación (una fila por teléfono) ----
   const { data: conversacionExistente } = await supabase
     .from('agente_comercial_conversaciones')
-    .select('id, cliente_nombre')
+    .select('id, cliente_nombre, silencio_avisado_at')
     .eq('inmobiliaria_id', inmobiliariaId)
     .eq('telefono', telefono)
     .maybeSingle();
 
   let conversacionId: string;
   const clienteNombre = cuerpo.cliente_nombre?.trim() || conversacionExistente?.cliente_nombre || null;
+  // Se lee ANTES del UPDATE de abajo, que es quien lo borra cuando el bot
+  // recupera la voz.
+  const silencioAvisadoAt: string | null = conversacionExistente?.silencio_avisado_at ?? null;
 
   if (conversacionExistente) {
     conversacionId = conversacionExistente.id;
@@ -207,6 +196,12 @@ export async function POST(request: Request) {
         kommo_lead_id: cuerpo.kommo_lead_id != null ? String(cuerpo.kommo_lead_id) : undefined,
         kommo_contact_id: cuerpo.kommo_contact_id != null ? String(cuerpo.kommo_contact_id) : undefined,
         cliente_nombre: clienteNombre,
+        // El sello del aviso se borra en cuanto el bot puede hablar otra vez,
+        // aprovechando el UPDATE que ya corría en cada mensaje: ninguna
+        // escritura de más. Así el próximo episodio de silencio vuelve a
+        // avisar una vez — el silencio por escalamiento caduca y puede
+        // repetirse semanas después, y ahí el cliente sí merece el aviso.
+        silencio_avisado_at: !botSilenciado && silencioAvisadoAt ? null : undefined,
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversacionId);
@@ -258,6 +253,73 @@ export async function POST(request: Request) {
       rol: 'usuario',
       contenido: mensaje,
     });
+  }
+
+  // ---- El bot está callado para este lead ----
+  // Lo que dijo el cliente ya quedó guardado arriba; aquí se decide solo qué
+  // se le contesta.
+  //
+  // La primera vez se le dice que un asesor atiende. De la segunda en
+  // adelante, NADA: `response` vacío. Devolver la frase en cada mensaje era
+  // el síntoma que se vino a arreglar — el cliente escribía cinco veces y
+  // recibía cinco veces la misma línea robótica mientras la asesora le
+  // contestaba de verdad por Kommo.
+  //
+  // Que `response` vacío signifique "no digas nada" está verificado contra el
+  // workflow real (3bihDRvaLKEDcQdw, nodo "Prepare Update Payload"): salta
+  // las partes vacías y termina en `return parts.map(...)`, así que con cero
+  // partes devuelve cero items, "Loop Messages" no itera y "Actualizar Campo
+  // y Mover a Pivot" no corre. No hay que tocar n8n.
+  //
+  // Y eso arregla algo que no se buscaba: ese nodo empaqueta `status_id`
+  // junto a cada parte, así que hasta hoy CADA mensaje del silencio devolvía
+  // el lead a "Contacto inicial" en Kommo, deshaciendo la etapa que había
+  // puesto la asesora. Sin partes no se mueve la etapa. (El primer mensaje
+  // del episodio sí la sigue moviendo: quitarlo del todo pide editar ese
+  // nodo de n8n.)
+  //
+  // Por el canal propio no hace falta nada: el webhook pregunta él mismo
+  // antes de llamar aquí, y entregarRespuesta() salta las partes vacías.
+  //
+  // El resto del contrato se mantiene igual que lo devolvía la pausa global
+  // (estado 'pausado', etapa, escalado): romperlo dejaría sin canal a
+  // clientes reales.
+  if (botSilenciado) {
+    const yaAvisado = silencioAvisadoAt !== null;
+    const texto = yaAvisado ? '' : 'Un asesor está atendiendo personalmente esta conversación.';
+    if (!yaAvisado) {
+      const { error: errorSello } = await supabase
+        .from('agente_comercial_conversaciones')
+        .update({ silencio_avisado_at: new Date().toISOString() })
+        .eq('id', conversacionId);
+      // Si el sello no se pudo poner se avisa igual: repetir la frase es
+      // menos malo que dejar al cliente sin saber que ya va una persona.
+      if (errorSello) {
+        console.warn('[AgenteComercial] No se pudo sellar el aviso de silencio:', errorSello.message);
+      }
+    }
+    return Response.json({
+      estado: 'pausado',
+      output: texto,
+      response: texto ? { part_1: texto } : {},
+      etapa: 'CONTACTO INICIAL',
+      escalado: false,
+      conversacion_id: conversacionId,
+    });
+  }
+
+  let promptSistema: string;
+  try {
+    promptSistema = await cargarPromptSistema(inmobiliariaId);
+  } catch (error) {
+    console.error('[AgenteComercial] Error cargando el prompt:', error);
+    return Response.json(
+      {
+        estado: 'error',
+        error: error instanceof Error ? error.message : 'No se pudo cargar el prompt del agente.',
+      },
+      { status: 500 }
+    );
   }
 
   const promptCompleto = promptSistema + contextoVariable({ telefono, clienteNombre });
