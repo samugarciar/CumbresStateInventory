@@ -1,5 +1,6 @@
-import { HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
+import { HumanMessage, type BaseMessage } from '@langchain/core/messages';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { construirHistorial } from '@/lib/agente-comercial/historial';
 import { cargarPromptSistema, contextoVariable } from '@/lib/agente-comercial/prompt';
 import { correrAgenteComercial, extraerCitaAgendada } from '@/lib/agente-comercial/graph';
 import { calcularCostoUSD } from '@/lib/agente-comercial/costos';
@@ -27,26 +28,12 @@ interface CuerpoPeticion {
   kommo_contact_id?: string | number;
   cliente_nombre?: string;
   inmobiliaria_id?: string;
-}
-
-function fechaCorta(fecha: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Bogota',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(fecha);
-}
-
-// Los turnos VIEJOS solo necesitan su fecha como ancla para que "mañana" o
-// "el martes" sigan significando lo mismo que cuando se escribieron. Antes
-// llevaban el preámbulo completo (~60 tokens cada uno): con 15 mensajes de
-// historial eran ~400 tokens por llamada, y como el bucle ReAct hace varias
-// llamadas por turno, se iban ~1.200 tokens del presupuesto por minuto en
-// repetir 15 veces la misma instrucción. La instrucción va una sola vez, en
-// el mensaje nuevo (envolverConFecha).
-function anclarFecha(mensaje: string, fecha: Date): string {
-  return `[${fechaCorta(fecha)}] ${mensaje}`;
+  /**
+   * Solo por el canal propio: el webhook ya guardó este mensaje, con su
+   * wamid, antes de llamar aquí. n8n no lo manda, y por ahí todo sigue
+   * igual que siempre.
+   */
+  wa_message_id?: string | null;
 }
 
 // Los extractos bancarios que pide Fianzacrédito son los del ÚLTIMO TRIMESTRE
@@ -243,29 +230,35 @@ export async function POST(request: Request) {
   }
 
   // ---- Historial previo (últimos N mensajes) ----
+  // Por el canal propio el mensaje nuevo YA está guardado: lo guardó el
+  // webhook, con su wamid, antes de llamar aquí — es lo que hace idempotente
+  // un reintento de Meta. Se pide uno de más y se aparta ese, para que el
+  // modelo no lo lea dos veces: una en el historial y otra como mensaje nuevo.
+  const waMessageId = cuerpo.wa_message_id?.trim() || undefined;
   const { data: mensajesPrevios } = await supabase
     .from('agente_comercial_mensajes')
-    .select('rol, contenido, created_at')
+    .select('rol, contenido, created_at, wa_message_id')
     .eq('conversacion_id', conversacionId)
     .order('created_at', { ascending: false })
-    .limit(MAX_MENSAJES_HISTORIAL);
+    .limit(MAX_MENSAJES_HISTORIAL + (waMessageId ? 1 : 0));
 
-  const historial: BaseMessage[] = (mensajesPrevios ?? [])
-    .slice()
-    .reverse()
-    .map((m) =>
-      m.rol === 'usuario'
-        ? new HumanMessage(anclarFecha(m.contenido, new Date(m.created_at)))
-        : new AIMessage(m.contenido)
-    );
+  const historial: BaseMessage[] = construirHistorial(mensajesPrevios ?? [], {
+    max: MAX_MENSAJES_HISTORIAL,
+    excluirWaMessageId: waMessageId,
+  });
   const ahora = new Date();
   historial.push(new HumanMessage(envolverConFecha(mensaje, ahora)));
 
-  await supabase.from('agente_comercial_mensajes').insert({
-    conversacion_id: conversacionId,
-    rol: 'usuario',
-    contenido: mensaje,
-  });
+  // Por n8n nadie más lo guarda. Por el canal propio ya lo guardó el webhook,
+  // y guardarlo otra vez —sin wamid, así que el índice único no lo frena—
+  // lo dejaba duplicado en la conversación del cliente.
+  if (!waMessageId) {
+    await supabase.from('agente_comercial_mensajes').insert({
+      conversacion_id: conversacionId,
+      rol: 'usuario',
+      contenido: mensaje,
+    });
+  }
 
   const promptCompleto = promptSistema + contextoVariable({ telefono, clienteNombre });
 

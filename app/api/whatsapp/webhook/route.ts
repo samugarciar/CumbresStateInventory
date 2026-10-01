@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { enviarTexto } from '@/lib/whatsapp/meta';
 
 /**
  * El webhook de la Cloud API de Meta: por aquí entra TODO.
@@ -57,6 +58,15 @@ const ESTADO: Record<string, string> = {
   read: 'leido',
   failed: 'fallido',
 };
+
+// Lo que devuelve /api/agentes/comercial-whatsapp: el mismo contrato que
+// consume n8n. Solo se usa lo que ve el cliente.
+const PARTES = ['part_1', 'part_2', 'part_3', 'part_4', 'part_5'] as const;
+
+interface RespuestaAgente {
+  estado?: string;
+  response?: Partial<Record<(typeof PARTES)[number], string | null>>;
+}
 
 /**
  * Verificación del webhook. Meta la hace UNA vez, al configurarlo en el
@@ -293,7 +303,7 @@ async function guardarEntrante(
       // es peor que un bot que habla de más.
       if (puede === false) return;
 
-      await fetch(`${origen}/api/agentes/comercial-whatsapp`, {
+      const r = await fetch(`${origen}/api/agentes/comercial-whatsapp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -303,10 +313,58 @@ async function guardarEntrante(
           mensaje: contenido,
           telefono,
           inmobiliaria_id: inmobiliariaId,
+          // Ya está guardado (arriba, con su wamid): el agente no debe
+          // guardarlo otra vez ni leerlo dos veces.
+          wa_message_id: m.id,
         }),
       });
+
+      const respuesta = (await r.json().catch(() => null)) as RespuestaAgente | null;
+      if (!r.ok && !respuesta?.response) {
+        console.error('[WhatsApp] El agente no devolvió respuesta:', r.status);
+        return;
+      }
+      await entregarRespuesta(telefono, respuesta);
     } catch (error) {
       console.error('[WhatsApp] No se pudo activar el agente:', error);
     }
   });
+}
+
+/**
+ * Lo que el agente decidió decirle al cliente, entregado por Meta.
+ *
+ * Por n8n, la respuesta volvía a n8n y n8n la mandaba por Kommo. Por el
+ * canal propio no hay nadie más en medio: sin esto, el agente pensaba,
+ * guardaba su respuesta, y el cliente no recibía nada.
+ *
+ * El webhook es TRANSPORTE: entrega, en orden, las partes que el agente
+ * devolvió para el cliente, igual que hacía n8n — también el texto de
+ * espera cuando el bot está pausado desde /agentes, que la ruta del agente
+ * escribe para eso. `output` no se manda nunca: lleva la etiqueta
+ * [ESCALAR], que es para nosotros.
+ *
+ * Si una parte falla, las siguientes no salen: la tercera sin la segunda no
+ * se entiende. Y no se reintenta: tras un fallo de red no se sabe si salió,
+ * y reintentar a ciegas puede hacerle llegar al cliente lo mismo dos veces.
+ *
+ * Sale por el número de las variables de entorno, que hoy es el único
+ * conectado (el de prueba de Meta). Las credenciales por línea —para que
+ * cada línea conteste desde su propio número— son el paso siguiente.
+ */
+async function entregarRespuesta(telefono: string, respuesta: RespuestaAgente | null) {
+  for (const clave of PARTES) {
+    const texto = respuesta?.response?.[clave]?.trim();
+    if (!texto) continue;
+
+    const r = await enviarTexto(telefono, texto);
+    if (!r.ok) {
+      console.error(
+        '[WhatsApp] La respuesta del agente no le llegó al cliente:',
+        r.codigo ?? 'sin código',
+        r.error
+      );
+      return;
+    }
+  }
 }
