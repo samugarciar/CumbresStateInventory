@@ -372,6 +372,25 @@ export async function POST(request: Request) {
   // donde el equipo ya trabaja, y se completa sola al confirmar la cita.
   const cita = extraerCitaAgendada(resultado.herramientasUsadas);
   if (cita) {
+    // El lead de Kommo de ESTA conversación queda en la cita, y la
+    // confirmación lo usa directo. Buscar al cliente por teléfono falla con
+    // quienes escriben con usuario (@): llegan a Kommo sin número, n8n no los
+    // encontraba y creaba un lead nuevo sin el chat del cliente, así que la
+    // cita nunca se confirmaba en el verdadero (34 % de las citas, medido el
+    // 2 oct).
+    if (cuerpo.kommo_lead_id != null) {
+      const { error: errorLead } = await supabase
+        .from('citas')
+        .update({
+          kommo_lead_id: String(cuerpo.kommo_lead_id),
+          kommo_contact_id: cuerpo.kommo_contact_id != null ? String(cuerpo.kommo_contact_id) : null,
+        })
+        .eq('id', cita.cita_id);
+      if (errorLead) {
+        console.warn('[AgenteComercial] No se pudo guardar el lead de Kommo en la cita:', errorLead.message);
+      }
+    }
+
     const cuando = `${cita.fecha} ${cita.hora_inicio}`;
     const { error: errorTarea } = await supabase.from('tareas').insert({
       inmobiliaria_id: inmobiliariaId,

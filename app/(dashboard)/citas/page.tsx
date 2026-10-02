@@ -33,6 +33,8 @@ export default async function CitasPage() {
       cliente_email,
       origen,
       confirmada_at,
+      confirmacion_error,
+      confirmacion_fallida_at,
       alcance,
       unidad,
       aptos_snapshot,

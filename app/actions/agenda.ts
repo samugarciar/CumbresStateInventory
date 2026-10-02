@@ -428,7 +428,7 @@ export async function confirmarCitas(citaIds: string[]) {
     const { data: citas } = await supabase
       .from('citas')
       .select(`
-        id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono,
+        id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono, kommo_lead_id,
         inmuebles ( titulo, direccion ),
         franjas_horarias ( usuarios!franjas_horarias_asesor_id_fkey ( nombre_completo, telefono ) )
       `)
@@ -452,6 +452,11 @@ export async function confirmarCitas(citaIds: string[]) {
         Hora: c.hora_inicio?.substring(0, 5) || '',
         Asesor: c.franjas_horarias?.usuarios?.nombre_completo || '',
         TelefonoAsesor: c.franjas_horarias?.usuarios?.telefono || '',
+        // El lead de la conversación que agendó la cita. Con él, n8n va
+        // directo al lead del cliente en vez de buscarlo por teléfono, que
+        // falla con quienes escriben con usuario (@). Vacío en las citas
+        // creadas a mano: ahí n8n sigue buscando por teléfono.
+        KommoLeadId: c.kommo_lead_id || '',
       })),
     };
 
@@ -486,37 +491,89 @@ export async function confirmarCitas(citaIds: string[]) {
       return { success: false, error: `El servicio de confirmación respondió con un error (${resp.status}).` };
     }
 
-    // Marcar las citas enviadas como confirmadas (queda el rastro de cuáles y
-    // cuándo; re-enviar actualiza la marca). Best-effort: si falla, el envío
-    // al flujo ya ocurrió y solo se pierde el badge.
-    const { error: markErr } = await supabase
-      .from('citas')
-      .update({ confirmada_at: new Date().toISOString(), confirmada_por: user.id })
-      .in('id', citas.map((c: any) => c.id));
-    if (markErr) {
-      console.warn('[Citas] Enviadas al flujo pero no se pudieron marcar como confirmadas:', markErr.message);
+    // n8n responde una fila por cita: { cita_id, estado, mensaje }. Hasta el
+    // 2 oct esta respuesta se ignoraba y TODA cita enviada quedaba
+    // "Confirmada", saliera o no — y un tercio no salía. Ahora solo se marca
+    // la que n8n confirma; las demás quedan con su motivo a la vista, y su
+    // tarea sigue abierta, que es lo que hace que alguien la confirme a mano.
+    const cuerpo = await resp.json().catch(() => null);
+    const resultados: { cita_id?: string; estado?: string; mensaje?: string }[] =
+      Array.isArray(cuerpo) ? cuerpo : [];
+    const porCita = new Map(
+      resultados.filter((r) => r?.cita_id).map((r) => [String(r.cita_id), r])
+    );
+
+    const ahora = new Date().toISOString();
+    const confirmadas: string[] = [];
+    const fallidas: { cita_id: string; cliente: string; motivo: string }[] = [];
+    // Sin fila para la cita: no se sabe si salió. No se marca ni como
+    // confirmada ni como fallida — decir cualquiera de las dos sería adivinar.
+    const sinRespuesta: { cita_id: string; cliente: string }[] = [];
+
+    for (const c of citas as any[]) {
+      const r = porCita.get(c.id);
+      if (!r) {
+        sinRespuesta.push({ cita_id: c.id, cliente: c.cliente_nombre });
+      } else if (r.estado === 'confirmada') {
+        confirmadas.push(c.id);
+      } else {
+        fallidas.push({
+          cita_id: c.id,
+          cliente: c.cliente_nombre,
+          motivo: r.mensaje || `n8n respondió «${r.estado ?? 'sin estado'}».`,
+        });
+      }
     }
 
-    // Cerrar la tarea "Confirmar cita" que el agente creó al agendarla, para
-    // que no quede pendiente algo que ya se hizo (mismo patrón que
-    // completarTareaSolicitud en solicitudes.ts). Best-effort.
-    const { error: tareaErr } = await supabase
-      .from('tareas')
-      .update({
-        estado: 'completada',
-        completada_at: new Date().toISOString(),
-        completada_por: user.id,
-      })
-      .in('entidad_id', citas.map((c: any) => c.id))
-      .eq('evento_origen', 'cita_agendada')
-      .eq('estado', 'pendiente');
-    if (tareaErr) {
-      console.warn('[Citas] No se pudieron completar las tareas de confirmación:', tareaErr.message);
+    // Best-effort: si una marca falla, el envío al flujo ya ocurrió y solo se
+    // pierde la insignia.
+    if (confirmadas.length > 0) {
+      const { error: markErr } = await supabase
+        .from('citas')
+        .update({
+          confirmada_at: ahora,
+          confirmada_por: user.id,
+          confirmacion_error: null,
+          confirmacion_fallida_at: null,
+        })
+        .in('id', confirmadas);
+      if (markErr) {
+        console.warn('[Citas] Confirmadas en n8n pero no se pudieron marcar:', markErr.message);
+      }
+
+      // Cerrar la tarea "Confirmar cita" que el agente creó al agendarla —
+      // SOLO de las que de verdad se confirmaron (mismo patrón que
+      // completarTareaSolicitud en solicitudes.ts).
+      const { error: tareaErr } = await supabase
+        .from('tareas')
+        .update({ estado: 'completada', completada_at: ahora, completada_por: user.id })
+        .in('entidad_id', confirmadas)
+        .eq('evento_origen', 'cita_agendada')
+        .eq('estado', 'pendiente');
+      if (tareaErr) {
+        console.warn('[Citas] No se pudieron completar las tareas de confirmación:', tareaErr.message);
+      }
+    }
+
+    for (const f of fallidas) {
+      const { error: falloErr } = await supabase
+        .from('citas')
+        .update({ confirmacion_error: f.motivo, confirmacion_fallida_at: ahora })
+        .eq('id', f.cita_id);
+      if (falloErr) {
+        console.warn('[Citas] No se pudo registrar el fallo de confirmación:', falloErr.message);
+      }
     }
 
     revalidatePath('/citas');
     revalidatePath('/tareas');
-    return { success: true, count: payload.citas.length };
+    return {
+      success: true,
+      count: payload.citas.length,
+      confirmadas: confirmadas.length,
+      fallidas,
+      sinRespuesta,
+    };
   } catch (error: any) {
     console.error('[Citas] Excepción confirmarCitas:', error);
     return { success: false, error: error.message || 'Error interno.' };

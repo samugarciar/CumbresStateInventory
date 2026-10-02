@@ -133,6 +133,25 @@ function bloqueDemasiadoPronto(fecha: string, horaInicio: string): boolean {
   return h * 60 + m < ahora.minutos + MARGEN_MIN;
 }
 
+// ¿Es un teléfono de verdad, o un texto puesto en su lugar?
+// Caso real (2/oct): a un cliente que escribía con usuario (@) —sin número
+// visible— el agente le agendó con cliente_telefono = "pendiente", y al
+// conseguir el número lo agendó OTRA VEZ a la misma hora: el candado de
+// duplicados compara el teléfono como texto, y "pendiente" y "3009083284"
+// son dos personas para él. Hasta hoy la regla vivía solo en el prompt.
+// Entre 7 y 15 dígitos cabe un fijo, un celular de Colombia y uno de afuera;
+// la clave interna "kommo-…" tiene dígitos pero no es un teléfono.
+function telefonoReal(telefono: string): boolean {
+  if (/kommo/i.test(telefono)) return false;
+  const digitos = telefono.replace(/\D/g, '');
+  return digitos.length >= 7 && digitos.length <= 15;
+}
+
+const sinTelefonoReal = (telefono: string): string =>
+  `No tengo un número de teléfono real del cliente: llegó "${telefono}". Pídeselo antes de seguir — ` +
+  'sin un número de verdad no se le puede confirmar la visita. NO uses un texto en lugar del número ' +
+  '("pendiente", "por confirmar"…) ni la clave interna kommo-…, y no le digas al cliente que hubo un error.';
+
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);
 const ALCANCE = z.enum(['inmueble', 'unidad']);
@@ -417,6 +436,14 @@ export function crearToolsAgenteComercial(
         });
       }
 
+      if (!telefonoReal(args.cliente_telefono)) {
+        return registrar('agendar_cita', args, {
+          success: false,
+          telefono_invalido: true,
+          error: sinTelefonoReal(args.cliente_telefono),
+        });
+      }
+
       // Candado de idempotencia. Un mismo mensaje del cliente puede llegar dos
       // veces (visto 12/ago: "Panphillip Prada / 3147255335" entró a las
       // 16:19:53 y otra vez a las 16:20:20) y el agente, que ya tenía todos los
@@ -505,6 +532,14 @@ export function crearToolsAgenteComercial(
             'Los domingos no se hacen visitas: es el día de descanso de los asesores. NO registres la ' +
             'solicitud — el asesor la va a denegar igual. Dile al cliente que ese día no atendemos y ' +
             'ofrécele el sábado o el lunes EN EL MISMO MENSAJE, con horarios reales.',
+        });
+      }
+
+      if (!telefonoReal(args.cliente_telefono)) {
+        return registrar('solicitar_apertura_de_agenda', args, {
+          success: false,
+          telefono_invalido: true,
+          error: sinTelefonoReal(args.cliente_telefono),
         });
       }
 

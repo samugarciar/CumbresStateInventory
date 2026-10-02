@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send } from 'lucide-react';
+import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send, AlertTriangle } from 'lucide-react';
 import { cancelarCitaAdmin, confirmarCitas, marcarCitaRealizada } from '@/app/actions/agenda';
 import ModalNuevaCita from './ModalNuevaCita';
 import SolicitudesApertura from './SolicitudesApertura';
@@ -18,7 +18,9 @@ interface Cita {
   cliente_telefono: string;
   cliente_email: string | null;
   origen: string;
-  confirmada_at?: string | null; // última vez enviada al flujo n8n de confirmación (→ Kommo)
+  confirmada_at?: string | null; // última vez que n8n la confirmó en Kommo
+  confirmacion_error?: string | null; // por qué falló el último intento, tal como lo dijo n8n
+  confirmacion_fallida_at?: string | null;
   alcance?: string; // 'inmueble' | 'unidad'
   unidad?: string | null; // nombre de la unidad cuando alcance='unidad'
   aptos_snapshot?: { titulo: string }[] | null; // aptos disponibles al agendar (solo unidad)
@@ -157,7 +159,23 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
     const result = await confirmarCitas(ids);
     setConfirmando(false);
     if (result.success) {
-      alert(`${result.count} cita(s) enviada(s) al flujo de confirmación.`);
+      // Antes decía "N enviadas" y todas quedaban en verde, salieran o no.
+      // Ahora se dice cuáles NO salieron, que son las que hay que confirmar a mano.
+      const partes = [`${result.confirmadas ?? 0} de ${result.count} cita(s) confirmada(s) en Kommo.`];
+      if (result.fallidas?.length) {
+        partes.push(
+          `\nNo se pudieron confirmar ${result.fallidas.length} — confírmalas a mano:\n` +
+            result.fallidas.map((f) => `• ${f.cliente}: ${f.motivo}`).join('\n')
+        );
+      }
+      if (result.sinRespuesta?.length) {
+        partes.push(
+          `\nn8n no devolvió resultado de ${result.sinRespuesta.length}: ` +
+            result.sinRespuesta.map((s) => s.cliente).join(', ') +
+            '. Revisa en Kommo si les llegó.'
+        );
+      }
+      alert(partes.join('\n'));
       salirSeleccion();
       router.refresh();
     } else {
@@ -275,6 +293,11 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
               {citasDia.map(c => {
                 const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo;
                 const estaSeleccionada = seleccionadas.has(c.id);
+                // El último intento falló y no hubo una confirmación después.
+                const noConfirmada = Boolean(
+                  c.confirmacion_fallida_at &&
+                    (!c.confirmada_at || c.confirmacion_fallida_at > c.confirmada_at)
+                );
                 return (
                   <div
                     key={c.id}
@@ -319,10 +342,18 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
 
                     {/* Badges + acción */}
                     <div style={styles.derecha}>
-                      {c.confirmada_at && (
+                      {noConfirmada ? (
+                        <span
+                          style={styles.noConfirmadaBadge}
+                          title={`No se pudo confirmar: ${c.confirmacion_error ?? 'motivo desconocido'}. Confírmala a mano.`}
+                        >
+                          <AlertTriangle size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
+                          No confirmada
+                        </span>
+                      ) : c.confirmada_at && (
                         <span
                           style={styles.confirmadaBadge}
-                          title={`Enviada a Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
+                          title={`Confirmada en Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
                         >
                           <CheckCheck size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
                           Confirmada
@@ -621,6 +652,17 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     padding: '0.1rem 0.55rem',
     whiteSpace: 'nowrap' as const,
+  },
+  noConfirmadaBadge: {
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    color: 'var(--danger)',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    borderRadius: '12px',
+    padding: '0.1rem 0.55rem',
+    whiteSpace: 'nowrap' as const,
+    cursor: 'help',
   },
   cancelarBtn: {
     padding: '0.25rem 0.6rem',
