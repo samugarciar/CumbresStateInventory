@@ -37,8 +37,7 @@ export async function middleware(request: NextRequest) {
                       pathname.startsWith('/inmuebles') || 
                       pathname.startsWith('/inventarios');
                       
-  const isAuth = pathname.startsWith('/login') || 
-                 pathname.startsWith('/registro-inmobiliaria');
+  const isAuth = pathname.startsWith('/login');
 
   if (isDashboard && !user) {
     const url = new URL('/login', request.url);
