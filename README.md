@@ -161,6 +161,7 @@ lib/
   nuby.ts               → cliente del ERP ArrendaSoft/Nuby
   supabase/             → clientes server / browser / admin
 supabase/migrations/    → migraciones SQL (se aplican a mano en el SQL Editor)
+supabase/manual/        → SQL de operación que NO es migración (alta de inmobiliarias)
 ```
 
 ---
@@ -195,6 +196,7 @@ Abre [http://localhost:3000](http://localhost:3000).
 
 - **Hosting:** Vercel, deploy automático desde `main`. Las env vars se replican en el panel de Vercel.
 - **Migraciones:** los archivos de `supabase/migrations/` se aplican **a mano en el SQL Editor de Supabase** *antes* de desplegar el código que las consume — si no, los `select` a columnas inexistentes se ven como vistas vacías.
+- **Alta de inmobiliarias:** no hay registro abierto (se cerró el 1 oct 2026). Una inmobiliaria nueva y su primer admin se crean a mano: usuario en *Authentication → Users → Add user* y luego `supabase/manual/alta-inmobiliaria.sql` en el SQL Editor. Los asesores los sigue creando el admin desde `/asesores`.
 
 ---
 

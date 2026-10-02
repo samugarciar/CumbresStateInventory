@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { login } from '@/app/actions/auth';
 import { Home, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 
@@ -106,13 +105,6 @@ export default function LoginPage() {
             )}
           </button>
         </form>
-
-        <div style={styles.footer}>
-          <span style={styles.footerText}>¿Tu inmobiliaria no está registrada?</span>
-          <Link href="/registro-inmobiliaria" style={styles.registerLink}>
-            Registrar Inmobiliaria
-          </Link>
-        </div>
       </div>
     </div>
   );
@@ -223,22 +215,5 @@ const styles: Record<string, React.CSSProperties> = {
   spinner: {
     animation: 'spin 1s linear infinite',
     marginRight: '0.5rem',
-  },
-  footer: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '0.25rem',
-    fontSize: '0.85rem',
-    borderTop: '1px solid var(--border-color)',
-    paddingTop: '1.5rem',
-  },
-  footerText: {
-    color: 'var(--text-muted)',
-  },
-  registerLink: {
-    color: 'var(--primary)',
-    fontWeight: '600',
-    transition: 'color var(--transition-fast)',
   },
 };
