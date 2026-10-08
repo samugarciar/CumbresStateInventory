@@ -6,6 +6,17 @@ import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
 /**
+ * Constancia de una foto del rostro que no se tomó: el firmante no la autorizó (es un dato
+ * sensible, Ley 1581 de 2012) y el asesor apagó la toma antes de entregarle el dispositivo.
+ * Se guarda tal cual dentro del registro del firmante y entra al hash de integridad.
+ */
+interface OmisionSelfie {
+  selfie_omitida: true;
+  selfie_omitida_por: { usuario_id: string; nombre: string };
+  selfie_omitida_at: string;
+}
+
+/**
  * Genera un hash SHA-256 de integridad a partir de la evidencia biométrica.
  * El hash vincula criptográficamente: URLs de archivos, datos OCR, timestamp e inventario ID.
  * Cualquier modificación posterior a estos datos producirá un hash diferente,
@@ -20,8 +31,9 @@ function generarHashIntegridad(params: {
   firmadoAt: string;
   inventarioId: string;
   rol: 'asesor' | 'inquilino';
+  omisionSelfie?: OmisionSelfie | null;
 }): string {
-  const payload = [
+  const campos = [
     params.rol,
     params.inventarioId,
     params.firmaUrl,
@@ -30,9 +42,20 @@ function generarHashIntegridad(params: {
     params.nombreOcr,
     params.identidadOcr,
     params.firmadoAt
-  ].join('|');
+  ];
 
-  return createHash('sha256').update(payload, 'utf8').digest('hex');
+  // Si la selfie se omitió, la constancia entra al hash: quitar la marca o cambiar quién o
+  // cuándo la desactivó deja de coincidir. Las actas con selfie conservan los 8 campos de siempre.
+  if (params.omisionSelfie) {
+    campos.push(
+      'selfie_omitida',
+      params.omisionSelfie.selfie_omitida_por.usuario_id,
+      params.omisionSelfie.selfie_omitida_por.nombre,
+      params.omisionSelfie.selfie_omitida_at
+    );
+  }
+
+  return createHash('sha256').update(campos.join('|'), 'utf8').digest('hex');
 }
 
 /**
@@ -50,8 +73,9 @@ export async function inicializarBucketBiometria() {
     const bucketExiste = buckets?.some(b => b.name === 'firmas_biometricas');
     if (!bucketExiste) {
       console.log('[Biometría Backend] El bucket "firmas_biometricas" no existe. Creándolo...');
+      // Privado: las evidencias son datos biométricos y solo se ven con URLs firmadas.
       const { error: createError } = await supabaseAdmin.storage.createBucket('firmas_biometricas', {
-        public: true,
+        public: false,
         allowedMimeTypes: ['image/png', 'image/jpeg']
       });
 
@@ -119,7 +143,8 @@ interface BiometriaPartData {
 
 interface BiometriaPayload {
   asesor: BiometriaPartData;
-  inquilino: BiometriaPartData;
+  // selfie_omitida: el asesor apagó «Tomar foto del rostro del inquilino» porque no la autorizó.
+  inquilino: BiometriaPartData & { selfie_omitida?: boolean };
 }
 
 /**
@@ -188,13 +213,23 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
     let firmaInquilinoUrl = '';
     let selfieInquilinoUrl = '';
     let cedulaInquilinoUrl = '';
+    const selfieInquilinoOmitida = payload.inquilino.selfie_omitida === true;
 
     if (payload.inquilino.firma) {
       firmaInquilinoUrl = await subirImagenBase64(
         supabaseAdmin, inmobiliariaId, inventarioId, 'firma_inquilino.png', payload.inquilino.firma, 'image/png'
       );
     }
-    if (payload.inquilino.selfie) {
+    if (selfieInquilinoOmitida) {
+      // El inquilino no autorizó la foto del rostro: no se guarda ninguna, tampoco la que haya
+      // dejado en esta ruta un intento anterior que falló a mitad de camino.
+      const { error: removeError } = await supabaseAdmin.storage
+        .from('firmas_biometricas')
+        .remove([`${inmobiliariaId}/${inventarioId}/selfie_inquilino.jpg`]);
+      if (removeError) {
+        console.error('[Biometría Backend] No se pudo borrar una selfie previa del inquilino:', removeError.message);
+      }
+    } else if (payload.inquilino.selfie) {
       selfieInquilinoUrl = await subirImagenBase64(
         supabaseAdmin, inmobiliariaId, inventarioId, 'selfie_inquilino.jpg', payload.inquilino.selfie, 'image/jpeg'
       );
@@ -212,6 +247,25 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
 
     const firmadoAtAsesor = new Date().toISOString();
     const firmadoAtInquilino = new Date().toISOString();
+
+    // Quién desactivó la selfie sale de la sesión, no de lo que mande el navegador.
+    let omisionSelfieInquilino: OmisionSelfie | null = null;
+    if (selfieInquilinoOmitida) {
+      const { data: perfil } = await supabaseAdmin
+        .from('usuarios')
+        .select('nombre_completo')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      omisionSelfieInquilino = {
+        selfie_omitida: true,
+        selfie_omitida_por: {
+          usuario_id: user.id,
+          nombre: perfil?.nombre_completo || payload.asesor.ocr_metadata.nombre_completo || user.email || 'Asesor'
+        },
+        selfie_omitida_at: firmadoAtInquilino
+      };
+    }
 
     // Generar hashes SHA-256 de integridad para cada firmante
     const hashAsesor = generarHashIntegridad({
@@ -233,7 +287,8 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
       identidadOcr: payload.inquilino.ocr_metadata.numero_identidad,
       firmadoAt: firmadoAtInquilino,
       inventarioId,
-      rol: 'inquilino'
+      rol: 'inquilino',
+      omisionSelfie: omisionSelfieInquilino
     });
 
     console.log(`[Biometría Backend] Hash SHA-256 Asesor: ${hashAsesor.substring(0, 16)}...`);
@@ -260,7 +315,8 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
           nombre_completo: payload.inquilino.ocr_metadata.nombre_completo
         },
         firmado_at: firmadoAtInquilino,
-        hash_integridad: hashInquilino
+        hash_integridad: hashInquilino,
+        ...(omisionSelfieInquilino ?? {})
       }
     };
 

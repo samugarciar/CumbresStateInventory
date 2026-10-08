@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ShieldCheck, UserCheck, Smartphone, RefreshCw, X, Loader2 } from 'lucide-react';
+import { ShieldCheck, UserCheck, Smartphone, RefreshCw, X, Loader2, CameraOff } from 'lucide-react';
 import SignatureCanvas from './SignatureCanvas';
 import FaceCapture from './FaceCapture';
 import DocumentScanner from './DocumentScanner';
@@ -40,6 +40,12 @@ export default function BiometricSignatureWizard({
   const [currentStep, setCurrentStep] = useState<Step>('welcome');
   const [error, setError] = useState<string | null>(null);
 
+  // La foto del rostro es un dato sensible: el inquilino puede negarse a darla. Lo decide el
+  // asesor en la bienvenida, antes de entregar el dispositivo; el inquilino nunca vuelve a esa
+  // pantalla, así que no ve el interruptor ni lo puede cambiar. Por defecto, encendido.
+  const [tomarSelfieInquilino, setTomarSelfieInquilino] = useState(true);
+  const switchSelfieId = useId();
+
   // Datos capturados
   const [asesorData, setAsesorData] = useState({
     firma: '',
@@ -69,9 +75,10 @@ export default function BiometricSignatureWizard({
       },
       inquilino: {
         firma: inquilinoData.firma,
-        selfie: inquilinoData.selfie,
+        selfie: tomarSelfieInquilino ? inquilinoData.selfie : '',
         cedula: finalInquilinoCedula,
-        ocr_metadata: finalInquilinoOcr
+        ocr_metadata: finalInquilinoOcr,
+        selfie_omitida: !tomarSelfieInquilino
       }
     };
 
@@ -158,11 +165,44 @@ export default function BiometricSignatureWizard({
               <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#ffffff', display: 'block', marginBottom: '0.5rem' }}>Pruebas a recolectar (Para ambas partes):</span>
               <ul style={styles.infoList}>
                 <li>✍ Firma táctil digitalizada sobre pantalla.</li>
-                <li>📸 Fotografía facial en vivo (selfie de seguridad).</li>
+                <li>
+                  {tomarSelfieInquilino
+                    ? '📸 Fotografía facial en vivo (selfie de seguridad).'
+                    : '📸 Fotografía facial en vivo: solo la del asesor.'}
+                </li>
                 <li>🪪 Escaneo frontal de Cédula de Ciudadanía.</li>
               </ul>
             </div>
-            <button 
+            <div style={styles.selfieSwitchCard}>
+              <div style={{ flex: 1 }}>
+                <span id={`${switchSelfieId}-titulo`} style={styles.selfieSwitchTitle}>
+                  Tomar foto del rostro del inquilino
+                </span>
+                <span id={`${switchSelfieId}-ayuda`} style={styles.selfieSwitchHelp}>
+                  {tomarSelfieInquilino
+                    ? 'Es un dato sensible: pregúntale al inquilino si la autoriza. Si no, apágalo ahora; el inquilino no verá esta opción y después no se puede cambiar.'
+                    : 'No se le tomará. El acta dirá que el inquilino no la autorizó y que tú la desactivaste.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={tomarSelfieInquilino}
+                aria-labelledby={`${switchSelfieId}-titulo`}
+                aria-describedby={`${switchSelfieId}-ayuda`}
+                onClick={() => setTomarSelfieInquilino(prev => !prev)}
+                style={{
+                  ...styles.switchTrack,
+                  backgroundColor: tomarSelfieInquilino ? 'var(--primary)' : 'rgba(255,255,255,0.18)'
+                }}
+              >
+                <span style={{
+                  ...styles.switchKnob,
+                  transform: tomarSelfieInquilino ? 'translateX(20px)' : 'translateX(0)'
+                }} />
+              </button>
+            </div>
+            <button
               onClick={() => setCurrentStep('asesor_firma')} 
               className="btn btn-primary animate-pulse" 
               style={styles.startBtn}
@@ -225,10 +265,18 @@ export default function BiometricSignatureWizard({
             <div style={styles.transitionAlertCard}>
               <UserCheck size={20} color="#8b5cf6" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '0.85rem', color: '#ffffff', lineHeight: 1.4 }}>
-                Estimado Cliente: A continuación, el sistema te guiará en la recolección de tu firma, selfie y foto de documento de identidad.
+                {tomarSelfieInquilino
+                  ? 'Estimado Cliente: A continuación, el sistema te guiará en la recolección de tu firma, selfie y foto de documento de identidad.'
+                  : 'Estimado Cliente: A continuación, el sistema te guiará en la recolección de tu firma y la foto de tu documento de identidad.'}
               </span>
             </div>
-            <button 
+            {!tomarSelfieInquilino && (
+              <div style={{ ...styles.selfieOmitidaNotice, marginTop: '-0.75rem', marginBottom: '1.75rem' }}>
+                <CameraOff size={20} color="#8b5cf6" style={{ flexShrink: 0 }} />
+                <span>No se tomará foto de tu rostro: el asesor registró que no la autorizas.</span>
+              </div>
+            )}
+            <button
               onClick={() => setCurrentStep('inquilino_firma')} 
               className="btn btn-primary" 
               style={{ ...styles.startBtn, backgroundColor: '#8b5cf6', boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)' }}
@@ -247,7 +295,7 @@ export default function BiometricSignatureWizard({
             subtitle="Por favor, dibuja tu firma táctil sobre el lienzo blanco."
             onSave={(img) => {
               setInquilinoData(prev => ({ ...prev, firma: img }));
-              setCurrentStep('inquilino_selfie');
+              setCurrentStep(tomarSelfieInquilino ? 'inquilino_selfie' : 'inquilino_cedula');
             }}
             onBack={() => setCurrentStep('transition')}
           />
@@ -266,17 +314,25 @@ export default function BiometricSignatureWizard({
         )}
 
         {currentStep === 'inquilino_cedula' && (
-          <DocumentScanner
-            title="Cédula del Inquilino"
-            subtitle="Encuadra la parte frontal de tu documento sobre el recuadro."
-            defaultName={inquilinoData.ocr.nombre_completo || inquilinoDefaultName}
-            defaultId={inquilinoData.ocr.numero_identidad || inquilinoDefaultId}
-            onSave={(img, ocr) => {
-              setInquilinoData(prev => ({ ...prev, cedula: img, ocr }));
-              submitBiometrics(img, ocr);
-            }}
-            onBack={() => setCurrentStep('inquilino_selfie')}
-          />
+          <>
+            {!tomarSelfieInquilino && (
+              <div style={styles.selfieOmitidaNotice}>
+                <CameraOff size={20} color="#8b5cf6" style={{ flexShrink: 0 }} />
+                <span>Se omitió el paso 2, la foto del rostro, porque no la autorizaste.</span>
+              </div>
+            )}
+            <DocumentScanner
+              title="Cédula del Inquilino"
+              subtitle="Encuadra la parte frontal de tu documento sobre el recuadro."
+              defaultName={inquilinoData.ocr.nombre_completo || inquilinoDefaultName}
+              defaultId={inquilinoData.ocr.numero_identidad || inquilinoDefaultId}
+              onSave={(img, ocr) => {
+                setInquilinoData(prev => ({ ...prev, cedula: img, ocr }));
+                submitBiometrics(img, ocr);
+              }}
+              onBack={() => setCurrentStep(tomarSelfieInquilino ? 'inquilino_selfie' : 'inquilino_firma')}
+            />
+          </>
         )}
 
         {/* ==============================================
@@ -423,6 +479,68 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '0.5rem',
     fontSize: '0.82rem',
     color: 'rgba(255,255,255,0.8)',
+  },
+  selfieSwitchCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.85rem',
+    width: '100%',
+    padding: '0.85rem 1rem',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    textAlign: 'left',
+    marginTop: '-0.5rem',
+    marginBottom: '1.5rem',
+  },
+  selfieSwitchTitle: {
+    display: 'block',
+    fontWeight: 'bold',
+    fontSize: '0.85rem',
+    color: '#ffffff',
+    marginBottom: '0.25rem',
+  },
+  selfieSwitchHelp: {
+    display: 'block',
+    fontSize: '0.75rem',
+    color: 'rgba(255,255,255,0.65)',
+    lineHeight: 1.4,
+  },
+  switchTrack: {
+    position: 'relative',
+    width: '44px',
+    height: '24px',
+    borderRadius: '999px',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'background-color 0.2s',
+  },
+  switchKnob: {
+    position: 'absolute',
+    top: '3px',
+    left: '3px',
+    width: '18px',
+    height: '18px',
+    borderRadius: '50%',
+    backgroundColor: '#ffffff',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
+    transition: 'transform 0.2s',
+  },
+  selfieOmitidaNotice: {
+    display: 'flex',
+    gap: '0.75rem',
+    alignItems: 'center',
+    width: '100%',
+    padding: '0.75rem 1rem',
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    border: '1px solid rgba(139, 92, 246, 0.2)',
+    borderRadius: '12px',
+    textAlign: 'left',
+    fontSize: '0.82rem',
+    color: '#ffffff',
+    lineHeight: 1.4,
   },
   startBtn: {
     padding: '0.8rem 1.75rem',

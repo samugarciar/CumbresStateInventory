@@ -49,6 +49,8 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
   const observacionesGenerales = items?.observaciones_generales || '';
   const firmas = items?.firmas || {};
   const biometria = items?.biometria || null;
+  // El asesor apagó la foto del rostro porque el inquilino no la autorizó (ver guardarFirmaBiometrica).
+  const selfieInquilinoOmitida = biometria?.inquilino?.selfie_omitida === true;
 
   // Helper para generar URLs firmadas (Signed URLs) seguras y resilientes desde el Storage
   const getSignedUrl = async (publicUrl: string) => {
@@ -307,7 +309,11 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
                   VALIDACIÓN BIOMÉTRICA: ARRENDATARIO
                 </h4>
                 <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-                  {selfieInquilino && (
+                  {selfieInquilinoOmitida ? (
+                    <div style={styles.biometriaMiniatureOmitida}>
+                      <span style={styles.biometriaMiniatureOmitidaText}>SIN FOTO</span>
+                    </div>
+                  ) : selfieInquilino && (
                     <div style={styles.biometriaMiniatureContainer}>
                       <img src={selfieInquilino} alt="Selfie Inquilino" style={styles.biometriaMiniatureImg} />
                       <span style={styles.biometriaMiniatureLabel}>ROSTRO</span>
@@ -322,6 +328,9 @@ export default async function PrintInventarioPage({ params }: PrintInventarioPag
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '8px' }}>
                     <div><strong>Nombre OCR:</strong> {biometria.inquilino?.ocr_metadata?.nombre_completo || 'N/A'}</div>
                     <div><strong>Identificación OCR:</strong> {biometria.inquilino?.ocr_metadata?.numero_identidad || 'N/A'}</div>
+                    {selfieInquilinoOmitida && (
+                      <div><strong>Foto del rostro:</strong> no tomada; el firmante no la autorizó (desactivada por {biometria.inquilino.selfie_omitida_por?.nombre || 'el asesor'})</div>
+                    )}
                     <div><strong>Fecha/Hora:</strong> {new Date(biometria.inquilino?.firmado_at || inv.created_at).toLocaleString('es-CO')}</div>
                     <div><strong>Hash SHA-256:</strong> <span style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '7px', wordBreak: 'break-all' }}>{biometria.inquilino?.hash_integridad ? `${biometria.inquilino.hash_integridad.substring(0, 16)}...` : `IQ-${inv.id.substring(0,8).toUpperCase()}`}</span></div>
                   </div>
@@ -657,6 +666,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  biometriaMiniatureOmitida: {
+    width: '42px',
+    height: '42px',
+    borderRadius: '50%',
+    border: '1.5px dashed #9ca3af',
+    backgroundColor: '#ffffff',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometriaMiniatureOmitidaText: {
+    color: '#6b7280',
+    fontSize: '5px',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   biometriaMiniatureImg: {
     width: '100%',
