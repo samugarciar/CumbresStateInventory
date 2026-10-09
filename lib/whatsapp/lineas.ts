@@ -15,6 +15,7 @@ type Supabase = ReturnType<typeof createAdminClient>;
 export interface CredencialDeLinea extends CredencialLinea {
   inmobiliariaId: string;
   embudo: string;
+  wabaId?: string;
 }
 
 /**
@@ -34,7 +35,7 @@ export async function credencialDeLinea(
     return null;
   }
   const fila = (Array.isArray(data) ? data[0] : data) as
-    | { token?: string | null; inmobiliaria_id?: string; embudo?: string }
+    | { token?: string | null; inmobiliaria_id?: string; embudo?: string; waba_id?: string }
     | null
     | undefined;
   if (!fila?.token) return null;
@@ -43,6 +44,7 @@ export async function credencialDeLinea(
     token: fila.token,
     inmobiliariaId: fila.inmobiliaria_id ?? '',
     embudo: fila.embudo ?? '',
+    wabaId: fila.waba_id ?? undefined,
   };
 }
 
