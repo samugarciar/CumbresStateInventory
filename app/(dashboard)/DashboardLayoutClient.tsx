@@ -21,7 +21,8 @@ import {
   CalendarCheck,
   BrainCircuit,
   Bot,
-  Handshake
+  Handshake,
+  MessageCircle
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
@@ -264,6 +265,22 @@ export default function DashboardLayoutClient({
               >
                 <Bot size={20} />
                 {(!isCollapsed || !mounted) && <span>Agentes</span>}
+              </Link>
+
+              <Link
+                href="/whatsapp"
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  ...styles.navLink,
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/whatsapp') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/whatsapp') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/whatsapp') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'WhatsApp' : undefined}
+              >
+                <MessageCircle size={20} />
+                {(!isCollapsed || !mounted) && <span>WhatsApp</span>}
               </Link>
 
               <Link

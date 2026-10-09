@@ -10,6 +10,8 @@
  * claro en vez de un fallo raro de red.
  */
 
+import { META_APP_ID, type NumeroMeta } from './registro-integrado';
+
 const VERSION = 'v21.0';
 const BASE = `https://graph.facebook.com/${VERSION}`;
 
@@ -144,4 +146,123 @@ export function enviarPlantilla(
         : {}),
     },
   });
+}
+
+// ---------------------------------------------------------------------
+// Registro integrado (Embedded Signup v4)
+//
+// Lo que pasa en el servidor después de que alguien conecta su número en
+// la ventana de Meta. A diferencia del envío, aquí el token NO es el de
+// las variables globales: es el del negocio que acaba de conectarse, y
+// se pasa en cada llamada.
+// ---------------------------------------------------------------------
+
+/**
+ * El error de Meta entero, como llegó. Se guarda tal cual en
+ * `crm.intentos_incorporacion` (decisión 28): una versión interpretada no
+ * le sirve a su soporte, y el `fbtrace_id` es lo primero que pide.
+ */
+export interface ErrorMeta {
+  message?: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  fbtrace_id?: string;
+  [clave: string]: unknown;
+}
+
+export type RespuestaMeta<T> = { ok: true; datos: T } | { ok: false; error: ErrorMeta };
+
+async function graph<T>(
+  ruta: string,
+  opciones: { token?: string; metodo?: 'GET' | 'POST' } = {}
+): Promise<RespuestaMeta<T>> {
+  try {
+    const r = await fetch(`${BASE}/${ruta}`, {
+      method: opciones.metodo ?? 'GET',
+      headers: opciones.token ? { Authorization: `Bearer ${opciones.token}` } : undefined,
+      cache: 'no-store',
+    });
+    const datos = await r.json().catch(() => ({}));
+    if (!r.ok || datos?.error) {
+      return { ok: false, error: (datos?.error as ErrorMeta) ?? { message: `HTTP ${r.status}` } };
+    }
+    return { ok: true, datos: datos as T };
+  } catch (error) {
+    // Sin respuesta no hay error de Meta que guardar: se marca como de red
+    // para no confundirlo con un rechazo.
+    return {
+      ok: false,
+      error: {
+        type: 'red',
+        message: error instanceof Error ? error.message : 'No se pudo hablar con Meta',
+      },
+    };
+  }
+}
+
+function secretoApp(): string | null {
+  return process.env.WHATSAPP_APP_SECRET?.trim() || null;
+}
+
+const SIN_SECRETO: ErrorMeta = {
+  type: 'configuracion',
+  message: 'Falta WHATSAPP_APP_SECRET en la plataforma: sin la clave secreta de la app no se puede canjear el código.',
+};
+
+/**
+ * Canjea el código de la ventana por el token del negocio.
+ *
+ * El código vence a los 30 segundos: esto va antes que cualquier otra
+ * cosa. El token que devuelve es el del usuario del sistema del negocio y,
+ * por la configuración elegida, no vence. Nunca se escribe en un log ni
+ * sale de este servidor; va directo a Vault con `crm.conectar_linea`.
+ */
+export function canjearCodigoRegistro(code: string) {
+  const secreto = secretoApp();
+  if (!secreto) return Promise.resolve({ ok: false as const, error: SIN_SECRETO });
+  const params = new URLSearchParams({ client_id: META_APP_ID, client_secret: secreto, code });
+  return graph<{ access_token?: string }>(`oauth/access_token?${params}`);
+}
+
+/** Los permisos del token, con las cuentas a las que da acceso. */
+export function permisosDelToken(token: string) {
+  const secreto = secretoApp();
+  if (!secreto) return Promise.resolve({ ok: false as const, error: SIN_SECRETO });
+  const params = new URLSearchParams({
+    input_token: token,
+    access_token: `${META_APP_ID}|${secreto}`,
+  });
+  return graph<{ data?: { granular_scopes?: { scope?: string; target_ids?: string[] }[] } }>(
+    `debug_token?${params}`
+  );
+}
+
+/** Los números de la cuenta de WhatsApp, con su nombre y su estado. */
+export function numerosDeCuenta(wabaId: string, token: string) {
+  const params = new URLSearchParams({
+    fields: 'id,display_phone_number,verified_name,status,platform_type',
+  });
+  return graph<{ data?: NumeroMeta[] }>(`${encodeURIComponent(wabaId)}/phone_numbers?${params}`, {
+    token,
+  });
+}
+
+/**
+ * Suscribe nuestra app a los webhooks de la cuenta. Sin esto, los mensajes
+ * de ese número nunca llegan a la plataforma.
+ */
+export function suscribirApp(wabaId: string, token: string) {
+  return graph<{ success?: boolean }>(`${encodeURIComponent(wabaId)}/subscribed_apps`, {
+    token,
+    metodo: 'POST',
+  });
+}
+
+/** Las apps suscritas a la cuenta: es como se comprueba la suscripción. */
+export function appsSuscritas(wabaId: string, token: string) {
+  return graph<{ data?: { whatsapp_business_api_data?: { id?: string } }[] }>(
+    `${encodeURIComponent(wabaId)}/subscribed_apps`,
+    { token }
+  );
 }
