@@ -8,6 +8,8 @@ import {
   erroresDeHistorial,
   filaDeEco,
   filasDeHilo,
+  rolesDireccion,
+  ventanaDuplicadoMinutos,
   type FilaMensaje,
   type MensajeCoexistencia,
 } from '@/lib/whatsapp/lineas';
@@ -224,9 +226,7 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
         continue;
       }
 
-      for (const m of mensajes) {
-        await guardarEntrante(supabase, linea, m, origen, metadata.phone_number_id!);
-      }
+      await procesarMensajesEntrantes(supabase, linea, mensajes, origen, metadata.phone_number_id!);
     }
   }
 }
@@ -349,6 +349,49 @@ async function guardarEcos(supabase: Supabase, numero: string | undefined, ecos:
  * NUNCA despierta al bot ni dispara el relevo: son mensajes del pasado. Un
  * «hola» de hace un año no es alguien escribiendo ahora.
  */
+/**
+ * Detecta si un mensaje del historial del celular ya había entrado previamente
+ * por Kommo o n8n.
+ *
+ * Los mensajes de Kommo/n8n no tienen wa_message_id. Si en la misma conversación
+ * existe un mensaje sin wa_message_id, en la misma dirección (agente y asesor
+ * cuentan como el negocio), con el mismo contenido y a ±2 minutos, se descarta
+ * para no duplicar el historial que los asesores ya ven en la plataforma.
+ */
+async function esDuplicadoKommo(
+  supabase: Supabase,
+  conversacionId: string,
+  fila: FilaMensaje
+): Promise<boolean> {
+  const { desde, hasta } = ventanaDuplicadoMinutos(fila.created_at, 2);
+  const roles = rolesDireccion(fila.rol);
+
+  const { data } = await supabase
+    .from('agente_comercial_mensajes')
+    .select('id')
+    .eq('conversacion_id', conversacionId)
+    .is('wa_message_id', null)
+    .in('rol', roles)
+    .eq('contenido', fila.contenido)
+    .gte('created_at', desde)
+    .lte('created_at', hasta)
+    .limit(1)
+    .maybeSingle();
+
+  return Boolean(data);
+}
+
+/**
+ * Un lote del historial de la app del celular, pedido al conectar la línea.
+ *
+ * Los lotes llegan desordenados (`chunk_order`) y pueden repetirse: cada
+ * mensaje se guarda con su hora original y su wamid, así que el orden lo da
+ * la fecha y los repetidos los frena el único. El progreso solo sube en la
+ * base, así que un lote viejo no lo hace retroceder.
+ *
+ * NUNCA despierta al bot ni dispara el relevo: son mensajes del pasado. Un
+ * «hola» de hace un año no es alguien escribiendo ahora.
+ */
 async function guardarHistorial(numero: string | undefined, valor: Record<string, unknown>) {
   try {
     const supabase = createAdminClient();
@@ -374,13 +417,26 @@ async function guardarHistorial(numero: string | undefined, valor: Record<string
       threads?: { id?: string; messages?: MensajeCoexistencia[] }[];
     }[];
 
+    let totalInsertados = 0;
+    let totalDescartadosKommo = 0;
+    let totalRepetidosMeta = 0;
+
     for (const lote of lotes) {
       for (const hilo of lote.threads ?? []) {
         const leido = filasDeHilo(hilo);
         if (!leido || leido.filas.length === 0) continue;
         const conversacionId = await conversacionDe(supabase, linea.inmobiliaria_id, leido.telefono);
         if (!conversacionId) continue;
-        for (const fila of leido.filas) await guardarFila(supabase, conversacionId, numero, fila);
+        for (const fila of leido.filas) {
+          const duplicadoKommo = await esDuplicadoKommo(supabase, conversacionId, fila);
+          if (duplicadoKommo) {
+            totalDescartadosKommo++;
+            continue;
+          }
+          const resultado = await guardarFila(supabase, conversacionId, numero, fila);
+          if (resultado === 'nuevo') totalInsertados++;
+          else if (resultado === 'repetido') totalRepetidosMeta++;
+        }
       }
 
       const progreso = lote.metadata?.progress;
@@ -393,18 +449,27 @@ async function guardarHistorial(numero: string | undefined, valor: Record<string
         if (error) console.error('[WhatsApp] No se pudo anotar el progreso del historial:', error.message);
       }
     }
+
+    console.log(
+      `[WhatsApp] Historial procesado para ${numero}: ${totalInsertados} insertados, ` +
+      `${totalDescartadosKommo} descartados (coincidencia Kommo/n8n), ${totalRepetidosMeta} repetidos de Meta.`
+    );
   } catch (error) {
     console.error('[WhatsApp] Error guardando el historial:', error);
   }
 }
 
-async function guardarEntrante(
-  supabase: ReturnType<typeof createAdminClient>,
+async function guardarMensajeEntrante(
+  supabase: Supabase,
   linea: Linea,
   m: MensajeMeta,
-  origen: string,
   numero: string
-) {
+): Promise<{
+  conversacionId: string;
+  telefono: string;
+  contenido: string;
+  esTexto: boolean;
+} | null> {
   const inmobiliariaId = linea.inmobiliaria_id;
   const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
 
@@ -442,9 +507,9 @@ async function guardarEntrante(
       .insert({ inmobiliaria_id: inmobiliariaId, telefono, ...referido })
       .select('id')
       .single();
-    if (error || !nueva) {
+    if (error || !nueva?.id) {
       console.error('[WhatsApp] No se pudo crear la conversación:', error);
-      return;
+      return null;
     }
     conversacionId = nueva.id;
   } else if (m.referral && !existente?.referral_source_id) {
@@ -455,6 +520,8 @@ async function guardarEntrante(
       .update(referido)
       .eq('id', conversacionId);
   }
+
+  if (!conversacionId) return null;
 
   // El índice único sobre wa_message_id es lo que hace idempotente un
   // reintento de Meta. Se ignora el choque en vez de tratarlo como error.
@@ -471,21 +538,80 @@ async function guardarEntrante(
     });
 
   if (errorMensaje) {
-    // 23505 = choque de único: es un reintento, no un problema.
-    if (errorMensaje.code === '23505') return;
+    // 23505 = choque de único: es un reintento de Meta, no se vuelve a activar el bot
+    if (errorMensaje.code === '23505') return null;
     console.error('[WhatsApp] No se pudo guardar el mensaje:', errorMensaje);
-    return;
+    return null;
   }
 
-  if (!esTexto) return;
+  return { conversacionId, telefono, contenido, esTexto };
+}
 
-  // ── Y ahora el bot, si le dejan ──────────────────────────────────
-  // Va en after() para que Meta ya tenga su 200: el agente puede tardar
-  // segundos, y Meta reintenta lo que no se contesta rápido.
-  // La línea manda: en administrativa y en captación no contesta nadie
-  // automático, por decisión de producto. Se comprueba ANTES que el
-  // interruptor por lead porque es más barato y más categórico.
-  if (!linea.bot_atiende) return;
+/**
+ * Procesa la tanda de mensajes entrantes.
+ *
+ * Guarda todos los mensajes (para no perder fotos, audios ni mensajes sucesivos),
+ * y para cada contacto que haya mandado texto, activa el bot UNA sola vez
+ * con el mensaje más reciente del lote.
+ */
+async function procesarMensajesEntrantes(
+  supabase: Supabase,
+  linea: Linea,
+  mensajes: MensajeMeta[],
+  origen: string,
+  numero: string
+) {
+  const pendientesAgente = new Map<
+    string,
+    { conversacionId: string; waMessageId: string; contenido: string }
+  >();
+
+  for (const m of mensajes) {
+    const guardado = await guardarMensajeEntrante(supabase, linea, m, numero);
+    if (!guardado) continue;
+
+    if (guardado.esTexto && linea.bot_atiende) {
+      // El último texto de este contacto en el lote es con el que se invoca al agente
+      pendientesAgente.set(guardado.telefono, {
+        conversacionId: guardado.conversacionId,
+        waMessageId: m.id,
+        contenido: guardado.contenido,
+      });
+    }
+  }
+
+  for (const [telefono, item] of pendientesAgente.entries()) {
+    activarAgenteEnSegundoPlano(
+      supabase,
+      linea,
+      numero,
+      telefono,
+      item.conversacionId,
+      item.waMessageId,
+      item.contenido,
+      origen
+    );
+  }
+}
+
+/**
+ * Despierta al agente en after() de forma serializada y protegida contra concurrencia.
+ *
+ * Si dos mensajes del mismo contacto llegan en peticiones webhooks casi simultáneas,
+ * el candado atómico en agente_comercial_conversaciones impide dos ejecuciones
+ * paralelas de LangGraph para la misma conversación.
+ */
+function activarAgenteEnSegundoPlano(
+  supabase: Supabase,
+  linea: Linea,
+  numero: string,
+  telefono: string,
+  conversacionId: string,
+  waMessageId: string,
+  contenido: string,
+  origen: string
+) {
+  const inmobiliariaId = linea.inmobiliaria_id;
 
   after(async () => {
     try {
@@ -497,34 +623,71 @@ async function guardarEntrante(
         });
 
       // Falla hacia "sí responde": si el CRM no contesta, el cliente
-      // recibe respuesta igual. Dejar mudo el canal por un error del CRM
-      // es peor que un bot que habla de más.
+      // recibe respuesta igual.
       if (puede === false) return;
 
-      const r = await fetch(`${origen}/api/agentes/comercial-whatsapp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-webhook-token': process.env.N8N_AGENTE_COMERCIAL_TOKEN ?? '',
-        },
-        body: JSON.stringify({
-          mensaje: contenido,
-          telefono,
-          inmobiliaria_id: inmobiliariaId,
-          // Ya está guardado (arriba, con su wamid): el agente no debe
-          // guardarlo otra vez ni leerlo dos veces.
-          wa_message_id: m.id,
-          // El agente solo lee como contexto lo de esta línea.
-          wa_phone_number_id: numero,
-        }),
-      });
+      // ── Candado anti-carrera en el camino directo ─────────────────
+      let bloqueoAdquirido = false;
+      for (let intento = 0; intento < 3; intento++) {
+        const { data: adquirido, error: errorBloqueo } = await supabase.rpc(
+          'adquirir_bloqueo_agente',
+          {
+            p_conversacion_id: conversacionId,
+            p_segundos: 60,
+          }
+        );
 
-      const respuesta = (await r.json().catch(() => null)) as RespuestaAgente | null;
-      if (!r.ok && !respuesta?.response) {
-        console.error('[WhatsApp] El agente no devolvió respuesta:', r.status);
+        if (errorBloqueo) {
+          // Si la función aún no existe en producción, no bloqueamos el canal
+          bloqueoAdquirido = true;
+          break;
+        }
+
+        if (adquirido) {
+          bloqueoAdquirido = true;
+          break;
+        }
+
+        // Si otra petición está corriendo el agente para este contacto, esperamos 2 segundos
+        await new Promise((resolver) => setTimeout(resolver, 2000));
+      }
+
+      if (!bloqueoAdquirido) {
+        console.warn(
+          `[WhatsApp] Concurrencia evitada: ya existe una ejecución activa del agente para ${telefono}.`
+        );
         return;
       }
-      await entregarRespuesta(supabase, numero, telefono, respuesta);
+
+      try {
+        const r = await fetch(`${origen}/api/agentes/comercial-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-webhook-token': process.env.N8N_AGENTE_COMERCIAL_TOKEN ?? '',
+          },
+          body: JSON.stringify({
+            mensaje: contenido,
+            telefono,
+            inmobiliaria_id: inmobiliariaId,
+            wa_message_id: waMessageId,
+            wa_phone_number_id: numero,
+          }),
+        });
+
+        const respuesta = (await r.json().catch(() => null)) as RespuestaAgente | null;
+        if (!r.ok && !respuesta?.response) {
+          console.error('[WhatsApp] El agente no devolvió respuesta:', r.status);
+          return;
+        }
+        await entregarRespuesta(supabase, numero, telefono, respuesta);
+      } finally {
+        try {
+          await supabase.rpc('liberar_bloqueo_agente', { p_conversacion_id: conversacionId });
+        } catch {
+          // Ignora fallo al liberar bloqueo si la función no existe
+        }
+      }
     } catch (error) {
       console.error('[WhatsApp] No se pudo activar el agente:', error);
     }

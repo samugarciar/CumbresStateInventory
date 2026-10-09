@@ -28,15 +28,21 @@ export const VERSION_SDK = 'v25.0';
 /**
  * Los embudos que se pueden conectar desde la plataforma.
  *
- * La comercial NO está, a propósito: atiende clientes reales por Kommo y
- * va de última, sola (paso 6 del brief). Habilitarla es añadirla aquí, y
- * la ruta del servidor rechaza cualquier otro embudo aunque el navegador
- * lo pida.
+ * La comercial atiende clientes reales por Kommo y requiere confirmación
+ * explícita de corte, tanto en la interfaz como en el servidor (decisión de Samuel, 9 oct).
  */
-export const EMBUDOS_CONECTABLES = ['administrativa', 'captacion'] as const;
+export const EMBUDOS_CONECTABLES = ['administrativa', 'captacion', 'comercial'] as const;
 
 export function esEmbudoConectable(embudo: string): boolean {
   return (EMBUDOS_CONECTABLES as readonly string[]).includes(embudo);
+}
+
+/**
+ * La línea comercial atiende hoy por Kommo. Para iniciar su corte y conectarla
+ * se exige confirmación explícita de corte en el cliente y servidor.
+ */
+export function requiereConfirmacionCorte(embudo: string): boolean {
+  return embudo === 'comercial';
 }
 
 /** Lo que cuenta la ventana de Meta sobre cómo terminó. */

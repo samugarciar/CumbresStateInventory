@@ -10,7 +10,7 @@
  * claro en vez de un fallo raro de red.
  */
 
-import { META_APP_ID, type NumeroMeta } from './registro-integrado';
+import { META_APP_ID, type NumeroMeta } from './registro-integrado.ts';
 
 const VERSION = 'v21.0';
 const BASE = `https://graph.facebook.com/${VERSION}`;

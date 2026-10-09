@@ -15,6 +15,7 @@ import {
   cuentasEnPermisos,
   elegirNumero,
   esEmbudoConectable,
+  requiereConfirmacionCorte,
 } from '@/lib/whatsapp/registro-integrado';
 
 /**
@@ -45,6 +46,7 @@ type Supabase = ReturnType<typeof createAdminClient>;
 interface Peticion {
   accion?: 'conectar' | 'cancelar' | 'error';
   embudo?: string;
+  confirmacion_corte?: boolean;
   /** El código de la ventana. Vence a los 30 segundos. */
   code?: string;
   waba_id?: string;
@@ -141,6 +143,14 @@ export async function POST(request: Request) {
   const code = cuerpo?.code?.trim();
   if (cuerpo?.accion !== 'conectar' || !code) {
     return respuesta(400, { ok: false, error: 'Falta el código de la ventana de Meta' });
+  }
+
+  // La comercial atiende hoy clientes reales por Kommo: su corte exige confirmación explícita.
+  if (requiereConfirmacionCorte(embudo) && !cuerpo.confirmacion_corte) {
+    return respuesta(400, {
+      ok: false,
+      error: 'El corte de la línea comercial requiere confirmación explícita previa antes de conectarse.',
+    });
   }
 
   // 1 · Lo primero, el canje: el código vence a los 30 segundos.

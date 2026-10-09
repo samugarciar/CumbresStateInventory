@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizarTextoMeta,
   crearPlantillaRevision,
-} from '../lib/whatsapp/meta';
+} from '../lib/whatsapp/meta.ts';
 
 test('sanitizarTextoMeta retira tokens de Meta y Bearer', () => {
   const tokenPrueba = 'EAABsb7tZBsIABO6z1234567890abcdef';
