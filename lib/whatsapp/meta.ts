@@ -58,8 +58,25 @@ export function explicarError(codigo: number | undefined, crudo: string): string
   }
 }
 
-async function llamar(cuerpo: Record<string, unknown>): Promise<ResultadoEnvio> {
-  if (!estaConfigurado()) {
+/**
+ * Por qué número sale un mensaje, y con qué token.
+ *
+ * Cada línea conectada por el registro integrado tiene el suyo, guardado
+ * en Vault (decisión 23). Sin credencial se usan las variables globales:
+ * es el número de prueba de Meta, que no pasa por esa ventana.
+ */
+export interface CredencialLinea {
+  phoneNumberId: string;
+  token: string;
+}
+
+async function llamar(
+  cuerpo: Record<string, unknown>,
+  credencial?: CredencialLinea
+): Promise<ResultadoEnvio> {
+  const phoneNumberId = credencial?.phoneNumberId ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = credencial?.token ?? process.env.WHATSAPP_TOKEN;
+  if (!phoneNumberId || !token) {
     return {
       ok: false,
       error:
@@ -69,11 +86,11 @@ async function llamar(cuerpo: Record<string, unknown>): Promise<ResultadoEnvio> 
 
   try {
     const r = await fetch(
-      `${BASE}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      `${BASE}/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ messaging_product: 'whatsapp', ...cuerpo }),
@@ -106,12 +123,15 @@ async function llamar(cuerpo: Record<string, unknown>): Promise<ResultadoEnvio> 
  * recibe nada. La regla se comprueba antes en `crm.encolar_envio()`, que
  * revienta: esto es la segunda línea, no la primera.
  */
-export function enviarTexto(telefono: string, texto: string) {
-  return llamar({
-    to: telefono.replace(/^\+/, ''),
-    type: 'text',
-    text: { preview_url: true, body: texto },
-  });
+export function enviarTexto(telefono: string, texto: string, credencial?: CredencialLinea) {
+  return llamar(
+    {
+      to: telefono.replace(/^\+/, ''),
+      type: 'text',
+      text: { preview_url: true, body: texto },
+    },
+    credencial
+  );
 }
 
 /**
@@ -127,7 +147,8 @@ export function enviarPlantilla(
   telefono: string,
   nombrePlantilla: string,
   idioma: string,
-  variables: Record<string, string> = {}
+  variables: Record<string, string> = {},
+  credencial?: CredencialLinea
 ) {
   const parametros = Object.entries(variables).map(([nombre, valor]) => ({
     type: 'text',
@@ -135,17 +156,20 @@ export function enviarPlantilla(
     text: valor,
   }));
 
-  return llamar({
-    to: telefono.replace(/^\+/, ''),
-    type: 'template',
-    template: {
-      name: nombrePlantilla,
-      language: { code: idioma },
-      ...(parametros.length
-        ? { components: [{ type: 'body', parameters: parametros }] }
-        : {}),
+  return llamar(
+    {
+      to: telefono.replace(/^\+/, ''),
+      type: 'template',
+      template: {
+        name: nombrePlantilla,
+        language: { code: idioma },
+        ...(parametros.length
+          ? { components: [{ type: 'body', parameters: parametros }] }
+          : {}),
+      },
     },
-  });
+    credencial
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -175,12 +199,16 @@ export type RespuestaMeta<T> = { ok: true; datos: T } | { ok: false; error: Erro
 
 async function graph<T>(
   ruta: string,
-  opciones: { token?: string; metodo?: 'GET' | 'POST' } = {}
+  opciones: { token?: string; metodo?: 'GET' | 'POST'; cuerpo?: Record<string, unknown> } = {}
 ): Promise<RespuestaMeta<T>> {
   try {
+    const headers: Record<string, string> = {};
+    if (opciones.token) headers.Authorization = `Bearer ${opciones.token}`;
+    if (opciones.cuerpo) headers['Content-Type'] = 'application/json';
     const r = await fetch(`${BASE}/${ruta}`, {
-      method: opciones.metodo ?? 'GET',
-      headers: opciones.token ? { Authorization: `Bearer ${opciones.token}` } : undefined,
+      method: opciones.metodo ?? (opciones.cuerpo ? 'POST' : 'GET'),
+      headers,
+      body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : undefined,
       cache: 'no-store',
     });
     const datos = await r.json().catch(() => ({}));
@@ -265,4 +293,19 @@ export function appsSuscritas(wabaId: string, token: string) {
     `${encodeURIComponent(wabaId)}/subscribed_apps`,
     { token }
   );
+}
+
+/**
+ * Pide a Meta el historial de mensajes de la app del celular.
+ *
+ * UNA sola vez y dentro de las 24 horas del registro: repetirlo exige
+ * desincorporar el número y conectarlo otra vez. Los lotes llegan después
+ * por el webhook (`history`), con su progreso y sin el `request_id`, que
+ * solo sirve como constancia de que Meta aceptó la solicitud.
+ */
+export function pedirHistorial(phoneNumberId: string, token: string) {
+  return graph<{ request_id?: string }>(`${encodeURIComponent(phoneNumberId)}/smb_app_data`, {
+    token,
+    cuerpo: { messaging_product: 'whatsapp', sync_type: 'history' },
+  });
 }

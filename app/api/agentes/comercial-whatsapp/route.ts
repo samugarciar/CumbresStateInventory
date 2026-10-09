@@ -34,6 +34,12 @@ interface CuerpoPeticion {
    * igual que siempre.
    */
   wa_message_id?: string | null;
+  /**
+   * Solo por el canal propio: el número por el que entró el mensaje. El
+   * agente lee como contexto lo de esa línea y lo que llegó por Kommo (sin
+   * número), nunca lo que la persona habló por otra línea.
+   */
+  wa_phone_number_id?: string | null;
 }
 
 // Los extractos bancarios que pide Fianzacrédito son los del ÚLTIMO TRIMESTRE
@@ -230,10 +236,20 @@ export async function POST(request: Request) {
   // un reintento de Meta. Se pide uno de más y se aparta ese, para que el
   // modelo no lo lea dos veces: una en el historial y otra como mensaje nuevo.
   const waMessageId = cuerpo.wa_message_id?.trim() || undefined;
+  // La conversación es una por teléfono, pero la misma persona puede ser
+  // inquilina por la administrativa y compradora por la comercial (hallazgo
+  // 2). El bot lee lo de su línea y lo que llegó por Kommo, que no trae
+  // número; lo de las otras líneas no es contexto suyo.
+  const numeroLinea = cuerpo.wa_phone_number_id?.trim().replace(/\D/g, '') || undefined;
   const { data: mensajesPrevios } = await supabase
     .from('agente_comercial_mensajes')
     .select('rol, contenido, created_at, wa_message_id')
     .eq('conversacion_id', conversacionId)
+    .or(
+      numeroLinea
+        ? `wa_phone_number_id.is.null,wa_phone_number_id.eq.${numeroLinea}`
+        : 'wa_phone_number_id.is.null'
+    )
     .order('created_at', { ascending: false })
     .limit(MAX_MENSAJES_HISTORIAL + (waMessageId ? 1 : 0));
 
@@ -252,6 +268,7 @@ export async function POST(request: Request) {
       conversacion_id: conversacionId,
       rol: 'usuario',
       contenido: mensaje,
+      wa_phone_number_id: numeroLinea ?? null,
     });
   }
 
@@ -343,6 +360,7 @@ export async function POST(request: Request) {
       conversacion_id: conversacionId,
       rol: 'agente',
       contenido: textoCliente,
+      wa_phone_number_id: numeroLinea ?? null,
     });
     return Response.json({
       estado: 'error',
@@ -363,6 +381,7 @@ export async function POST(request: Request) {
     rol: 'agente',
     contenido: resultado.output,
     herramientas_usadas: resultado.herramientasUsadas.length > 0 ? resultado.herramientasUsadas : null,
+    wa_phone_number_id: numeroLinea ?? null,
   });
 
   // Tarea de confirmación de la cita. La confirmación de citas ya existe

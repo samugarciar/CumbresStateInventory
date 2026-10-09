@@ -2,6 +2,15 @@ import crypto from 'node:crypto';
 import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { enviarTexto } from '@/lib/whatsapp/meta';
+import {
+  anotarResultadoCredencial,
+  credencialDeLinea,
+  erroresDeHistorial,
+  filaDeEco,
+  filasDeHilo,
+  type FilaMensaje,
+  type MensajeCoexistencia,
+} from '@/lib/whatsapp/lineas';
 
 /**
  * El webhook de la Cloud API de Meta: por aquí entra TODO.
@@ -144,8 +153,33 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
 
   for (const entrada of entradas) {
     for (const cambio of (entrada.changes ?? []) as Record<string, unknown>[]) {
+      const campo = typeof cambio.field === 'string' ? cambio.field : 'messages';
       const valor = (cambio.value ?? {}) as Record<string, unknown>;
       const metadata = (valor.metadata ?? {}) as { phone_number_id?: string };
+
+      // ── La coexistencia: lo que pasa en la app del celular ─────────
+      // Ninguno de los tres despierta al bot. Solo un texto ENTRANTE en vivo
+      // lo hace (nota 9, «lo que la plataforma NO debe hacer»).
+      if (campo === 'smb_message_echoes') {
+        await guardarEcos(
+          supabase,
+          metadata.phone_number_id,
+          (valor.message_echoes ?? []) as MensajeCoexistencia[]
+        );
+        continue;
+      }
+      if (campo === 'history') {
+        // Un lote puede traer cientos de mensajes. Se guarda después de
+        // contestarle a Meta, que reintenta lo que tarda en responderse.
+        after(() => guardarHistorial(metadata.phone_number_id, valor));
+        continue;
+      }
+      if (campo === 'smb_app_state_sync') {
+        // La libreta de contactos del celular va a una cuarentena que está
+        // desconectada a propósito hasta el visto bueno legal de Cumbres
+        // (decisión 26). Se descarta sin guardar nada.
+        continue;
+      }
 
       // ── Acuses de entrega ────────────────────────────────────────
       // Llegan para TODO lo que sale, incluidos los ~3.900 mensajes
@@ -191,7 +225,7 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
       }
 
       for (const m of mensajes) {
-        await guardarEntrante(supabase, linea, m, origen);
+        await guardarEntrante(supabase, linea, m, origen, metadata.phone_number_id!);
       }
     }
   }
@@ -204,11 +238,172 @@ interface Linea {
   bot_atiende: boolean;
 }
 
+type Supabase = ReturnType<typeof createAdminClient>;
+
+/** La línea de ese número, o null si no hay ninguna activa. */
+async function lineaDe(supabase: Supabase, numero: string | undefined): Promise<Linea | null> {
+  if (!numero) return null;
+  const { data } = await supabase.schema('crm').rpc('linea_por_numero', { p_wa_phone_number_id: numero });
+  return ((Array.isArray(data) ? data[0] : data) as Linea | undefined) ?? null;
+}
+
+/**
+ * La conversación de esa persona, creándola si no existe. Dos lotes del
+ * historial pueden querer crearla a la vez: si el segundo choca con el
+ * único, la del primero ya está ahí.
+ */
+async function conversacionDe(
+  supabase: Supabase,
+  inmobiliariaId: string,
+  telefono: string
+): Promise<string | null> {
+  const buscar = () =>
+    supabase
+      .from('agente_comercial_conversaciones')
+      .select('id')
+      .eq('inmobiliaria_id', inmobiliariaId)
+      .eq('telefono', telefono)
+      .maybeSingle();
+
+  const { data: existente } = await buscar();
+  if (existente?.id) return existente.id as string;
+
+  const { data: nueva, error } = await supabase
+    .from('agente_comercial_conversaciones')
+    .insert({ inmobiliaria_id: inmobiliariaId, telefono })
+    .select('id')
+    .single();
+  if (nueva?.id) return nueva.id as string;
+  if (error?.code === '23505') {
+    const { data: otra } = await buscar();
+    if (otra?.id) return otra.id as string;
+  }
+  console.error('[WhatsApp] No se pudo crear la conversación:', error?.message);
+  return null;
+}
+
+/** 'nuevo' si se guardó; 'repetido' si Meta ya lo había mandado. */
+async function guardarFila(
+  supabase: Supabase,
+  conversacionId: string,
+  numero: string,
+  fila: FilaMensaje
+): Promise<'nuevo' | 'repetido' | 'error'> {
+  const { error } = await supabase.from('agente_comercial_mensajes').insert({
+    conversacion_id: conversacionId,
+    rol: fila.rol,
+    contenido: fila.contenido,
+    wa_message_id: fila.wa_message_id,
+    wa_phone_number_id: numero,
+    ...(fila.created_at ? { created_at: fila.created_at } : {}),
+  });
+  if (!error) return 'nuevo';
+  // 23505 = choque de único por wa_message_id: un reintento de Meta.
+  if (error.code === '23505') return 'repetido';
+  console.error('[WhatsApp] No se pudo guardar el mensaje:', error.message);
+  return 'error';
+}
+
+/**
+ * Lo que alguien del equipo acaba de mandar desde la app del celular o
+ * desde WhatsApp Web. Meta solo manda ecos de ahí, nunca de lo que sale por
+ * la API: un eco es, sin ambigüedad, una persona escribiendo.
+ *
+ * Se guarda como 'asesor' y calla al bot en esa conversación (relevo,
+ * decisión 24). El relevo va DESPUÉS de guardar: guardar es lo que crea el
+ * contacto en el CRM si no existía. Un eco repetido no vuelve a anotarlo.
+ */
+async function guardarEcos(supabase: Supabase, numero: string | undefined, ecos: MensajeCoexistencia[]) {
+  if (ecos.length === 0) return;
+  const linea = await lineaDe(supabase, numero);
+  if (!linea || !numero) {
+    console.error('[WhatsApp] Llegó un eco a un número sin línea configurada:', numero);
+    return;
+  }
+
+  for (const eco of ecos) {
+    const leido = filaDeEco(eco);
+    if (!leido) continue;
+    const conversacionId = await conversacionDe(supabase, linea.inmobiliaria_id, leido.telefono);
+    if (!conversacionId) continue;
+
+    if ((await guardarFila(supabase, conversacionId, numero, leido.fila)) !== 'nuevo') continue;
+
+    const { error } = await supabase.schema('crm').rpc('registrar_relevo', {
+      p_wa_phone_number_id: numero,
+      p_telefono: leido.telefono,
+      p_ocurrido_at: leido.fila.created_at ?? new Date().toISOString(),
+    });
+    if (error) console.error('[WhatsApp] No se pudo anotar el relevo del eco:', error.message);
+  }
+}
+
+/**
+ * Un lote del historial de la app del celular, pedido al conectar la línea.
+ *
+ * Los lotes llegan desordenados (`chunk_order`) y pueden repetirse: cada
+ * mensaje se guarda con su hora original y su wamid, así que el orden lo da
+ * la fecha y los repetidos los frena el único. El progreso solo sube en la
+ * base, así que un lote viejo no lo hace retroceder.
+ *
+ * NUNCA despierta al bot ni dispara el relevo: son mensajes del pasado. Un
+ * «hola» de hace un año no es alguien escribiendo ahora.
+ */
+async function guardarHistorial(numero: string | undefined, valor: Record<string, unknown>) {
+  try {
+    const supabase = createAdminClient();
+    const linea = await lineaDe(supabase, numero);
+    if (!linea || !numero) {
+      console.error('[WhatsApp] Llegó historial a un número sin línea configurada:', numero);
+      return;
+    }
+    const crm = supabase.schema('crm');
+
+    for (const e of erroresDeHistorial(valor as Parameters<typeof erroresDeHistorial>[0])) {
+      const { error } = await crm.rpc('registrar_estado_linea', {
+        p_wa_phone_number_id: numero,
+        p_evento: 'historial_error',
+        p_error_codigo: e.codigo,
+        p_error: e.mensaje,
+      });
+      if (error) console.error('[WhatsApp] No se pudo anotar el error del historial:', error.message);
+    }
+
+    const lotes = (valor.history ?? []) as {
+      metadata?: { progress?: number };
+      threads?: { id?: string; messages?: MensajeCoexistencia[] }[];
+    }[];
+
+    for (const lote of lotes) {
+      for (const hilo of lote.threads ?? []) {
+        const leido = filasDeHilo(hilo);
+        if (!leido || leido.filas.length === 0) continue;
+        const conversacionId = await conversacionDe(supabase, linea.inmobiliaria_id, leido.telefono);
+        if (!conversacionId) continue;
+        for (const fila of leido.filas) await guardarFila(supabase, conversacionId, numero, fila);
+      }
+
+      const progreso = lote.metadata?.progress;
+      if (typeof progreso === 'number' && Number.isFinite(progreso)) {
+        const { error } = await crm.rpc('registrar_estado_linea', {
+          p_wa_phone_number_id: numero,
+          p_evento: 'historial_progreso',
+          p_progreso: Math.max(0, Math.min(100, Math.round(progreso))),
+        });
+        if (error) console.error('[WhatsApp] No se pudo anotar el progreso del historial:', error.message);
+      }
+    }
+  } catch (error) {
+    console.error('[WhatsApp] Error guardando el historial:', error);
+  }
+}
+
 async function guardarEntrante(
   supabase: ReturnType<typeof createAdminClient>,
   linea: Linea,
   m: MensajeMeta,
-  origen: string
+  origen: string,
+  numero: string
 ) {
   const inmobiliariaId = linea.inmobiliaria_id;
   const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
@@ -270,6 +465,9 @@ async function guardarEntrante(
       rol: 'usuario',
       contenido,
       wa_message_id: m.id,
+      // Por qué número entró: con varias líneas, la ventana de 24 h y el
+      // contexto del bot son por línea.
+      wa_phone_number_id: numero,
     });
 
   if (errorMensaje) {
@@ -316,6 +514,8 @@ async function guardarEntrante(
           // Ya está guardado (arriba, con su wamid): el agente no debe
           // guardarlo otra vez ni leerlo dos veces.
           wa_message_id: m.id,
+          // El agente solo lee como contexto lo de esta línea.
+          wa_phone_number_id: numero,
         }),
       });
 
@@ -324,7 +524,7 @@ async function guardarEntrante(
         console.error('[WhatsApp] El agente no devolvió respuesta:', r.status);
         return;
       }
-      await entregarRespuesta(telefono, respuesta);
+      await entregarRespuesta(supabase, numero, telefono, respuesta);
     } catch (error) {
       console.error('[WhatsApp] No se pudo activar el agente:', error);
     }
@@ -348,16 +548,23 @@ async function guardarEntrante(
  * se entiende. Y no se reintenta: tras un fallo de red no se sabe si salió,
  * y reintentar a ciegas puede hacerle llegar al cliente lo mismo dos veces.
  *
- * Sale por el número de las variables de entorno, que hoy es el único
- * conectado (el de prueba de Meta). Las credenciales por línea —para que
- * cada línea conteste desde su propio número— son el paso siguiente.
+ * Sale por la MISMA línea por la que entró el mensaje, con su token de
+ * Vault. Una línea sin credencial (el número de prueba de Meta, registrado
+ * a mano) sale por las variables de entorno, que son las de ese número.
  */
-async function entregarRespuesta(telefono: string, respuesta: RespuestaAgente | null) {
+async function entregarRespuesta(
+  supabase: Supabase,
+  numero: string,
+  telefono: string,
+  respuesta: RespuestaAgente | null
+) {
+  const credencial = await credencialDeLinea(supabase, numero);
   for (const clave of PARTES) {
     const texto = respuesta?.response?.[clave]?.trim();
     if (!texto) continue;
 
-    const r = await enviarTexto(telefono, texto);
+    const r = await enviarTexto(telefono, texto, credencial ?? undefined);
+    if (credencial) await anotarResultadoCredencial(supabase, numero, r);
     if (!r.ok) {
       console.error(
         '[WhatsApp] La respuesta del agente no le llegó al cliente:',

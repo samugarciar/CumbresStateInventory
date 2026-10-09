@@ -34,7 +34,9 @@ export default async function PaginaWhatsApp({
     crm.from('embudos').select('codigo, etiqueta, bot_atiende').eq('activo', true).order('orden'),
     crm
       .from('lineas')
-      .select('embudo, nombre, telefono_e164, modo, conectada_at, token_invalido_at')
+      .select(
+        'embudo, nombre, telefono_e164, modo, conectada_at, token_invalido_at, historial_solicitado_at, historial_progreso, historial_completado_at, historial_error_codigo, historial_error'
+      )
       .eq('activa', true),
   ]);
 

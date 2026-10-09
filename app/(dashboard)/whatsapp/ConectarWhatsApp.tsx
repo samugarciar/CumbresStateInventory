@@ -26,6 +26,31 @@ export interface LineaVista {
   modo: string | null;
   conectada_at: string | null;
   token_invalido_at: string | null;
+  historial_solicitado_at: string | null;
+  historial_progreso: number | null;
+  historial_completado_at: string | null;
+  historial_error_codigo: number | null;
+  historial_error: string | null;
+}
+
+/**
+ * Cómo va el historial del celular de una línea conectada. Meta lo manda
+ * por lotes después de pedirlo; 2593109 es que el negocio apagó compartir
+ * el historial en la app, no un fallo nuestro.
+ */
+function textoHistorial(l: LineaVista): string | null {
+  if (!l.conectada_at || l.modo !== 'coexistencia') return null;
+  if (l.historial_completado_at) return 'Historial del celular: completo.';
+  if (l.historial_error_codigo === 2593109) {
+    return 'Historial del celular: el negocio no lo compartió (está apagado en la app).';
+  }
+  if (l.historial_error_codigo !== null || l.historial_error) {
+    return `Historial del celular: Meta respondió un error${l.historial_error_codigo ? ` (${l.historial_error_codigo})` : ''}.`;
+  }
+  if (l.historial_solicitado_at) {
+    return `Historial del celular: llegando, ${l.historial_progreso ?? 0} %.`;
+  }
+  return 'Historial del celular: no se pidió.';
 }
 
 /** Lo justo del SDK de Facebook que se usa aquí. */
@@ -126,9 +151,14 @@ export default function ConectarWhatsApp({
         });
         if (r?.ok) {
           const l = r.linea ?? {};
+          const historial = r.historial?.pedido
+            ? ' El historial del celular ya se pidió a Meta y va llegando.'
+            : r.historial
+              ? ` El historial no se pudo pedir: ${r.historial.error}.`
+              : '';
           anotar(embudo, {
             tipo: 'ok',
-            texto: `Conectada: ${l.telefono ?? 'número sin leer'}${l.nombre ? ` · ${l.nombre}` : ''}`,
+            texto: `Conectada: ${l.telefono ?? 'número sin leer'}${l.nombre ? ` · ${l.nombre}` : ''}.${historial}`,
           });
           router.refresh();
         } else {
@@ -211,9 +241,10 @@ export default function ConectarWhatsApp({
       <div style={styles.aviso} role="note">
         <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
         <div>
-          <strong>Todavía no conectes un número real.</strong> Al conectar empiezan las 24 horas que da Meta
-          para traer el historial del celular, y la plataforma aún no lo recibe (es lo siguiente que se
-          construye). Puedes abrir la ventana para probarla y cancelarla.
+          <strong>Antes de conectar un número real</strong>, el webhook de la app de Meta tiene que estar
+          configurado y suscrito a <code>messages</code>, <code>history</code> y{' '}
+          <code>smb_message_echoes</code>. Al conectar, la plataforma pide el historial del celular, y Meta
+          solo deja pedirlo una vez y en las primeras 24 horas: si el webhook no está, ese historial se pierde.
         </div>
       </div>
 
@@ -277,6 +308,8 @@ export default function ConectarWhatsApp({
                   días estables.
                 </p>
               )}
+
+              {linea && textoHistorial(linea) && <p style={styles.nota}>{textoHistorial(linea)}</p>}
 
               {resultado && (
                 <p

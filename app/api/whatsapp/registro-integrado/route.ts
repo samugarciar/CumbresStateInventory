@@ -4,6 +4,7 @@ import {
   appsSuscritas,
   canjearCodigoRegistro,
   numerosDeCuenta,
+  pedirHistorial,
   permisosDelToken,
   suscribirApp,
   type ErrorMeta,
@@ -27,10 +28,11 @@ import {
  * intento se gasta sobre un número real, y lo que Meta responde ahí es lo
  * único que sirve para entender por qué falló.
  *
- * NO PIDE EL HISTORIAL NI LOS CONTACTOS. El historial solo se puede pedir
- * una vez y dentro de las 24 horas, y el webhook todavía no procesa
- * `history`: pedirlo ahora sería perderlo. Los contactos esperan el visto
- * bueno legal de Cumbres (la cuarentena está desconectada a propósito).
+ * PIDE EL HISTORIAL al terminar, porque solo se puede pedir una vez y
+ * dentro de las 24 horas del registro; los lotes llegan después al webhook
+ * (`history`), que los guarda sin despertar al bot. NO PIDE LOS CONTACTOS:
+ * esperan el visto bueno legal de Cumbres (la cuarentena está desconectada
+ * a propósito).
  *
  * El token del negocio no sale nunca de aquí: ni a la respuesta, ni a un
  * log, ni a un error. Va de Meta a Vault.
@@ -249,6 +251,27 @@ export async function POST(request: Request) {
     wabaId,
   });
 
+  // 6 · El historial del celular: una sola vez y dentro de las 24 horas.
+  // La línea ya está conectada; si Meta no acepta la solicitud, se anota y
+  // se dice, pero no se deshace la conexión.
+  const historial = await pedirHistorial(numero.id, token);
+  if (historial.ok) {
+    const { error } = await crm.rpc('registrar_estado_linea', {
+      p_wa_phone_number_id: numero.id,
+      p_evento: 'historial_solicitado',
+      p_request_id: historial.datos.request_id ?? null,
+    });
+    if (error) console.error('[registro-integrado] No se pudo anotar el historial pedido:', error.message);
+  } else {
+    const { error } = await crm.rpc('registrar_estado_linea', {
+      p_wa_phone_number_id: numero.id,
+      p_evento: 'historial_error',
+      p_error_codigo: historial.error.code ?? null,
+      p_error: historial.error.message ?? null,
+    });
+    if (error) console.error('[registro-integrado] No se pudo anotar el error del historial:', error.message);
+  }
+
   return respuesta(200, {
     ok: true,
     linea: {
@@ -257,5 +280,8 @@ export async function POST(request: Request) {
       telefono: aE164(numero.display_phone_number) ?? numero.display_phone_number ?? null,
       nombre: numero.verified_name ?? null,
     },
+    historial: historial.ok
+      ? { pedido: true }
+      : { pedido: false, error: historial.error.message ?? 'Meta no aceptó la solicitud' },
   });
 }

@@ -1,5 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { enviarTexto, enviarPlantilla, estaConfigurado } from '@/lib/whatsapp/meta';
+import {
+  enviarTexto,
+  enviarPlantilla,
+  estaConfigurado,
+  type CredencialLinea,
+} from '@/lib/whatsapp/meta';
+import { anotarResultadoCredencial, credencialDeLinea } from '@/lib/whatsapp/lineas';
 
 /**
  * Por aquí manda el CRM.
@@ -36,23 +42,17 @@ interface Peticion {
     idioma?: string;
     variables?: Record<string, string>;
   };
+  /**
+   * Por qué línea quiere mandar el CRM (contrato del 1 oct, nota 9). Sin
+   * él, sale por el número de las variables de entorno, como siempre.
+   */
+  desde?: { wa_phone_number_id?: string; embudo?: string };
 }
 
 export async function POST(request: Request) {
   const token = request.headers.get('x-crm-token');
   if (!token || token !== process.env.CRM_ENVIO_TOKEN) {
     return Response.json({ ok: false, error: 'No autorizado' }, { status: 401 });
-  }
-
-  if (!estaConfigurado()) {
-    return Response.json(
-      {
-        ok: false,
-        error:
-          'El canal propio todavía no está configurado: el número sigue fuera de la Cloud API de Meta.',
-      },
-      { status: 503 }
-    );
   }
 
   const cuerpo: Peticion | null = await request.json().catch(() => null);
@@ -69,14 +69,55 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
+  // ── Por qué línea sale ───────────────────────────────────────────
+  // Con `desde`, por esa línea y con SU token, o por ninguna: salir por
+  // otro número es escribirle a la persona desde otro hilo de su WhatsApp,
+  // con otra ventana de 24 horas. Es peor que no salir.
+  const numeroPedido = cuerpo?.desde?.wa_phone_number_id?.trim();
+  let credencial: CredencialLinea | undefined;
+  if (numeroPedido) {
+    const { data: lineas } = await supabase
+      .schema('crm')
+      .rpc('linea_por_numero', { p_wa_phone_number_id: numeroPedido });
+    const linea = (Array.isArray(lineas) ? lineas[0] : lineas) as { inmobiliaria_id?: string } | undefined;
+    if (!linea || linea.inmobiliaria_id !== inmobiliariaId) {
+      return Response.json(
+        { ok: false, error: 'Esa línea no es de esta inmobiliaria' },
+        { status: 403 }
+      );
+    }
+    const deLinea = await credencialDeLinea(supabase, numeroPedido);
+    if (!deLinea) {
+      return Response.json(
+        {
+          ok: false,
+          error: `La línea ${cuerpo?.desde?.embudo ?? numeroPedido} no tiene credencial: hay que conectarla con WhatsApp.`,
+        },
+        { status: 409 }
+      );
+    }
+    credencial = deLinea;
+  } else if (!estaConfigurado()) {
+    return Response.json(
+      {
+        ok: false,
+        error:
+          'El canal propio todavía no está configurado: el número sigue fuera de la Cloud API de Meta.',
+      },
+      { status: 503 }
+    );
+  }
+  const numeroSalida = credencial?.phoneNumberId ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? null;
+
   // Fuera de la ventana, Meta solo entrega plantillas aprobadas. El
   // `texto` viaja igualmente porque es lo que se guarda en la
   // conversación: lo que el cliente ve es la plantilla ya rellena, y eso
   // es exactamente lo que hay que dejar escrito.
   const p = cuerpo?.plantilla;
   const r = p?.nombre_meta
-    ? await enviarPlantilla(telefono, p.nombre_meta, p.idioma ?? 'es', p.variables ?? {})
-    : await enviarTexto(telefono, texto);
+    ? await enviarPlantilla(telefono, p.nombre_meta, p.idioma ?? 'es', p.variables ?? {}, credencial)
+    : await enviarTexto(telefono, texto, credencial);
+  if (credencial) await anotarResultadoCredencial(supabase, credencial.phoneNumberId, r);
 
   // ── Anotar el resultado en la fila que el CRM ya había creado ─────
   if (cuerpo?.envio_id) {
@@ -117,12 +158,23 @@ export async function POST(request: Request) {
       rol: 'asesor',
       contenido: texto,
       wa_message_id: r.waMessageId,
+      // Por qué línea salió: el CRM mide la ventana de 24 h por línea.
+      wa_phone_number_id: numeroSalida,
     });
     if (error) {
       // El mensaje SALIÓ. Que no se pueda guardar es grave —el timeline
       // queda incompleto— pero devolver error haría que el asesor lo
       // mandara otra vez, y el cliente lo recibiría dos veces.
       console.error('[WhatsApp] Mensaje entregado pero no registrado:', error);
+    } else if (numeroSalida) {
+      // Una persona del equipo escribió: el bot se calla en esa
+      // conversación (relevo, decisión 24). Va DESPUÉS de guardar, como
+      // pide el contrato; la base decide si aplica (solo donde el bot habla).
+      const { error: errorRelevo } = await supabase.schema('crm').rpc('registrar_relevo', {
+        p_wa_phone_number_id: numeroSalida,
+        p_telefono: telefono,
+      });
+      if (errorRelevo) console.error('[WhatsApp] No se pudo anotar el relevo:', errorRelevo.message);
     }
   } else {
     console.error(
