@@ -309,3 +309,113 @@ export function pedirHistorial(phoneNumberId: string, token: string) {
     cuerpo: { messaging_product: 'whatsapp', sync_type: 'history' },
   });
 }
+
+// ---------------------------------------------------------------------
+// Gestión de plantillas de WhatsApp (Meta HSM)
+//
+// El CRM encarga a la plataforma listar y mandar plantillas a revisión
+// en Meta (contrato C2, decisión 3). El token nunca se expone.
+// ---------------------------------------------------------------------
+
+/**
+ * Retira cualquier token con forma de Meta (EAA...) de mensajes de error
+ * para que nunca salgan en logs, respuestas ni excepciones (decisión 23).
+ */
+export function sanitizarTextoMeta(texto?: string | null): string {
+  if (!texto) return '';
+  return texto
+    .replace(/EAA[A-Za-z0-9_-]+/g, '[token retirado]')
+    .replace(/Bearer\s+[^\s]+/gi, 'Bearer [token retirado]');
+}
+
+export interface PlantillaMetaRemota {
+  id: string;
+  name: string;
+  status: string;
+  category: string;
+  language: string;
+  components?: unknown[];
+  rejected_reason?: string;
+  quality_score?: { score?: string };
+}
+
+/**
+ * Consulta las plantillas registradas en la WABA en Meta Graph API.
+ */
+export function listarPlantillas(wabaId: string, token: string) {
+  const params = new URLSearchParams({
+    fields: 'id,name,status,category,language,components,rejected_reason,quality_score',
+    limit: '100',
+  });
+  return graph<{ data?: PlantillaMetaRemota[] }>(
+    `${encodeURIComponent(wabaId)}/message_templates?${params}`,
+    { token }
+  );
+}
+
+export interface OpcionesCrearPlantilla {
+  nombreMeta: string;
+  cuerpo: string;
+  categoria: string;
+  idioma?: string;
+  ejemplos?: string[];
+}
+
+/**
+ * Crea una plantilla oficial en Meta y la envía a revisión.
+ * Utiliza parámetros con nombre (parameter_format: NAMED) y genera los ejemplos
+ * requeridos por la Graph API v21.0.
+ */
+export function crearPlantillaRevision(
+  wabaId: string,
+  token: string,
+  opciones: OpcionesCrearPlantilla
+) {
+  // Extrae variables nombradas {{variable}}
+  const variablesEncontradas = opciones.cuerpo.match(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi) ?? [];
+  const ejemplosBody =
+    variablesEncontradas.length > 0
+      ? [
+          variablesEncontradas.map((v, i) => {
+            if (opciones.ejemplos && opciones.ejemplos[i]) return opciones.ejemplos[i];
+            const lower = v.toLowerCase();
+            if (lower.includes('nombre')) return 'Juan Pérez';
+            if (lower.includes('asesor')) return 'Alejandro Rojas';
+            if (lower.includes('inmueble')) return 'Apto Poblado 401';
+            if (lower.includes('precio')) return '$2.500.000';
+            if (lower.includes('fecha')) return '2026-10-15';
+            if (lower.includes('hora')) return '10:00 AM';
+            return 'Ejemplo';
+          }),
+        ]
+      : undefined;
+
+  const categoriaNormalizada =
+    opciones.categoria.toLowerCase() === 'marketing' ? 'MARKETING' : 'UTILITY';
+
+  const componentes: Record<string, unknown>[] = [
+    {
+      type: 'BODY',
+      text: opciones.cuerpo,
+      ...(ejemplosBody ? { example: { body_text: ejemplosBody } } : {}),
+    },
+  ];
+
+  const payload = {
+    name: opciones.nombreMeta.toLowerCase().trim(),
+    category: categoriaNormalizada,
+    language: opciones.idioma || 'es',
+    components: componentes,
+    parameter_format: 'NAMED',
+  };
+
+  return graph<{ id: string; status?: string }>(
+    `${encodeURIComponent(wabaId)}/message_templates`,
+    {
+      token,
+      metodo: 'POST',
+      cuerpo: payload,
+    }
+  );
+}
+
