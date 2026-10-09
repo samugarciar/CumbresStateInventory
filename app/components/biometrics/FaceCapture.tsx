@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, RefreshCw, Check, ShieldAlert, AlertCircle } from 'lucide-react';
+import { CAPTURA_SIMULADA_DISPONIBLE, describirErrorCamara, generarCapturaSimulada, type ErrorCamara } from './camara';
 
 interface FaceCaptureProps {
   title: string;
@@ -14,6 +15,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [errorCamara, setErrorCamara] = useState<ErrorCamara | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isCounting, setIsCounting] = useState(false);
@@ -43,6 +45,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
       setPermissionGranted(true);
     } catch (err: any) {
       console.error('[FaceCapture] Error al acceder a la cámara frontal:', err);
+      setErrorCamara(describirErrorCamara(err));
       setPermissionGranted(false);
     }
   };
@@ -52,6 +55,21 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+  };
+
+  // El <video> se desmonta mientras se ve el error o la foto tomada; al volver a montarse toma el
+  // flujo ya abierto, para que «Reintentar» y «Repetir Foto» no queden en negro.
+  const conectarVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video;
+    if (video && streamRef.current) {
+      video.srcObject = streamRef.current;
+    }
+  }, []);
+
+  const reintentarCamara = () => {
+    setErrorCamara(null);
+    setPermissionGranted(null);
+    startCamera();
   };
 
   useEffect(() => {
@@ -198,28 +216,33 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
           // Mensaje de error de permisos de cámara
           <div style={styles.errorBox} className="glass-card">
             <AlertCircle size={36} color="var(--danger)" style={{ marginBottom: '0.75rem' }} />
-            <span style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Cámara no disponible</span>
+            <span style={{ fontWeight: 'bold', marginBottom: '0.5rem', textAlign: 'center' }}>{errorCamara?.titulo ?? 'Cámara no disponible'}</span>
             <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 1.4 }}>
-              No pudimos acceder a tu cámara frontal. Asegúrate de conceder permisos de cámara en tu navegador o dispositivo móvil.
+              {errorCamara?.detalle ?? 'No pudimos abrir la cámara. Pulsa «Reintentar» o usa otro dispositivo.'}
             </p>
-            {/* Fallback de Pruebas: Cargar una foto de biblioteca o simular una */}
-            <button 
-              onClick={() => {
-                // Simulación para propósitos de prueba locales
-                console.log('[FaceCapture] Simulando captura de selfie por falta de cámara');
-                setCapturedImage('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 100 100" fill="%2300abd8"><circle cx="50" cy="50" r="40" fill="opacity-10"/><circle cx="50" cy="40" r="18"/><path d="M20 80c0-15 15-20 30-20s30 5 30 20z"/></svg>');
-              }}
-              className="btn btn-outline"
-              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
-            >
-              Usar Captura Simulada (Modo Pruebas)
+            <button onClick={reintentarCamara} className="btn btn-primary" style={styles.btnReintentar}>
+              <RefreshCw size={14} />
+              Reintentar
             </button>
+            {/* Solo con next dev contra un Supabase local: nunca llega a un acta real (ver camara.ts) */}
+            {CAPTURA_SIMULADA_DISPONIBLE && (
+              <button
+                onClick={() => {
+                  console.log('[FaceCapture] Simulando captura de selfie por falta de cámara');
+                  setCapturedImage(generarCapturaSimulada('rostro'));
+                }}
+                className="btn btn-outline"
+                style={{ marginTop: '0.75rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              >
+                Usar Captura Simulada (solo desarrollo)
+              </button>
+            )}
           </div>
         ) : (
           // Live Video feed en máscara circular
           <div style={styles.circleMask}>
             <video
-              ref={videoRef}
+              ref={conectarVideo}
               autoPlay
               playsInline
               muted
@@ -422,6 +445,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     color: '#ffffff',
+  },
+  btnReintentar: {
+    marginTop: '1rem',
+    fontSize: '0.8rem',
+    padding: '0.45rem 1rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
   },
   flashOverlay: {
     position: 'fixed',
