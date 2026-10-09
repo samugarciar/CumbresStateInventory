@@ -10,6 +10,7 @@ import {
   VERSION_SDK,
   esEmbudoConectable,
   leerEventoRegistro,
+  requiereConfirmacionCorte,
   type EventoRegistro,
 } from '@/lib/whatsapp/registro-integrado';
 
@@ -109,6 +110,7 @@ export default function ConectarWhatsApp({
   const [sdkListo, setSdkListo] = useState(false);
   const [sdkFallo, setSdkFallo] = useState(false);
   const [enCurso, setEnCurso] = useState<string | null>(null);
+  const [confirmandoCorte, setConfirmandoCorte] = useState<string | null>(null);
   const [resultados, setResultados] = useState<Record<string, Resultado | undefined>>({});
   const iniciado = useRef(false);
   // El último evento de la ventana de Meta. Llega por `postMessage`, aparte
@@ -135,7 +137,7 @@ export default function ConectarWhatsApp({
     setResultados((previos) => ({ ...previos, [embudo]: resultado }));
   }
 
-  async function terminar(embudo: string, code: string | undefined) {
+  async function terminar(embudo: string, code: string | undefined, confirmacionCorte = false) {
     try {
       if (code) {
         // El código vence a los 30 segundos. Se le da un segundo al evento
@@ -145,6 +147,7 @@ export default function ConectarWhatsApp({
         const r = await llamarServidor({
           accion: 'conectar',
           embudo,
+          confirmacion_corte: confirmacionCorte,
           code,
           waba_id: fin?.tipo === 'fin' ? fin.wabaId : undefined,
           phone_number_id: fin?.tipo === 'fin' ? fin.phoneNumberId : undefined,
@@ -197,7 +200,15 @@ export default function ConectarWhatsApp({
     }
   }
 
-  function conectar(embudo: string) {
+  function iniciarConexion(embudo: string) {
+    if (requiereConfirmacionCorte(embudo)) {
+      setConfirmandoCorte(embudo);
+      return;
+    }
+    conectar(embudo, false);
+  }
+
+  function conectar(embudo: string, confirmacionCorte = false) {
     if (!window.FB || enCurso) return;
     evento.current = null;
     setEnCurso(embudo);
@@ -205,7 +216,7 @@ export default function ConectarWhatsApp({
     // FB.login no admite una función async: se llama a una aparte.
     window.FB.login(
       (respuesta) => {
-        void terminar(embudo, respuesta?.authResponse?.code ?? undefined);
+        void terminar(embudo, respuesta?.authResponse?.code ?? undefined, confirmacionCorte);
       },
       {
         config_id: CONFIG_REGISTRO_ID,
@@ -288,7 +299,7 @@ export default function ConectarWhatsApp({
                 {conectable ? (
                   <button
                     className={conectada && !tokenCaido ? 'btn btn-secondary' : 'btn btn-primary'}
-                    onClick={() => conectar(e.codigo)}
+                    onClick={() => iniciarConexion(e.codigo)}
                     disabled={!sdkListo || enCurso !== null}
                     style={styles.boton}
                   >
@@ -301,6 +312,12 @@ export default function ConectarWhatsApp({
                   </span>
                 )}
               </div>
+
+              {requiereConfirmacionCorte(e.codigo) && (
+                <p style={styles.nota}>
+                  Esta línea atiende hoy clientes reales por Kommo. Iniciar su conexión exige confirmación explícita de corte.
+                </p>
+              )}
 
               {!conectable && (
                 <p style={styles.nota}>
@@ -330,6 +347,55 @@ export default function ConectarWhatsApp({
       </ul>
 
       {!sdkListo && !sdkFallo && <p style={styles.nota}>Cargando la ventana de Meta…</p>}
+
+      {confirmandoCorte && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard} role="dialog" aria-modal="true" aria-labelledby="modal-corte-titulo">
+            <div style={styles.modalHeader}>
+              <AlertTriangle size={24} style={{ color: '#eab308', flexShrink: 0 }} />
+              <h2 id="modal-corte-titulo" style={styles.modalTitulo}>
+                ¿Iniciar corte de la línea comercial?
+              </h2>
+            </div>
+            <p style={styles.modalTexto}>
+              La línea comercial (+57 324 3516352) atiende hoy clientes reales por Kommo y n8n.
+              Al continuar, iniciarás el proceso de conexión a la Cloud API directa (coexistencia)
+              y se pedirá a Meta el historial de mensajes de los últimos meses (descartando duplicados
+              previos de Kommo).
+            </p>
+            <p style={styles.modalTextoSecundario}>
+              <strong>Asegúrate antes de continuar:</strong>
+              <br />
+              1. Haber respaldado y desconectado la cuenta de Kommo en la app de WhatsApp Business
+              (<em>Configuración &gt; Cuenta &gt; Plataforma empresarial &gt; Desconectar</em>).
+              <br />
+              2. Estar listo para apagar los flujos correspondientes de n8n al completar la conexión.
+            </p>
+            <div style={styles.modalAcciones}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setConfirmandoCorte(null)}
+                style={styles.modalBoton}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const emb = confirmandoCorte;
+                  setConfirmandoCorte(null);
+                  conectar(emb, true);
+                }}
+                style={styles.modalBoton}
+              >
+                Sí, iniciar corte y conectar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -369,4 +435,67 @@ const styles: Record<string, React.CSSProperties> = {
   exito: { margin: 0, fontSize: 13.5, color: 'var(--primary)', fontWeight: 600 },
   error: { margin: 0, fontSize: 13.5, color: 'var(--danger)' },
   detalle: { color: 'var(--text-secondary)' },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: 'var(--bg-surface, #ffffff)',
+    border: '1px solid var(--border-color, #e5e7eb)',
+    borderRadius: 'var(--border-radius-lg, 12px)',
+    maxWidth: 540,
+    width: '100%',
+    padding: 24,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+  },
+  modalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalTitulo: {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+  },
+  modalTexto: {
+    margin: 0,
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: 'var(--text-primary)',
+  },
+  modalTextoSecundario: {
+    margin: 0,
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: 'var(--text-secondary)',
+    backgroundColor: 'rgba(234, 179, 8, 0.08)',
+    padding: '10px 12px',
+    borderRadius: 'var(--border-radius-sm, 6px)',
+    border: '1px solid rgba(234, 179, 8, 0.25)',
+  },
+  modalAcciones: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalBoton: {
+    padding: '8px 16px',
+    fontSize: 14,
+    fontWeight: 600,
+  },
 };

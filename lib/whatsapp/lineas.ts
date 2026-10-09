@@ -83,6 +83,40 @@ export function conMas(numero: string): string {
   return numero.startsWith('+') ? numero : `+${numero}`;
 }
 
+/**
+ * Determina si dos roles representan la misma dirección de comunicación.
+ * 'usuario' es el cliente.
+ * 'asesor' y 'agente' representan el negocio (agente es el bot por Kommo; asesor es el equipo/celular).
+ */
+export function mismaDireccion(rolA: string, rolB: string): boolean {
+  if (rolA === 'usuario') return rolB === 'usuario';
+  return (rolA === 'asesor' || rolA === 'agente') && (rolB === 'asesor' || rolB === 'agente');
+}
+
+/**
+ * Roles equivalentes para consultar en la base de datos según la dirección del mensaje del historial.
+ * Lo que escribió el bot por Kommo está guardado como 'agente', y en el historial del celular
+ * aparecerá como mensaje del negocio ('asesor'). 'agente' y 'asesor' cuentan como la misma dirección.
+ */
+export function rolesDireccion(rol: 'usuario' | 'asesor'): string[] {
+  return rol === 'usuario' ? ['usuario'] : ['asesor', 'agente'];
+}
+
+/**
+ * Rango de ±minutos (por defecto ±2 min) para comparar timestamps de mensajes históricos.
+ */
+export function ventanaDuplicadoMinutos(
+  isoFecha?: string,
+  minutos = 2
+): { desde: string; hasta: string } {
+  const t = isoFecha ? new Date(isoFecha).getTime() : Date.now();
+  const delta = minutos * 60 * 1000;
+  return {
+    desde: new Date(t - delta).toISOString(),
+    hasta: new Date(t + delta).toISOString(),
+  };
+}
+
 /** Meta da los tiempos en segundos Unix, como texto. */
 export function momentoDe(timestamp?: string): string | undefined {
   const segundos = Number(timestamp);
