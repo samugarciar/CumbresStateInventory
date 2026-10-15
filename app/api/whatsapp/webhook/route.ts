@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { conversacionDe } from '@/lib/whatsapp/conversaciones';
 import { enviarTexto } from '@/lib/whatsapp/meta';
 import {
   anotarResultadoCredencial,
@@ -245,41 +246,6 @@ async function lineaDe(supabase: Supabase, numero: string | undefined): Promise<
   if (!numero) return null;
   const { data } = await supabase.schema('crm').rpc('linea_por_numero', { p_wa_phone_number_id: numero });
   return ((Array.isArray(data) ? data[0] : data) as Linea | undefined) ?? null;
-}
-
-/**
- * La conversación de esa persona, creándola si no existe. Dos lotes del
- * historial pueden querer crearla a la vez: si el segundo choca con el
- * único, la del primero ya está ahí.
- */
-async function conversacionDe(
-  supabase: Supabase,
-  inmobiliariaId: string,
-  telefono: string
-): Promise<string | null> {
-  const buscar = () =>
-    supabase
-      .from('agente_comercial_conversaciones')
-      .select('id')
-      .eq('inmobiliaria_id', inmobiliariaId)
-      .eq('telefono', telefono)
-      .maybeSingle();
-
-  const { data: existente } = await buscar();
-  if (existente?.id) return existente.id as string;
-
-  const { data: nueva, error } = await supabase
-    .from('agente_comercial_conversaciones')
-    .insert({ inmobiliaria_id: inmobiliariaId, telefono })
-    .select('id')
-    .single();
-  if (nueva?.id) return nueva.id as string;
-  if (error?.code === '23505') {
-    const { data: otra } = await buscar();
-    if (otra?.id) return otra.id as string;
-  }
-  console.error('[WhatsApp] No se pudo crear la conversación:', error?.message);
-  return null;
 }
 
 /** 'nuevo' si se guardó; 'repetido' si Meta ya lo había mandado. */

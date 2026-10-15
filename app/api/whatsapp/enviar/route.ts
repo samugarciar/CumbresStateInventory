@@ -6,6 +6,7 @@ import {
   type CredencialLinea,
 } from '@/lib/whatsapp/meta';
 import { anotarResultadoCredencial, credencialDeLinea } from '@/lib/whatsapp/lineas';
+import { conversacionDe } from '@/lib/whatsapp/conversaciones';
 
 /**
  * Por aquí manda el CRM.
@@ -145,16 +146,14 @@ export async function POST(request: Request) {
   }
 
   // ── Y en la conversación, para que se vea en el timeline ──────────
-  const { data: conversacion } = await supabase
-    .from('agente_comercial_conversaciones')
-    .select('id')
-    .eq('inmobiliaria_id', inmobiliariaId)
-    .eq('telefono', telefono)
-    .maybeSingle();
+  // Si la persona nunca nos escribió (un recordatorio de cartera, por
+  // ejemplo), la conversación se crea aquí: así el mensaje queda en su
+  // hilo, aparece en la ficha del CRM, y su respuesta cae en el mismo.
+  const conversacionId = await conversacionDe(supabase, inmobiliariaId, telefono);
 
-  if (conversacion) {
+  if (conversacionId) {
     const { error } = await supabase.from('agente_comercial_mensajes').insert({
-      conversacion_id: conversacion.id,
+      conversacion_id: conversacionId,
       rol: 'asesor',
       contenido: texto,
       wa_message_id: r.waMessageId,
@@ -178,7 +177,7 @@ export async function POST(request: Request) {
     }
   } else {
     console.error(
-      '[WhatsApp] Mensaje entregado a un teléfono sin conversación abierta:',
+      '[WhatsApp] Mensaje entregado, pero no se pudo crear su conversación:',
       telefono
     );
   }

@@ -31,7 +31,22 @@ interface PeticionCrearPlantilla {
   categoria?: string;
   idioma?: string;
   cuerpo?: string;
-  ejemplos?: string[];
+  /** Un ejemplo por variable: por nombre, o una lista en el orden en que aparecen. */
+  ejemplos?: unknown;
+}
+
+/** Solo una lista de textos o un objeto de textos; cualquier otra cosa, como si no viniera. */
+function ejemplosValidos(ejemplos: unknown): string[] | Record<string, string> | undefined {
+  if (Array.isArray(ejemplos)) {
+    return ejemplos.every((e) => typeof e === 'string') ? (ejemplos as string[]) : undefined;
+  }
+  if (ejemplos && typeof ejemplos === 'object') {
+    const pares = Object.entries(ejemplos as Record<string, unknown>);
+    return pares.every(([, v]) => typeof v === 'string')
+      ? (Object.fromEntries(pares) as Record<string, string>)
+      : undefined;
+  }
+  return undefined;
 }
 
 function validarTokenCRM(request: Request): boolean {
@@ -162,7 +177,7 @@ export async function POST(request: Request) {
   const categoria = cuerpo?.categoria?.trim();
   const cuerpoTexto = cuerpo?.cuerpo?.trim();
   const idioma = cuerpo?.idioma?.trim() || 'es';
-  const ejemplos = cuerpo?.ejemplos;
+  const ejemplos = ejemplosValidos(cuerpo?.ejemplos);
 
   if (!inmobiliariaId || !phoneNumberId || !nombreMeta || !categoria || !cuerpoTexto) {
     return Response.json(

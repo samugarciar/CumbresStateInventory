@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizarTextoMeta,
   crearPlantillaRevision,
+  ejemplosConNombre,
 } from '../lib/whatsapp/meta.ts';
 
 test('sanitizarTextoMeta retira tokens de Meta y Bearer', () => {
@@ -33,7 +34,10 @@ test('crearPlantillaRevision arma el payload correcto para Meta', async () => {
     category?: string;
     language?: string;
     parameter_format?: string;
-    components?: Array<{ type?: string; example?: { body_text?: string[][] } }>;
+    components?: Array<{
+      type?: string;
+      example?: { body_text?: string[][]; body_text_named_params?: { param_name: string; example: string }[] };
+    }>;
   } | undefined = undefined;
   let authCapturado: string | undefined = undefined;
 
@@ -71,8 +75,12 @@ test('crearPlantillaRevision arma el payload correcto para Meta', async () => {
     assert.equal(p1()?.language, 'es');
     assert.equal(p1()?.parameter_format, 'NAMED');
     assert.equal(p1()?.components?.[0]?.type, 'BODY');
-    assert.deepEqual(p1()?.components?.[0]?.example?.body_text, [
-      ['Carlos Gómez', 'Apto 502', '2026-10-20'],
+    // Con variables con nombre, Meta pide los ejemplos por nombre, no por posición.
+    assert.equal(p1()?.components?.[0]?.example?.body_text, undefined);
+    assert.deepEqual(p1()?.components?.[0]?.example?.body_text_named_params, [
+      { param_name: 'nombre', example: 'Carlos Gómez' },
+      { param_name: 'inmueble', example: 'Apto 502' },
+      { param_name: 'fecha', example: '2026-10-20' },
     ]);
   } finally {
     globalThis.fetch = fetchOriginal;
@@ -83,7 +91,9 @@ test('crearPlantillaRevision genera ejemplos por defecto si no se especifican', 
   const fetchOriginal = globalThis.fetch;
   let payloadCapturado: {
     category?: string;
-    components?: Array<{ example?: { body_text?: string[][] } }>;
+    components?: Array<{
+      example?: { body_text_named_params?: { param_name: string; example: string }[] };
+    }>;
   } | undefined = undefined;
 
   globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -103,11 +113,32 @@ test('crearPlantillaRevision genera ejemplos por defecto si no se especifican', 
 
     const p2 = () => payloadCapturado;
     assert.equal(p2()?.category, 'MARKETING');
-    assert.deepEqual(p2()?.components?.[0]?.example?.body_text, [
-      ['Juan Pérez', 'Alejandro Rojas'],
+    assert.deepEqual(p2()?.components?.[0]?.example?.body_text_named_params, [
+      { param_name: 'nombre', example: 'Juan Pérez' },
+      { param_name: 'asesor', example: 'Alejandro Rojas' },
     ]);
   } finally {
     globalThis.fetch = fetchOriginal;
   }
 });
 
+test('ejemplosConNombre: uno por variable, sin repetir, por nombre como los manda el CRM', () => {
+  assert.deepEqual(
+    ejemplosConNombre(
+      'Hola {{nombre}}, tu saldo de {{monto}} vence el {{fecha_limite}}. Gracias, {{ nombre }}.',
+      { monto: '$1.250.000', fecha_limite: '5 de noviembre', sobra: 'no se usa' }
+    ),
+    [
+      { param_name: 'nombre', example: 'Juan Pérez' },
+      { param_name: 'monto', example: '$1.250.000' },
+      { param_name: 'fecha_limite', example: '5 de noviembre' },
+    ]
+  );
+});
+
+test('ejemplosConNombre: un ejemplo en blanco se reemplaza, y sin variables no hay ejemplos', () => {
+  assert.deepEqual(ejemplosConNombre('Hola {{nombre}}', { nombre: '   ' }), [
+    { param_name: 'nombre', example: 'Juan Pérez' },
+  ]);
+  assert.deepEqual(ejemplosConNombre('Hola, gracias por escribirnos'), []);
+});
