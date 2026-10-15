@@ -92,20 +92,54 @@ export async function inicializarBucketBiometria() {
   }
 }
 
+type TipoImagen = 'image/png' | 'image/jpeg';
+
+// Primeros bytes de cada formato: el archivo se reconoce por su contenido, no por lo que diga el data URL.
+const CABECERAS: Record<TipoImagen, Buffer> = {
+  'image/png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  'image/jpeg': Buffer.from([0xff, 0xd8, 0xff])
+};
+
 /**
- * Sube una imagen Base64 a Supabase Storage y retorna su URL pública.
+ * Decodifica una evidencia que llega del navegador como data URL (`data:image/jpeg;base64,…`).
+ * Devuelve null si falta, si no es exactamente del tipo esperado o si sus bytes no empiezan con la
+ * cabecera de ese formato. Así no se sube como imagen algo que no lo es: la captura simulada en SVG
+ * que ofrecía el asistente sin cámara se convertía en 21 bytes sin sentido, guardados como .jpg, que
+ * el acta mostraba como imagen rota.
  */
-async function subirImagenBase64(
+function decodificarImagen(dataUrl: string, tipo: TipoImagen): Buffer | null {
+  const prefijo = `data:${tipo};base64,`;
+  // Llega del navegador: no se confía en que sea un string.
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith(prefijo)) return null;
+
+  const base64 = dataUrl.slice(prefijo.length);
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) return null;
+
+  const imagen = Buffer.from(base64, 'base64');
+  const cabecera = CABECERAS[tipo];
+  return imagen.length > cabecera.length && imagen.subarray(0, cabecera.length).equals(cabecera) ? imagen : null;
+}
+
+/** Una evidencia del acta: lo que manda el navegador y dónde se guarda. */
+interface Evidencia {
+  rol: 'asesor' | 'inquilino';
+  archivo: string;
+  tipo: TipoImagen;
+  dataUrl: string;
+  descripcion: string; // Para el mensaje de error: «la foto de la cédula del asesor».
+}
+
+/**
+ * Sube una imagen ya validada a Supabase Storage y retorna su URL pública.
+ */
+async function subirImagen(
   supabaseAdmin: any,
   inmobiliariaId: string,
   inventarioId: string,
   fileName: string,
-  base64Data: string,
-  contentType: string
+  buffer: Buffer,
+  contentType: TipoImagen
 ): Promise<string> {
-  // Limpiar el prefijo de Data URL si existe
-  const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
-  const buffer = Buffer.from(base64Clean, 'base64');
   const filePath = `${inmobiliariaId}/${inventarioId}/${fileName}`;
 
   const { error: uploadError } = await supabaseAdmin.storage
@@ -162,12 +196,41 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
       return { success: false, error: 'Sesión expirada o inválida.' };
     }
 
+    // 1. Validar las evidencias antes de tocar Storage o la base. Las obligatorias tienen que estar
+    // y cada una tiene que ser la imagen que dice ser; si una falla se rechaza el acta entera y no
+    // queda nada subido a medias.
+    const selfieInquilinoOmitida = payload.inquilino.selfie_omitida === true;
+    const evidencias: Evidencia[] = [
+      { rol: 'asesor', archivo: 'firma_asesor.png', tipo: 'image/png', dataUrl: payload.asesor.firma, descripcion: 'la firma del asesor' },
+      { rol: 'asesor', archivo: 'selfie_asesor.jpg', tipo: 'image/jpeg', dataUrl: payload.asesor.selfie, descripcion: 'la foto del rostro del asesor' },
+      { rol: 'asesor', archivo: 'cedula_asesor.jpg', tipo: 'image/jpeg', dataUrl: payload.asesor.cedula, descripcion: 'la foto de la cédula del asesor' },
+      { rol: 'inquilino', archivo: 'firma_inquilino.png', tipo: 'image/png', dataUrl: payload.inquilino.firma, descripcion: 'la firma del inquilino' },
+      { rol: 'inquilino', archivo: 'cedula_inquilino.jpg', tipo: 'image/jpeg', dataUrl: payload.inquilino.cedula, descripcion: 'la foto de la cédula del inquilino' }
+    ];
+    // Si el asesor apagó la foto del rostro del inquilino no se pide, y la que mande el navegador se ignora.
+    if (!selfieInquilinoOmitida) {
+      evidencias.push({ rol: 'inquilino', archivo: 'selfie_inquilino.jpg', tipo: 'image/jpeg', dataUrl: payload.inquilino.selfie, descripcion: 'la foto del rostro del inquilino' });
+    }
+
+    const imagenes: { evidencia: Evidencia; imagen: Buffer }[] = [];
+    for (const evidencia of evidencias) {
+      const imagen = decodificarImagen(evidencia.dataUrl, evidencia.tipo);
+      if (!imagen) {
+        const problema = evidencia.dataUrl ? 'no es una imagen válida' : 'no llegó';
+        console.error(`[Biometría Backend] Inventario ${inventarioId}: ${evidencia.archivo} ${problema}. No se guardó nada.`);
+        // El inquilino puede volver a sus pasos desde la cédula; los del asesor ya no se alcanzan.
+        const queHacer = evidencia.rol === 'inquilino' ? 'Repite ese paso.' : 'Cancela y vuelve a empezar la firma.';
+        return { success: false, error: `No se guardó nada: ${evidencia.descripcion} ${problema}. ${queHacer}` };
+      }
+      imagenes.push({ evidencia, imagen });
+    }
+
     const supabaseAdmin = createAdminClient();
 
-    // 1. Asegurar que el bucket exista
+    // 2. Asegurar que el bucket exista
     await inicializarBucketBiometria();
 
-    // 2. Obtener el inventario para heredar inmobiliaria_id y leer items anteriores
+    // 3. Obtener el inventario para heredar inmobiliaria_id y leer items anteriores
     const { data: inv, error: invErr } = await supabaseAdmin
       .from('inventarios')
       .select('items, creado_por, inmuebles!inner(inmobiliaria_id)')
@@ -188,38 +251,15 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
 
     console.log(`[Biometría Backend] Procesando subida de archivos para Inventario ${inventarioId}...`);
 
-    // 3. Subir archivos de Asesor
-    let firmaAsesorUrl = '';
-    let selfieAsesorUrl = '';
-    let cedulaAsesorUrl = '';
-    
-    if (payload.asesor.firma) {
-      firmaAsesorUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'firma_asesor.png', payload.asesor.firma, 'image/png'
-      );
-    }
-    if (payload.asesor.selfie) {
-      selfieAsesorUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'selfie_asesor.jpg', payload.asesor.selfie, 'image/jpeg'
-      );
-    }
-    if (payload.asesor.cedula) {
-      cedulaAsesorUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'cedula_asesor.jpg', payload.asesor.cedula, 'image/jpeg'
+    // 4. Subir las evidencias ya validadas
+    const urls = new Map<string, string>();
+    for (const { evidencia, imagen } of imagenes) {
+      urls.set(
+        evidencia.archivo,
+        await subirImagen(supabaseAdmin, inmobiliariaId, inventarioId, evidencia.archivo, imagen, evidencia.tipo)
       );
     }
 
-    // 4. Subir archivos de Inquilino
-    let firmaInquilinoUrl = '';
-    let selfieInquilinoUrl = '';
-    let cedulaInquilinoUrl = '';
-    const selfieInquilinoOmitida = payload.inquilino.selfie_omitida === true;
-
-    if (payload.inquilino.firma) {
-      firmaInquilinoUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'firma_inquilino.png', payload.inquilino.firma, 'image/png'
-      );
-    }
     if (selfieInquilinoOmitida) {
       // El inquilino no autorizó la foto del rostro: no se guarda ninguna, tampoco la que haya
       // dejado en esta ruta un intento anterior que falló a mitad de camino.
@@ -229,16 +269,14 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
       if (removeError) {
         console.error('[Biometría Backend] No se pudo borrar una selfie previa del inquilino:', removeError.message);
       }
-    } else if (payload.inquilino.selfie) {
-      selfieInquilinoUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'selfie_inquilino.jpg', payload.inquilino.selfie, 'image/jpeg'
-      );
     }
-    if (payload.inquilino.cedula) {
-      cedulaInquilinoUrl = await subirImagenBase64(
-        supabaseAdmin, inmobiliariaId, inventarioId, 'cedula_inquilino.jpg', payload.inquilino.cedula, 'image/jpeg'
-      );
-    }
+
+    const firmaAsesorUrl = urls.get('firma_asesor.png') ?? '';
+    const selfieAsesorUrl = urls.get('selfie_asesor.jpg') ?? '';
+    const cedulaAsesorUrl = urls.get('cedula_asesor.jpg') ?? '';
+    const firmaInquilinoUrl = urls.get('firma_inquilino.png') ?? '';
+    const selfieInquilinoUrl = urls.get('selfie_inquilino.jpg') ?? ''; // Vacía si se omitió.
+    const cedulaInquilinoUrl = urls.get('cedula_inquilino.jpg') ?? '';
 
     console.log('[Biometría Backend] Archivos biométricos subidos con éxito.');
 

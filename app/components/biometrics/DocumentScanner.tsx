@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, RefreshCw, Check, AlertCircle, ScanLine, FileText } from 'lucide-react';
+import { CAPTURA_SIMULADA_DISPONIBLE, describirErrorCamara, generarCapturaSimulada, type ErrorCamara } from './camara';
 
 interface DocumentScannerProps {
   title: string;
@@ -23,6 +24,7 @@ export default function DocumentScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [errorCamara, setErrorCamara] = useState<ErrorCamara | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [showOcrForm, setShowOcrForm] = useState(false);
@@ -67,6 +69,7 @@ export default function DocumentScanner({
         setPermissionGranted(true);
       } catch (fallbackErr) {
         console.error('[DocumentScanner] Error total al acceder a cámaras:', fallbackErr);
+        setErrorCamara(describirErrorCamara(fallbackErr));
         setPermissionGranted(false);
       }
     }
@@ -77,6 +80,21 @@ export default function DocumentScanner({
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+  };
+
+  // El <video> se desmonta mientras se ve el error o la foto tomada; al volver a montarse toma el
+  // flujo ya abierto, para que «Reintentar» y «Escanear de Nuevo» no queden en negro.
+  const conectarVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video;
+    if (video && streamRef.current) {
+      video.srcObject = streamRef.current;
+    }
+  }, []);
+
+  const reintentarCamara = () => {
+    setErrorCamara(null);
+    setPermissionGranted(null);
+    startCamera();
   };
 
   useEffect(() => {
@@ -215,28 +233,34 @@ export default function DocumentScanner({
           // Sin cámara
           <div style={styles.errorBox} className="glass-card">
             <AlertCircle size={36} color="var(--danger)" style={{ marginBottom: '0.75rem' }} />
-            <span style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Cámara trasera no disponible</span>
+            <span style={{ fontWeight: 'bold', marginBottom: '0.5rem', textAlign: 'center' }}>{errorCamara?.titulo ?? 'Cámara no disponible'}</span>
             <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 1.4 }}>
-              No se pudo abrir la cámara. Para continuar en modo manual, haz clic en el botón de abajo.
+              {errorCamara?.detalle ?? 'No pudimos abrir la cámara. Pulsa «Reintentar» o usa otro dispositivo.'}
             </p>
-            <button 
-              onClick={() => {
-                // Simular captura
-                console.log('[DocumentScanner] Simulando captura de documento');
-                setCapturedImage('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 100 60" fill="%231e293b"><rect width="100" height="60" rx="4" fill-opacity-50" stroke="%2300abd8" stroke-width="2"/><circle cx="20" cy="30" r="10" fill="%23475569"/><rect x="40" y="15" width="45" height="5" rx="1" fill="%23475569"/><rect x="40" y="25" width="35" height="4" rx="1" fill="%23475569"/><rect x="40" y="35" width="25" height="4" rx="1" fill="%23475569"/></svg>');
-                triggerOcrProcessing();
-              }}
-              className="btn btn-outline"
-              style={{ marginTop: '1rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
-            >
-              Pasar a Captura Manual
+            <button onClick={reintentarCamara} className="btn btn-primary" style={styles.btnReintentar}>
+              <RefreshCw size={14} />
+              Reintentar
             </button>
+            {/* Solo con next dev contra un Supabase local: nunca llega a un acta real (ver camara.ts) */}
+            {CAPTURA_SIMULADA_DISPONIBLE && (
+              <button
+                onClick={() => {
+                  console.log('[DocumentScanner] Simulando captura de documento');
+                  setCapturedImage(generarCapturaSimulada('cedula'));
+                  triggerOcrProcessing();
+                }}
+                className="btn btn-outline"
+                style={{ marginTop: '0.75rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              >
+                Usar Captura Simulada (solo desarrollo)
+              </button>
+            )}
           </div>
         ) : (
           // Cámara en vivo con marco guía para cédula colombiana
           <div style={styles.cameraFrame}>
             <video
-              ref={videoRef}
+              ref={conectarVideo}
               autoPlay
               playsInline
               muted
@@ -475,6 +499,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     color: '#ffffff',
+  },
+  btnReintentar: {
+    marginTop: '1rem',
+    fontSize: '0.8rem',
+    padding: '0.45rem 1rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
   },
   footer: {
     display: 'flex',
