@@ -97,7 +97,7 @@ export default function InformesPanel({ informes, onEliminado, onVerConversacion
                 Ver conversación de origen
               </button>
             )}
-            <button style={{ ...styles.accionBtn, color: '#ef4444' }} onClick={() => borrar(abierto.id)}>
+            <button style={{ ...styles.accionBtn, color: 'var(--danger)' }} onClick={() => borrar(abierto.id)}>
               {borrandoId === abierto.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
               Eliminar
             </button>

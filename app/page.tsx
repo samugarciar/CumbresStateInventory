@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 export default function Home() {
   return (
     <div style={styles.container}>
-      <Loader2 size={32} className="animate-spin" color="var(--primary)" />
+      <Loader2 size={32} className="animate-spin" color="var(--on-dark-primary)" />
       <p style={styles.text}>Redireccionando...</p>
     </div>
   );

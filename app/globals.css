@@ -1,45 +1,99 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
+/* =====================================================================
+   Paleta Cumbres — el azul de marca NO es el azul de acción.
+
+   #00abd8 da 2,69:1 contra blanco. El mínimo AA para texto es 4,5:1 y el
+   mínimo para elementos no textuales (WCAG 1.4.11) es 3:1: como texto o
+   como relleno bajo texto blanco falla las dos cosas. Y aquí muerde mucho:
+   de los 147 usos de var(--primary), 112 son `color:` — o sea, texto.
+
+     --brand    #00abd8  identidad. Nunca lleva texto encima ni ES texto:
+                         tintes, glows, bordes decorativos, series de gráficas.
+     --primary  #00728f  5,52:1 sobre blanco, 5,04:1 en el peor fondo de la
+                         app, y 4,79:1 sobre su propio tinte al 10%. Todo lo
+                         que es texto o lleva texto encima.
+
+   Visualmente sigue siendo el mismo azul; en contraste es la diferencia
+   entre fallar y pasar. Ver "6. Investigación de diseño" en el vault.
+   ===================================================================== */
 :root {
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  
+
   /* Palette - Clean Premium Light Theme (Blue/White) */
   --bg-main: #f8fafc;
   --bg-surface: #ffffff;
   --bg-surface-elevated: #f1f5f9;
-  
-  --primary: #00abd8; /* Cumbres Blue */
-  --primary-hover: #0096be;
-  --primary-rgb: 0, 171, 216;
-  
-  --secondary: #1e293b; /* Slate 800 */
-  --secondary-hover: #334155;
-  
-  --success: #00abd8; /* Success themed with primary blue for white label consistency */
-  --warning: #eab308; /* Premium gold */
-  --danger: #ef4444;
-  --info: #0ea5e9;
 
-  --text-primary: #0f172a; /* Slate 900 */
-  --text-secondary: #475569; /* Slate 600 */
-  --text-muted: #94a3b8; /* Slate 400 */
-  
-  --border-color: #e2e8f0; /* Slate 200 */
-  --border-focus: rgba(0, 171, 216, 0.4);
-  
+  --brand: #00abd8; /* Cumbres Blue — identidad, no acción */
+  --brand-rgb: 0, 171, 216;
+
+  --primary: #00728f; /* 5,52:1 sobre blanco — texto y rellenos bajo texto blanco */
+  /* En un tema claro el hover tiene que OSCURECER. Aclarar el relleno del
+     botón primario al pasar el ratón lo devolvía por debajo del umbral. */
+  --primary-hover: #005f78; /* 7,22:1 */
+
+  --secondary: #1e293b; /* Slate 800 — 14,63:1 bajo texto blanco */
+  --secondary-hover: #334155;
+
+  /* Verde, no azul. El token era #00abd8 pero sus dos únicos usos pintaban
+     texto azul sobre un fondo y un borde VERDES definidos en el mismo
+     bloque (2,51:1), mientras el verde ya estaba hardcodeado en ~28 sitios
+     y en `.badge-success`. El azul era el que desentonaba. 5,02:1. */
+  --success: #15803d; /* Green 700 */
+  /* #eab308 daba 1,92:1: prácticamente invisible como texto. 5,02:1. */
+  --warning: #b45309; /* Amber 700 */
+  /* Tiene que pasar dos veces: sobre blanco (6,47:1) y sobre su propio
+     tinte, porque `badge-danger` es texto del token sobre tinte del token
+     (5,46:1). Red 600 pasaba la primera y fallaba la segunda con 4,14:1. */
+  --danger: #b91c1c; /* Red 700 */
+  --info: #0369a1; /* Sky 700 — 5,93:1; el #0ea5e9 anterior daba 2,77:1 */
+
+  --text-primary: #0f172a; /* Slate 900 — 17,85:1 */
+  --text-secondary: #475569; /* Slate 600 — 7,58:1 */
+  /* El #94a3b8 anterior daba 2,56:1 y es el color de 112 subtítulos, notas
+     y textos de apoyo, casi todos entre 0,7rem y 0,88rem. Slate 500
+     (#64748b) tampoco basta: se queda en 4,34:1 sobre --bg-surface-elevated.
+     Este valor pasa en los tres fondos (4,95:1 el peor) y conserva el
+     escalón visible entre secondary y muted. */
+  --text-muted: #5b6b82;
+
+  /* --- SUPERFICIES OSCURAS -------------------------------------------
+     La app es clara, pero el asistente biométrico, la pantalla de carga y
+     algún visor van sobre #0f172a (y sobre rgba(30,41,59,.7) dentro de los
+     cuadros de error). Ahí la regla se invierte: el color tiene que
+     ACLARAR. --primary se hunde a 3,23:1 sobre ese fondo mientras que el
+     azul de marca da 6,65:1 — es el único sitio donde --brand sí lleva
+     texto, porque el fondo oscuro le devuelve el contraste que le falta
+     sobre blanco. Medidos sobre #0f172a, y los rojos sobre el #1a2436
+     real de los cuadros de error. */
+  --on-dark-primary: #00abd8; /* 6,65:1 */
+  --on-dark-success: #10b981; /* 7,04:1 */
+  --on-dark-warning: #fbbf24; /* 10,69:1 */
+  --on-dark-danger: #f87171;  /* 5,65:1 sobre el cuadro de error */
+  --on-dark-accent: #a78bfa;  /* Violet 400 — 6,56:1 */
+
+  --border-color: #e2e8f0; /* Slate 200 — separador decorativo */
+  /* El halo de foco es decorativo: a 40% de alfa da 1,84:1 se ponga el color
+     que se ponga, y subirle el alfa no es la solución. Quien satisface WCAG
+     1.4.11 es el borde sólido que se pinta a la vez (`border-color:
+     var(--primary)` en :focus), y ese sí queda en 5,52:1 sobre blanco y
+     4,48:1 contra el borde en reposo. */
+  --border-focus: rgba(0, 114, 143, 0.4);
+
   --glass-bg: rgba(255, 255, 255, 0.8);
   --glass-border: rgba(0, 171, 216, 0.1);
   --glass-shadow: rgba(15, 23, 42, 0.04);
-  
+
   --card-bg: rgba(255, 255, 255, 0.85);
   --card-border: rgba(0, 171, 216, 0.08);
   --card-shadow: 0 4px 20px rgba(0, 171, 216, 0.03);
-  
+
   --border-radius-sm: 8px;
   --border-radius-md: 12px;
   --border-radius-lg: 18px;
   --border-radius-xl: 24px;
-  
+
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -103,7 +157,7 @@ body {
 
 .glass-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(var(--primary-rgb), 0.3);
+  border-color: rgba(var(--brand-rgb), 0.3); /* decorativo: marca */
   box-shadow: 0 10px 25px rgba(0, 171, 216, 0.08);
 }
 
@@ -169,7 +223,7 @@ body {
 
 .btn-primary:hover {
   background: var(--primary-hover);
-  box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
+  box-shadow: 0 0 15px rgba(var(--brand-rgb), 0.3); /* glow decorativo: marca */
 }
 
 .btn-secondary {
@@ -188,7 +242,7 @@ body {
 }
 
 .btn-danger:hover {
-  background: #dc2626;
+  background: #991b1b; /* oscurece: 8,31:1 bajo texto blanco */
   box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
 }
 
@@ -214,7 +268,7 @@ body {
 
 /* Typography Utilities */
 .text-gradient {
-  background: linear-gradient(135deg, #ffffff 30%, var(--primary) 100%);
+  background: linear-gradient(135deg, var(--text-primary) 30%, var(--primary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -229,7 +283,9 @@ body {
   border-radius: 50px;
 }
 
-.badge-success { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
+/* El texto de cada badge sale del token y está medido sobre su propio
+   tinte, que es el fondo real que le toca: 4,57:1 / 4,65:1 / 5,68:1 / 5,29:1. */
+.badge-success { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
 .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
 .badge-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
 .badge-info { background: rgba(59, 130, 246, 0.1); color: var(--info); border: 1px solid rgba(59, 130, 246, 0.2); }

@@ -502,8 +502,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   paginationButtonActive: {
     color: '#ffffff',
-    backgroundColor: '#00abd8', // Primary brand color
-    borderColor: '#00abd8',
+    backgroundColor: 'var(--primary)', // acción, no marca: lleva texto blanco encima
+    borderColor: 'var(--primary)',
     pointerEvents: 'none',
   },
   paginationButtonDisabled: {

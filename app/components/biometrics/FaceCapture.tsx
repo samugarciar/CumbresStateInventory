@@ -160,7 +160,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
         </header>
 
         <div style={styles.consentCard} className="glass-card">
-          <ShieldAlert size={40} color="var(--warning)" style={{ marginBottom: '1rem' }} />
+          <ShieldAlert size={40} color="var(--on-dark-warning)" style={{ marginBottom: '1rem' }} />
           <p style={styles.consentText}>
             Para garantizar la validez legal del acta de entrega, Cumbres Inmobiliaria recopilará una fotografía facial de seguridad en vivo (selfie) y una firma digital.
           </p>
@@ -215,7 +215,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
         ) : permissionGranted === false ? (
           // Mensaje de error de permisos de cámara
           <div style={styles.errorBox} className="glass-card">
-            <AlertCircle size={36} color="var(--danger)" style={{ marginBottom: '0.75rem' }} />
+            <AlertCircle size={36} color="var(--on-dark-danger)" style={{ marginBottom: '0.75rem' }} />
             <span style={{ fontWeight: 'bold', marginBottom: '0.5rem', textAlign: 'center' }}>{errorCamara?.titulo ?? 'Cámara no disponible'}</span>
             <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 1.4 }}>
               {errorCamara?.detalle ?? 'No pudimos abrir la cámara. Pulsa «Reintentar» o usa otro dispositivo.'}
@@ -232,7 +232,7 @@ export default function FaceCapture({ title, subtitle, onSave, onBack }: FaceCap
                   setCapturedImage(generarCapturaSimulada('rostro'));
                 }}
                 className="btn btn-outline"
-                style={{ marginTop: '0.75rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                style={{ marginTop: '0.75rem', fontSize: '0.75rem', padding: '0.4rem 0.8rem', borderColor: 'var(--on-dark-primary)', color: 'var(--on-dark-primary)' }}
               >
                 Usar Captura Simulada (solo desarrollo)
               </button>

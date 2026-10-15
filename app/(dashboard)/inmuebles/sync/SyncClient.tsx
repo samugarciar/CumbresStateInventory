@@ -170,9 +170,9 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
             <div className="glass-card animate-fade-in" style={styles.resultCard}>
               <div style={styles.resultHeader}>
                 {result.success ? (
-                  <CheckCircle2 size={32} color="#10b981" />
+                  <CheckCircle2 size={32} color="var(--success)" />
                 ) : (
-                  <AlertTriangle size={32} color="#f59e0b" />
+                  <AlertTriangle size={32} color="var(--warning)" />
                 )}
                 <div style={{ flex: 1 }}>
                   <h3 style={styles.resultTitle}>
@@ -189,20 +189,20 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
                     <span style={styles.statNum}>{result.processed}</span>
                     <span style={styles.statLabel}>Analizados en API</span>
                   </div>
-                  <div style={{ ...styles.statBox, borderColor: '#10b981' }}>
-                    <span style={{ ...styles.statNum, color: '#10b981' }}>+{result.imported}</span>
+                  <div style={{ ...styles.statBox, borderColor: 'var(--success)' }}>
+                    <span style={{ ...styles.statNum, color: 'var(--success)' }}>+{result.imported}</span>
                     <span style={styles.statLabel}>Importados (Nuevos)</span>
                   </div>
                   <div style={{ ...styles.statBox, borderColor: 'var(--primary)' }}>
                     <span style={{ ...styles.statNum, color: 'var(--primary)' }}>{result.updated}</span>
                     <span style={styles.statLabel}>Actualizados</span>
                   </div>
-                  <div style={{ ...styles.statBox, borderColor: '#f59e0b' }}>
-                    <span style={{ ...styles.statNum, color: '#f59e0b' }}>{result.deactivated ?? 0}</span>
+                  <div style={{ ...styles.statBox, borderColor: 'var(--warning)' }}>
+                    <span style={{ ...styles.statNum, color: 'var(--warning)' }}>{result.deactivated ?? 0}</span>
                     <span style={styles.statLabel}>Desactivados</span>
                   </div>
-                  <div style={{ ...styles.statBox, borderColor: '#ef4444' }}>
-                    <span style={{ ...styles.statNum, color: '#ef4444' }}>{result.failed}</span>
+                  <div style={{ ...styles.statBox, borderColor: 'var(--danger)' }}>
+                    <span style={{ ...styles.statNum, color: 'var(--danger)' }}>{result.failed}</span>
                     <span style={styles.statLabel}>Omitidos/Fallidos</span>
                   </div>
                 </div>
@@ -549,7 +549,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '10px',
     height: '10px',
     borderRadius: '50%',
-    backgroundColor: '#10b981',
+    backgroundColor: 'var(--success)',
     boxShadow: '0 0 8px rgba(16, 185, 129, 0.6)',
   },
   statusText: {
@@ -561,7 +561,7 @@ const styles: Record<string, React.CSSProperties> = {
   statusSub: {
     display: 'block',
     fontSize: '0.72rem',
-    color: '#10b981',
+    color: 'var(--success)',
     fontWeight: '600',
   },
   divider: {

@@ -777,7 +777,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
                     <td style={styles.tdItemName}>{item}</td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <div style={styles.radioGroup} className="responsive-radio-group">
-                        <label style={{ ...styles.radioLabel, color: '#10b981' }}>
+                        <label style={{ ...styles.radioLabel, color: 'var(--success)' }}>
                           <input 
                             type="radio" 
                             name={`${seccionKey}-${item}`} 

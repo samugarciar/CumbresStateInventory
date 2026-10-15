@@ -147,7 +147,7 @@ const styles: Record<string, React.CSSProperties> = {
   item: { padding: '0.55rem 0.25rem', borderBottom: '1px solid var(--border-color)' },
   itemTitulo: { fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' },
   itemMeta: { display: 'flex', gap: '0.7rem', flexWrap: 'wrap', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' },
-  ok: { color: '#16a34a', fontWeight: 600 },
+  ok: { color: 'var(--success)', fontWeight: 600 },
   warn: { color: '#b45309', fontWeight: 600 },
   btn: { padding: '0.55rem 1.1rem', fontSize: '0.88rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
   nota: { fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' },

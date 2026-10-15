@@ -85,12 +85,12 @@ export default function StateSelector({ inmuebleId, currentEstado }: StateSelect
         className="form-select"
         style={{
           ...styles.select,
-          color: estado === 'disponible' ? '#10b981' : '#64748b',
+          color: estado === 'disponible' ? 'var(--success)' : '#64748b',
           borderColor: estado === 'disponible' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)',
           backgroundColor: '#ffffff',
         }}
       >
-        <option value="disponible" style={{ color: '#10b981', fontWeight: 'bold' }}>Disponible</option>
+        <option value="disponible" style={{ color: 'var(--success)', fontWeight: 'bold' }}>Disponible</option>
         <option value="inactivo" style={{ color: '#64748b' }}>Marcar Inactivo</option>
       </select>
 
@@ -101,7 +101,7 @@ export default function StateSelector({ inmuebleId, currentEstado }: StateSelect
         <div style={styles.modalOverlay} onClick={handleCancel}>
           <div style={styles.modal} onClick={(e) => e.stopPropagation()} className="glass-container animate-fade-in">
             <div style={styles.modalHeader}>
-              <AlertTriangle size={24} color="#f59e0b" />
+              <AlertTriangle size={24} color="var(--warning)" />
               <h4 style={styles.modalTitle}>Confirmar Desactivación</h4>
             </div>
             
@@ -220,8 +220,8 @@ const styles: Record<string, React.CSSProperties> = {
   confirmBtn: {
     fontSize: '0.8rem',
     padding: '0.45rem 1rem',
-    backgroundColor: '#ef4444',
-    borderColor: '#ef4444',
+    backgroundColor: 'var(--danger)',
+    borderColor: 'var(--danger)',
     color: '#ffffff',
   },
 };

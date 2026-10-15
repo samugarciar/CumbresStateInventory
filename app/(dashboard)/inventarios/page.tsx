@@ -155,7 +155,7 @@ export default async function InventariosPage({ searchParams }: InventariosPageP
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
                       <h3 style={styles.cardTitle}>{inv.titulo}</h3>
                       {isFirmado ? (
-                        <span className="badge badge-success" style={{ fontSize: '0.75rem', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.25)', padding: '0.2rem 0.5rem', fontWeight: 700 }}>
+                        <span className="badge badge-success" style={{ fontSize: '0.75rem', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: 'var(--success)', borderColor: 'rgba(16, 185, 129, 0.25)', padding: '0.2rem 0.5rem', fontWeight: 700 }}>
                           Firmado
                         </span>
                       ) : (

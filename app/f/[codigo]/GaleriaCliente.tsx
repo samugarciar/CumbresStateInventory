@@ -60,7 +60,7 @@ export default function GaleriaCliente({ fotos, titulo }: { fotos: string[]; tit
 const s: Record<string, React.CSSProperties> = {
   wrap: { padding: '20px', background: '#fff' },
   h2: { fontSize: '1rem', fontWeight: 700, margin: '0 0 12px' },
-  conteo: { color: '#94a3b8', fontWeight: 500 },
+  conteo: { color: '#5b6b82', fontWeight: 500 },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 },
   celda: { padding: 0, border: 'none', background: '#e2e8f0', borderRadius: 10, overflow: 'hidden', cursor: 'pointer', aspectRatio: '4 / 3' },
   img: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },

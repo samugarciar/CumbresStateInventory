@@ -322,7 +322,7 @@ export default function SolicitudesApertura({ solicitudes, asesores, hoy }: Soli
                     Cancelar
                   </button>
                 </div>
-                <span style={{ ...styles.contadorMotivo, color: motivo.length >= MAX_MOTIVO_DENEGACION ? '#dc2626' : '#94a3b8' }}>
+                <span style={{ ...styles.contadorMotivo, color: motivo.length >= MAX_MOTIVO_DENEGACION ? 'var(--danger)' : 'var(--text-muted)' }}>
                   {motivo.length}/{MAX_MOTIVO_DENEGACION}
                   {motivo.length >= MAX_MOTIVO_DENEGACION && ' — llegaste al máximo que acepta WhatsApp'}
                 </span>
@@ -356,7 +356,7 @@ const styles: Record<string, React.CSSProperties> = {
   contador: {
     fontSize: '0.72rem',
     fontWeight: '700',
-    color: '#f59e0b',
+    color: 'var(--warning)',
     backgroundColor: 'rgba(245, 158, 11, 0.12)',
     borderRadius: '10px',
     padding: '0.05rem 0.5rem',
@@ -407,7 +407,7 @@ const styles: Record<string, React.CSSProperties> = {
   slotFecha: {
     fontSize: '0.78rem',
     fontWeight: '700',
-    color: '#f59e0b',
+    color: 'var(--warning)',
     lineHeight: 1.2,
     whiteSpace: 'nowrap' as const,
   },
@@ -465,7 +465,7 @@ const styles: Record<string, React.CSSProperties> = {
   vencidaBadge: {
     fontSize: '0.62rem',
     fontWeight: '700',
-    color: '#ef4444',
+    color: 'var(--danger)',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderRadius: '8px',
     padding: '0.02rem 0.4rem',

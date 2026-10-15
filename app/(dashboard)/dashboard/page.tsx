@@ -325,7 +325,7 @@ export default async function DashboardPage() {
                       <span style={styles.recentCardAsesor}>
                         Asesor: {inm.usuarios_override?.nombre_completo || inm.usuarios?.nombre_completo}
                         {inm.usuarios_override && (
-                          <span style={{ fontSize: '0.75rem', color: '#10b981', marginLeft: '0.3rem', fontWeight: 600 }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--success)', marginLeft: '0.3rem', fontWeight: 600 }}>
                             (Reasignado)
                           </span>
                         )}
