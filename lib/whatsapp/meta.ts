@@ -358,37 +358,60 @@ export interface OpcionesCrearPlantilla {
   cuerpo: string;
   categoria: string;
   idioma?: string;
-  ejemplos?: string[];
+  /**
+   * Un ejemplo por variable. Por nombre ({ monto: '$1.250.000' }) es lo que
+   * manda el CRM; una lista se lee en el orden en que aparecen las
+   * variables. Las que falten se rellenan con un ejemplo razonable.
+   */
+  ejemplos?: string[] | Record<string, string>;
+}
+
+/** Un ejemplo creíble para una variable sin ejemplo: Meta rechaza los que no se entienden. */
+function ejemploPorDefecto(variable: string): string {
+  if (variable.includes('nombre')) return 'Juan Pérez';
+  if (variable.includes('asesor')) return 'Alejandro Rojas';
+  if (variable.includes('inmueble')) return 'Apto Poblado 401';
+  if (variable.includes('precio') || variable.includes('monto')) return '$2.500.000';
+  if (variable.includes('fecha')) return '5 de noviembre';
+  if (variable.includes('hora')) return '10:00 a. m.';
+  return 'Ejemplo';
 }
 
 /**
- * Crea una plantilla oficial en Meta y la envía a revisión.
- * Utiliza parámetros con nombre (parameter_format: NAMED) y genera los ejemplos
- * requeridos por la Graph API v21.0.
+ * Los ejemplos de una plantilla con variables con nombre.
+ *
+ * Con parameter_format NAMED, Meta los pide en body_text_named_params: uno
+ * por variable, sin repetir, con su param_name. El body_text (una lista
+ * por posición) es el formato de las variables numeradas y Meta lo
+ * rechaza para una plantilla con nombres.
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview
+ */
+export function ejemplosConNombre(
+  cuerpo: string,
+  ejemplos?: string[] | Record<string, string>
+): { param_name: string; example: string }[] {
+  const variables = [
+    ...new Set([...cuerpo.matchAll(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi)].map((m) => m[1].toLowerCase())),
+  ];
+  return variables.map((variable, i) => {
+    const dado = Array.isArray(ejemplos) ? ejemplos[i] : ejemplos?.[variable];
+    return {
+      param_name: variable,
+      example: typeof dado === 'string' && dado.trim() ? dado.trim() : ejemploPorDefecto(variable),
+    };
+  });
+}
+
+/**
+ * Crea una plantilla oficial en Meta y la envía a revisión, con variables
+ * con nombre (parameter_format NAMED) y un ejemplo para cada una.
  */
 export function crearPlantillaRevision(
   wabaId: string,
   token: string,
   opciones: OpcionesCrearPlantilla
 ) {
-  // Extrae variables nombradas {{variable}}
-  const variablesEncontradas = opciones.cuerpo.match(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi) ?? [];
-  const ejemplosBody =
-    variablesEncontradas.length > 0
-      ? [
-          variablesEncontradas.map((v, i) => {
-            if (opciones.ejemplos && opciones.ejemplos[i]) return opciones.ejemplos[i];
-            const lower = v.toLowerCase();
-            if (lower.includes('nombre')) return 'Juan Pérez';
-            if (lower.includes('asesor')) return 'Alejandro Rojas';
-            if (lower.includes('inmueble')) return 'Apto Poblado 401';
-            if (lower.includes('precio')) return '$2.500.000';
-            if (lower.includes('fecha')) return '2026-10-15';
-            if (lower.includes('hora')) return '10:00 AM';
-            return 'Ejemplo';
-          }),
-        ]
-      : undefined;
+  const ejemplos = ejemplosConNombre(opciones.cuerpo, opciones.ejemplos);
 
   const categoriaNormalizada =
     opciones.categoria.toLowerCase() === 'marketing' ? 'MARKETING' : 'UTILITY';
@@ -397,7 +420,7 @@ export function crearPlantillaRevision(
     {
       type: 'BODY',
       text: opciones.cuerpo,
-      ...(ejemplosBody ? { example: { body_text: ejemplosBody } } : {}),
+      ...(ejemplos.length ? { example: { body_text_named_params: ejemplos } } : {}),
     },
   ];
 
