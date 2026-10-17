@@ -110,7 +110,8 @@ export async function POST(request: Request) {
 
   const usuario = await getCurrentUser();
   if (!usuario?.profile) return respuesta(401, { ok: false, error: 'Tu sesión expiró.' });
-  if (usuario.profile.rol !== 'admin') {
+  // El revisor de Meta también conecta, siempre en su propia inmobiliaria.
+  if (usuario.profile.rol !== 'admin' && usuario.profile.rol !== 'revisor') {
     return respuesta(403, { ok: false, error: 'Solo un administrador puede conectar números.' });
   }
   const inmobiliariaId: string | undefined = usuario.profile.inmobiliaria_id;
