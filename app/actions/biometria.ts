@@ -230,7 +230,19 @@ export async function guardarFirmaBiometrica(inventarioId: string, payload: Biom
     // 2. Asegurar que el bucket exista
     await inicializarBucketBiometria();
 
-    // 3. Obtener el inventario para heredar inmobiliaria_id y leer items anteriores
+    // 3. Obtener el inventario para heredar inmobiliaria_id y leer items anteriores.
+    // Firma quien ve el inventario con su propia sesión (la RLS de /inventarios y /tareas, desde
+    // donde se abre el asistente): el cliente admin de abajo no filtra por inmobiliaria.
+    const { data: inventarioVisible } = await supabase
+      .from('inventarios')
+      .select('id')
+      .eq('id', inventarioId)
+      .maybeSingle();
+
+    if (!inventarioVisible) {
+      return { success: false, error: 'No tienes acceso a este inventario.' };
+    }
+
     const { data: inv, error: invErr } = await supabaseAdmin
       .from('inventarios')
       .select('items, creado_por, inmuebles!inner(inmobiliaria_id)')

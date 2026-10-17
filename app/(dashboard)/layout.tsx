@@ -24,6 +24,8 @@ export default async function DashboardLayout({
 
   const { profile, inmobiliaria } = user;
   const isAdmin = profile.rol === 'admin';
+  // La cuenta del revisor de Meta solo ve WhatsApp en el menú.
+  const isRevisor = profile.rol === 'revisor';
 
   // Obtener conteo de tareas pendientes en el servidor para alimentar el Badge del Sidebar
   let pendingTasksCount = 0;
@@ -42,6 +44,7 @@ export default async function DashboardLayout({
       profile={profile}
       inmobiliaria={inmobiliaria}
       isAdmin={isAdmin}
+      isRevisor={isRevisor}
       pendingTasksCount={pendingTasksCount}
     >
       {children}

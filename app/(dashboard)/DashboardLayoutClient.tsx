@@ -22,13 +22,15 @@ import {
   BrainCircuit,
   Bot,
   Handshake,
-  MessageCircle
+  MessageCircle,
+  Eye
 } from 'lucide-react';
 
 interface DashboardLayoutClientProps {
   profile: any;
   inmobiliaria: any;
   isAdmin: boolean;
+  isRevisor?: boolean;
   pendingTasksCount?: number;
   children: React.ReactNode;
 }
@@ -37,6 +39,7 @@ export default function DashboardLayoutClient({
   profile,
   inmobiliaria,
   isAdmin,
+  isRevisor = false,
   pendingTasksCount = 0,
   children
 }: DashboardLayoutClientProps) {
@@ -137,85 +140,107 @@ export default function DashboardLayoutClient({
         </div>
 
         <nav style={{ ...styles.nav, padding: isCollapsed && mounted ? '1.5rem 0.5rem' : '1.5rem 1rem' }}>
-          <Link 
-            href="/dashboard" 
-            onClick={() => setIsMobileOpen(false)}
-            style={{ 
-              ...styles.navLink, 
-              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-              backgroundColor: pathname === '/dashboard' ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-              color: pathname === '/dashboard' ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: pathname === '/dashboard' ? '700' : '500'
-            }}
-            title={isCollapsed ? 'Inicio' : undefined}
-          >
-            <Home size={20} />
-            {(!isCollapsed || !mounted) && <span>Inicio</span>}
-          </Link>
-          
-          <Link 
-            href="/inmuebles" 
-            onClick={() => setIsMobileOpen(false)}
-            style={{ 
-              ...styles.navLink, 
-              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-              backgroundColor: pathname.startsWith('/inmuebles') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-              color: pathname.startsWith('/inmuebles') ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: pathname.startsWith('/inmuebles') ? '700' : '500'
-            }}
-            title={isCollapsed ? 'Inmuebles' : undefined}
-          >
-            <Building2 size={20} />
-            {(!isCollapsed || !mounted) && <span>Inmuebles</span>}
-          </Link>
-          
-          <Link 
-            href="/inventarios" 
-            onClick={() => setIsMobileOpen(false)}
-            style={{ 
-              ...styles.navLink, 
-              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-              backgroundColor: pathname.startsWith('/inventarios') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-              color: pathname.startsWith('/inventarios') ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: pathname.startsWith('/inventarios') ? '700' : '500'
-            }}
-            title={isCollapsed ? 'Inventarios' : undefined}
-          >
-            <ClipboardList size={20} />
-            {(!isCollapsed || !mounted) && <span>Inventarios</span>}
-          </Link>
+          {isRevisor && (
+            <Link
+              href="/whatsapp"
+              onClick={() => setIsMobileOpen(false)}
+              style={{
+                ...styles.navLink,
+                justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                backgroundColor: pathname.startsWith('/whatsapp') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                color: pathname.startsWith('/whatsapp') ? 'var(--primary)' : 'var(--text-secondary)',
+                fontWeight: pathname.startsWith('/whatsapp') ? '700' : '500'
+              }}
+              title={isCollapsed ? 'WhatsApp' : undefined}
+            >
+              <MessageCircle size={20} />
+              {(!isCollapsed || !mounted) && <span>WhatsApp</span>}
+            </Link>
+          )}
 
-          <Link 
-            href="/agenda" 
-            onClick={() => setIsMobileOpen(false)}
-            style={{ 
-              ...styles.navLink, 
-              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-              backgroundColor: pathname.startsWith('/agenda') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-              color: pathname.startsWith('/agenda') ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: pathname.startsWith('/agenda') ? '700' : '500'
-            }}
-            title={isCollapsed ? 'Agenda' : undefined}
-          >
-            <CalendarDays size={20} />
-            {(!isCollapsed || !mounted) && <span>Agenda</span>}
-          </Link>
+          {!isRevisor && (
+            <>
+              <Link 
+                href="/dashboard" 
+                onClick={() => setIsMobileOpen(false)}
+                style={{ 
+                  ...styles.navLink, 
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname === '/dashboard' ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname === '/dashboard' ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname === '/dashboard' ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Inicio' : undefined}
+              >
+                <Home size={20} />
+                {(!isCollapsed || !mounted) && <span>Inicio</span>}
+              </Link>
+          
+              <Link 
+                href="/inmuebles" 
+                onClick={() => setIsMobileOpen(false)}
+                style={{ 
+                  ...styles.navLink, 
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/inmuebles') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/inmuebles') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/inmuebles') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Inmuebles' : undefined}
+              >
+                <Building2 size={20} />
+                {(!isCollapsed || !mounted) && <span>Inmuebles</span>}
+              </Link>
+          
+              <Link 
+                href="/inventarios" 
+                onClick={() => setIsMobileOpen(false)}
+                style={{ 
+                  ...styles.navLink, 
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/inventarios') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/inventarios') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/inventarios') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Inventarios' : undefined}
+              >
+                <ClipboardList size={20} />
+                {(!isCollapsed || !mounted) && <span>Inventarios</span>}
+              </Link>
 
-          <Link
-            href="/citas"
-            onClick={() => setIsMobileOpen(false)}
-            style={{
-              ...styles.navLink,
-              justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-              backgroundColor: pathname.startsWith('/citas') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-              color: pathname.startsWith('/citas') ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: pathname.startsWith('/citas') ? '700' : '500'
-            }}
-            title={isCollapsed ? 'Citas' : undefined}
-          >
-            <CalendarCheck size={20} />
-            {(!isCollapsed || !mounted) && <span>Citas</span>}
-          </Link>
+              <Link 
+                href="/agenda" 
+                onClick={() => setIsMobileOpen(false)}
+                style={{ 
+                  ...styles.navLink, 
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/agenda') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/agenda') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/agenda') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Agenda' : undefined}
+              >
+                <CalendarDays size={20} />
+                {(!isCollapsed || !mounted) && <span>Agenda</span>}
+              </Link>
+
+              <Link
+                href="/citas"
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  ...styles.navLink,
+                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
+                  backgroundColor: pathname.startsWith('/citas') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
+                  color: pathname.startsWith('/citas') ? 'var(--primary)' : 'var(--text-secondary)',
+                  fontWeight: pathname.startsWith('/citas') ? '700' : '500'
+                }}
+                title={isCollapsed ? 'Citas' : undefined}
+              >
+                <CalendarCheck size={20} />
+                {(!isCollapsed || !mounted) && <span>Citas</span>}
+              </Link>
+            </>
+          )}
 
           {isAdmin && (
             <>
@@ -349,6 +374,11 @@ export default function DashboardLayoutClient({
                     <span className="badge badge-success" style={styles.roleBadge}>
                       <Shield size={10} style={{ marginRight: 2 }} />
                       Admin
+                    </span>
+                  ) : isRevisor ? (
+                    <span className="badge badge-info" style={styles.roleBadge}>
+                      <Eye size={10} style={{ marginRight: 2 }} />
+                      Revisor
                     </span>
                   ) : (
                     <span className="badge badge-info" style={styles.roleBadge}>

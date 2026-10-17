@@ -23,8 +23,9 @@ export default async function PaginaWhatsApp({
 }) {
   const user = await getCurrentUser();
   if (!user?.profile) redirect('/login');
-  // Conectar un número le da a la plataforma su token: solo admins.
-  if (user.profile.rol !== 'admin') redirect('/dashboard');
+  // Conectar un número le da a la plataforma su token: solo admins, y el
+  // revisor de Meta, que conecta en su inmobiliaria de demostración.
+  if (user.profile.rol !== 'admin' && user.profile.rol !== 'revisor') redirect('/dashboard');
 
   const { embudo: embudoPedido } = await searchParams;
 

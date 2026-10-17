@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { 
   Building2, 
   ClipboardList, 
@@ -17,6 +18,8 @@ import AdminApprovalWidget from './AdminApprovalWidget';
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user || !user.profile) return null;
+  // La cuenta del revisor de Meta solo entra a /whatsapp.
+  if (user.profile.rol === 'revisor') redirect('/whatsapp');
 
   const { profile, inmobiliaria } = user;
   const isAdmin = profile.rol === 'admin';

@@ -36,6 +36,8 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   if (!user || !user.profile) {
     redirect('/login');
   }
+  // La cuenta del revisor de Meta solo entra a /whatsapp.
+  if (user.profile.rol === 'revisor') redirect('/whatsapp');
 
   const { profile } = user;
   const isAdmin = profile.rol === 'admin';
