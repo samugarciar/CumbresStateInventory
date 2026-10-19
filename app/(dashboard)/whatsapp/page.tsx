@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
+import { esEmbudoConectable, requiereConfirmacionCorte } from '@/lib/whatsapp/registro-integrado';
 import ConectarWhatsApp, { type EmbudoVista, type LineaVista } from './ConectarWhatsApp';
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default async function PaginaWhatsApp({
   // Conectar un número le da a la plataforma su token: solo admins, y el
   // revisor de Meta, que conecta en su inmobiliaria de demostración.
   if (user.profile.rol !== 'admin' && user.profile.rol !== 'revisor') redirect('/dashboard');
+  const esRevisor = user.profile.rol === 'revisor';
 
   const { embudo: embudoPedido } = await searchParams;
 
@@ -41,11 +43,18 @@ export default async function PaginaWhatsApp({
       .eq('activa', true),
   ]);
 
+  // El revisor no ve la comercial: su corte habla de la línea real de Cumbres
+  // (número, Kommo y n8n). Solo le quedan los embudos que conecta sin corte.
+  const embudosVisibles = ((embudos ?? []) as EmbudoVista[]).filter(
+    (e) => !esRevisor || (esEmbudoConectable(e.codigo) && !requiereConfirmacionCorte(e.codigo))
+  );
+
   return (
     <ConectarWhatsApp
-      embudos={(embudos ?? []) as EmbudoVista[]}
+      embudos={embudosVisibles}
       lineas={(lineas ?? []) as LineaVista[]}
       embudoPedido={embudoPedido ?? null}
+      esRevisor={esRevisor}
     />
   );
 }
