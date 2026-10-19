@@ -122,6 +122,10 @@ export async function POST(request: Request) {
   if (!esEmbudoConectable(embudo)) {
     return respuesta(400, { ok: false, error: `Ese embudo no se conecta desde aquí: ${embudo || '(vacío)'}` });
   }
+  // El revisor no conecta la comercial: en su página ni aparece (ver whatsapp/page.tsx).
+  if (usuario.profile.rol === 'revisor' && requiereConfirmacionCorte(embudo)) {
+    return respuesta(403, { ok: false, error: 'Esta cuenta no conecta la línea comercial.' });
+  }
 
   const supabase = createAdminClient();
 

@@ -101,10 +101,13 @@ export default function ConectarWhatsApp({
   embudos,
   lineas,
   embudoPedido,
+  esRevisor = false,
 }: {
   embudos: EmbudoVista[];
   lineas: LineaVista[];
   embudoPedido: string | null;
+  /** La cuenta del revisor de Meta no ve las notas internas de la operación. */
+  esRevisor?: boolean;
 }) {
   const router = useRouter();
   const [sdkListo, setSdkListo] = useState(false);
@@ -249,15 +252,17 @@ export default function ConectarWhatsApp({
         </p>
       </header>
 
-      <div style={styles.aviso} role="note">
-        <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>
-          <strong>Antes de conectar un número real</strong>, el webhook de la app de Meta tiene que estar
-          configurado y suscrito a <code>messages</code>, <code>history</code> y{' '}
-          <code>smb_message_echoes</code>. Al conectar, la plataforma pide el historial del celular, y Meta
-          solo deja pedirlo una vez y en las primeras 24 horas: si el webhook no está, ese historial se pierde.
+      {!esRevisor && (
+        <div style={styles.aviso} role="note">
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong>Antes de conectar un número real</strong>, el webhook de la app de Meta tiene que estar
+            configurado y suscrito a <code>messages</code>, <code>history</code> y{' '}
+            <code>smb_message_echoes</code>. Al conectar, la plataforma pide el historial del celular, y Meta
+            solo deja pedirlo una vez y en las primeras 24 horas: si el webhook no está, ese historial se pierde.
+          </div>
         </div>
-      </div>
+      )}
 
       {sdkFallo && (
         <p style={styles.error}>No cargó la ventana de Meta. Revisa la conexión o un bloqueador de anuncios y recarga.</p>
