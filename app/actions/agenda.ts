@@ -48,6 +48,25 @@ async function contarInmueblesCubiertos(supabase: any, inmuebleId: string): Prom
 }
 
 /**
+ * Un asesor desactivado no recibe franjas de hoy en adelante: el agente
+ * comercial las ofrecería a los clientes. Las pasadas se pueden seguir editando.
+ */
+async function asesorInactivoEnFuturo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  asesorId: string,
+  fecha: string
+) {
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  if (fecha < hoy) return false;
+  const { data } = await supabase
+    .from('usuarios')
+    .select('activo')
+    .eq('id', asesorId)
+    .maybeSingle();
+  return data?.activo === false;
+}
+
+/**
  * Crea una nueva franja horaria en la agenda.
  * Solo admins pueden crear franjas.
  */
@@ -66,6 +85,10 @@ export async function crearFranjaHoraria(data: FranjaData) {
 
     if (!profile || profile.rol !== 'admin') {
       return { success: false, error: 'Solo los administradores pueden programar franjas.' };
+    }
+
+    if (await asesorInactivoEnFuturo(supabase, data.asesor_id, data.fecha)) {
+      return { success: false, error: 'Ese asesor está inactivo. Elige otro asesor.' };
     }
 
     // Validar que no exista overlap con otra franja del mismo asesor en la misma fecha/hora
@@ -132,6 +155,10 @@ export async function actualizarFranjaHoraria(id: string, data: FranjaData) {
 
     if (!profile || profile.rol !== 'admin') {
       return { success: false, error: 'Solo los administradores pueden editar franjas.' };
+    }
+
+    if (await asesorInactivoEnFuturo(supabase, data.asesor_id, data.fecha)) {
+      return { success: false, error: 'Ese asesor está inactivo. Elige otro asesor.' };
     }
 
     // Validar overlap excluyendo la franja actual

@@ -69,6 +69,7 @@ export default async function AgendaPage({
       .select('id, nombre_completo')
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .eq('rol', 'asesor')
+      .eq('activo', true)
       .order('nombre_completo');
     asesores = data || [];
   }

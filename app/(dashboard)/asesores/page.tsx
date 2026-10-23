@@ -2,8 +2,8 @@ import { getCurrentUser } from '@/lib/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import FormRegisterAsesor from './FormRegisterAsesor';
-import TelefonoAsesorEditor from './TelefonoAsesorEditor';
-import { Users, Mail, Calendar, Key, ShieldCheck, Briefcase } from 'lucide-react';
+import AsesorCard from './AsesorCard';
+import { Users, ShieldCheck } from 'lucide-react';
 
 export default async function AsesoresPage() {
   // 1. Validar permisos de administrador
@@ -16,12 +16,27 @@ export default async function AsesoresPage() {
   const supabase = await createClient();
 
   // 2. Obtener lista de asesores registrados en la inmobiliaria
-  const { data: asesores, error } = await supabase
+  const { data: todos } = await supabase
     .from('usuarios')
-    .select('id, nombre_completo, email, telefono, created_at')
+    .select('id, nombre_completo, email, telefono, created_at, activo, desactivado_at')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
     .eq('rol', 'asesor')
     .order('created_at', { ascending: false });
+
+  const asesores = (todos || []).filter(a => a.activo);
+  const inactivos = (todos || []).filter(a => !a.activo);
+
+  // Inmuebles por asesor efectivo (coalesce(asesor_id_override, asesor_id)),
+  // para decidir a quién pasárselos al desactivar.
+  const inmueblesPorAsesor = new Map<string, number>();
+  await Promise.all((todos || []).map(async (a) => {
+    const { count } = await supabase
+      .from('inmuebles')
+      .select('id', { count: 'exact', head: true })
+      .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .or(`asesor_id_override.eq.${a.id},and(asesor_id_override.is.null,asesor_id.eq.${a.id})`);
+    inmueblesPorAsesor.set(a.id, count || 0);
+  }));
 
   return (
     <div style={styles.container} className="animate-fade-in">
@@ -40,12 +55,12 @@ export default async function AsesoresPage() {
           <div style={styles.listHeader}>
             <div style={styles.statsBadge}>
               <Users size={16} />
-              <span>{asesores?.length || 0} Registrados</span>
+              <span>{asesores.length} Activos</span>
             </div>
           </div>
 
           <div style={styles.list}>
-            {!asesores || asesores.length === 0 ? (
+            {asesores.length === 0 ? (
               <div style={styles.emptyState}>
                 <Users size={40} color="var(--text-muted)" />
                 <p style={{ marginTop: '1rem' }}>No hay asesores comerciales registrados en tu inmobiliaria.</p>
@@ -55,31 +70,35 @@ export default async function AsesoresPage() {
               </div>
             ) : (
               asesores.map((asesor) => (
-                <div key={asesor.id} className="glass-card animate-fade-in" style={styles.card}>
-                  <div style={styles.avatar}>
-                    <Briefcase size={18} color="var(--primary)" />
-                  </div>
-                  <div style={styles.info}>
-                    <h3 style={styles.name}>{asesor.nombre_completo}</h3>
-                    <div style={styles.metaRow}>
-                      <span style={styles.metaItem}>
-                        <Mail size={12} />
-                        {asesor.email}
-                      </span>
-                      <span style={styles.metaItem}>
-                        <Calendar size={12} />
-                        Registrado el {new Date(asesor.created_at).toLocaleDateString('es-CO')}
-                      </span>
-                      <TelefonoAsesorEditor asesorId={asesor.id} telefono={asesor.telefono} />
-                    </div>
-                  </div>
-                  <div className="badge badge-info" style={styles.roleBadge}>
-                    Asesor Activo
-                  </div>
-                </div>
+                <AsesorCard
+                  key={asesor.id}
+                  asesor={asesor}
+                  inmuebles={inmueblesPorAsesor.get(asesor.id) || 0}
+                  otrosActivos={asesores.filter(a => a.id !== asesor.id)}
+                />
               ))
             )}
           </div>
+
+          {inactivos.length > 0 && (
+            <>
+              <h2 style={styles.sectionTitle}>Inactivos ({inactivos.length})</h2>
+              <p style={styles.sectionNote}>
+                Ya no inician sesión ni aparecen en la agenda, las citas o los selectores. Se conservan para no perder
+                su historial.
+              </p>
+              <div style={styles.list}>
+                {inactivos.map((asesor) => (
+                  <AsesorCard
+                    key={asesor.id}
+                    asesor={asesor}
+                    inmuebles={inmueblesPorAsesor.get(asesor.id) || 0}
+                    otrosActivos={asesores}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         {/* Columna Derecha: Formulario de Registro */}
@@ -153,49 +172,16 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: '1rem',
   },
-  card: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-    padding: '1.25rem',
-  },
-  avatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '10px',
-    backgroundColor: 'rgba(0, 171, 216, 0.08)',
-    border: '1px solid rgba(0, 171, 216, 0.15)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  info: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.35rem',
-    flex: 1,
-    minWidth: 0,
-  },
-  name: {
+  sectionTitle: {
     fontSize: '1rem',
     fontWeight: '700',
-    color: 'var(--text-primary)',
-  },
-  metaRow: {
-    display: 'flex',
-    gap: '1rem',
-    flexWrap: 'wrap',
-  },
-  metaItem: {
-    fontSize: '0.8rem',
     color: 'var(--text-secondary)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.35rem',
+    marginTop: '1rem',
   },
-  roleBadge: {
-    fontSize: '0.75rem',
-    padding: '0.25rem 0.75rem',
+  sectionNote: {
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
+    marginTop: '-0.75rem',
   },
   emptyState: {
     padding: '4rem 2rem',

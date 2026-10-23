@@ -22,6 +22,7 @@ import PhotosGallery from './PhotosGallery';
 interface Asesor {
   id: string;
   nombre_completo: string;
+  activo?: boolean;
 }
 
 interface InmuebleCardProps {

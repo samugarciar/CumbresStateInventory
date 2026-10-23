@@ -7,6 +7,7 @@ import { SlidersHorizontal, Search, Loader2 } from 'lucide-react';
 interface Asesor {
   id: string;
   nombre_completo: string;
+  activo?: boolean;
 }
 
 interface FiltersPanelProps {
@@ -166,7 +167,9 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
             >
               <option value="">Todos</option>
               {asesores.map(a => (
-                <option key={a.id} value={a.id}>{a.nombre_completo}</option>
+                <option key={a.id} value={a.id}>
+                  {a.nombre_completo}{a.activo === false ? ' (inactivo)' : ''}
+                </option>
               ))}
             </select>
           </div>
