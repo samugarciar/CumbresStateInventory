@@ -184,6 +184,7 @@ export async function aprobarSolicitud(data: AprobarData) {
       .select('id, nombre_completo, telefono')
       .eq('id', data.asesor_id)
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .eq('activo', true)
       .single();
 
     if (!asesor) {

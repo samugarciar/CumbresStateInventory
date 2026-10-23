@@ -50,7 +50,8 @@ export default async function DashboardPage() {
       .from('usuarios')
       .select('*', { count: 'exact', head: true })
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
-      .eq('rol', 'asesor');
+      .eq('rol', 'asesor')
+      .eq('activo', true);
     totalAsesores = countAsesores || 0;
 
     // Conteo de inventarios para la inmobiliaria

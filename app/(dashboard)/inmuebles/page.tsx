@@ -52,9 +52,10 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   if (isAdmin) {
     const { data } = await supabase
       .from('usuarios')
-      .select('id, nombre_completo')
+      .select('id, nombre_completo, activo')
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
-      .eq('rol', 'asesor');
+      .eq('rol', 'asesor')
+      .order('nombre_completo');
     asesores = data || [];
   }
 

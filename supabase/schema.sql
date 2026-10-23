@@ -29,7 +29,9 @@ CREATE TABLE public.usuarios (
     nombre_completo TEXT NOT NULL,
     email TEXT NOT NULL,
     telefono TEXT,
-    rol TEXT NOT NULL CHECK (rol IN ('admin', 'asesor')),
+    rol TEXT NOT NULL CHECK (rol IN ('admin', 'asesor', 'revisor')),
+    activo BOOLEAN NOT NULL DEFAULT true, -- Un asesor que se va se desactiva, nunca se borra (el borrado arrastra su agenda y sus citas)
+    desactivado_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -90,13 +92,13 @@ ALTER TABLE public.inventarios ENABLE ROW LEVEL SECURITY;
 -- Obtener el rol del usuario logueado
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS TEXT AS $$
-  SELECT rol FROM public.usuarios WHERE id = auth.uid();
+  SELECT rol FROM public.usuarios WHERE id = auth.uid() AND activo;
 $$ LANGUAGE sql SECURITY DEFINER SET row_security = off;
 
 -- Obtener el id de la inmobiliaria del usuario logueado
 CREATE OR REPLACE FUNCTION public.get_my_inmobiliaria()
 RETURNS UUID AS $$
-  SELECT inmobiliaria_id FROM public.usuarios WHERE id = auth.uid();
+  SELECT inmobiliaria_id FROM public.usuarios WHERE id = auth.uid() AND activo;
 $$ LANGUAGE sql SECURITY DEFINER SET row_security = off;
 
 
@@ -127,16 +129,10 @@ CREATE POLICY "Los administradores pueden gestionar usuarios de su inmobiliaria"
     USING (inmobiliaria_id = public.get_my_inmobiliaria() AND public.get_my_role() = 'admin')
     WITH CHECK (inmobiliaria_id = public.get_my_inmobiliaria() AND public.get_my_role() = 'admin');
 
-CREATE POLICY "Los usuarios pueden actualizar su propio perfil"
-    ON public.usuarios
-    FOR UPDATE
-    USING (id = auth.uid())
-    WITH CHECK (id = auth.uid());
-
-CREATE POLICY "Permitir inserción de primer perfil"
-    ON public.usuarios
-    FOR INSERT
-    WITH CHECK (id = auth.uid()); -- Permite que el usuario que se registra cree su perfil
+-- Sin política de autoedición ni de autoinserción: dejaban a cualquier usuario
+-- cambiarse el rol. Los perfiles los crea y edita el admin con la llave de
+-- servicio (ver migrations/2026-10-23_asesores_activos.sql).
+REVOKE DELETE ON public.usuarios FROM anon, authenticated;
 
 -- --- POLÍTICAS DE INMUEBLES ---
 CREATE POLICY "Admins ven todos los inmuebles de su inmobiliaria; Asesores ven los suyos"

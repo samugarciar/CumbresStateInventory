@@ -14,6 +14,7 @@ export async function getCurrentUser() {
       nombre_completo,
       email,
       rol,
+      activo,
       inmobiliaria_id,
       inmobiliarias (
         id,
@@ -24,7 +25,9 @@ export async function getCurrentUser() {
     .eq('id', user.id)
     .single();
 
-  if (error || !profile) {
+  // Un asesor desactivado ya no ve su perfil (get_my_inmobiliaria() le devuelve
+  // NULL); el chequeo explícito cubre igual el caso. El layout cierra la sesión.
+  if (error || !profile || profile.activo === false) {
     return {
       auth: user,
       profile: null,

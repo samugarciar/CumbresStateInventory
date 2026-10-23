@@ -8,7 +8,7 @@ interface AsesorSelectorProps {
   inmuebleId: string;
   asesorOverrideId: string | null;
   defaultAsesorName: string;
-  asesores: { id: string; nombre_completo: string }[];
+  asesores: { id: string; nombre_completo: string; activo?: boolean }[];
 }
 
 export default function AsesorSelector({
@@ -19,6 +19,9 @@ export default function AsesorSelector({
 }: AsesorSelectorProps) {
   const [selectedVal, setSelectedVal] = useState(asesorOverrideId || 'default');
   const [isPending, startTransition] = useTransition();
+  // A un inactivo no se le asigna nada; solo aparece si ya es el asignado,
+  // para que el selector no aparente "Por defecto ERP".
+  const opciones = asesores.filter(a => a.activo !== false || a.id === asesorOverrideId);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -52,9 +55,9 @@ export default function AsesorSelector({
         <option value="default" style={{ color: '#475569' }}>
           Por defecto ERP ({defaultAsesorName})
         </option>
-        {asesores.map((asesor) => (
-          <option key={asesor.id} value={asesor.id} style={{ color: 'var(--text-primary)' }}>
-            Asignar a: {asesor.nombre_completo}
+        {opciones.map((asesor) => (
+          <option key={asesor.id} value={asesor.id} disabled={asesor.activo === false} style={{ color: 'var(--text-primary)' }}>
+            Asignar a: {asesor.nombre_completo}{asesor.activo === false ? ' (inactivo)' : ''}
           </option>
         ))}
       </select>

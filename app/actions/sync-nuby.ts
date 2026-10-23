@@ -206,12 +206,15 @@ export async function sincronizarInmuebles(overrides?: Partial<NubyConfig>): Pro
     };
   }
 
-  // 3. Obtener lista de asesores locales actuales para realizar el match en memoria
+  // 3. Obtener lista de asesores locales actuales para realizar el match en memoria.
+  // Solo activos: un inmueble que Nuby aún tiene a nombre de alguien que se fue
+  // queda sin asesor del ERP (su asesor_id_override, si lo hay, se respeta).
   const { data: asesoresLocales, error: asesoresErr } = await supabase
     .from('usuarios')
     .select('id, nombre_completo, email')
     .eq('inmobiliaria_id', profile.inmobiliaria_id)
-    .eq('rol', 'asesor');
+    .eq('rol', 'asesor')
+    .eq('activo', true);
 
   if (asesoresErr) {
     console.error('Error al obtener asesores locales:', asesoresErr);

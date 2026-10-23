@@ -196,6 +196,20 @@ export async function reasignarAsesor(inmuebleId: string, asesorId: string | nul
     return { success: false, error: 'No autorizado. Solo los administradores pueden reasignar asesores.' };
   }
 
+  if (asesorId) {
+    const { data: destino } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('id', asesorId)
+      .eq('inmobiliaria_id', profile.inmobiliaria_id)
+      .eq('rol', 'asesor')
+      .eq('activo', true)
+      .maybeSingle();
+    if (!destino) {
+      return { success: false, error: 'Ese asesor no está activo en tu inmobiliaria.' };
+    }
+  }
+
   // Actualizar el campo asesor_id_override (el null sirve para limpiar el override y volver al del ERP)
   const { error } = await supabase
     .from('inmuebles')
