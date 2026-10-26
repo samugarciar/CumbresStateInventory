@@ -15,6 +15,33 @@ import {
 import AdminApprovalWidget from './AdminApprovalWidget';
 import { estadoChip } from '../inmuebles/estado';
 
+// Lo que el inicio muestra de cada inmueble reciente (joins de usuarios solo para admin)
+interface InmuebleReciente {
+  id: string;
+  titulo: string;
+  direccion: string;
+  precio: number;
+  tipo_transaccion: string;
+  estado: string;
+  arrendasoft_id: number | null;
+  usuarios?: { nombre_completo: string } | null;
+  usuarios_override?: { nombre_completo: string } | null;
+}
+interface CaptacionPendiente {
+  id: string;
+  titulo_captacion: string;
+  tareas: { id: string; titulo: string; estado: string }[];
+}
+// Misma forma que espera AdminApprovalWidget
+interface SolicitudAprobacion {
+  tareaId: string;
+  inventarioId: string;
+  tituloInventario: string;
+  contratoIdPropuesto: string;
+  creadoPorNombre: string;
+  fecha: string;
+}
+
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user || !user.profile) return null;
@@ -84,7 +111,7 @@ export default async function DashboardPage() {
   }
 
   // 2. Obtener Actividad Reciente (Inmuebles recientes)
-  let inmueblesRecientes: any[] = [];
+  let inmueblesRecientes: InmuebleReciente[] = [];
   if (isAdmin) {
     const { data } = await supabase
       .from('inmuebles')
@@ -92,7 +119,7 @@ export default async function DashboardPage() {
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
-    inmueblesRecientes = data || [];
+    inmueblesRecientes = (data || []) as unknown as InmuebleReciente[];
   } else {
     const { data } = await supabase
       .from('inmuebles')
@@ -100,11 +127,11 @@ export default async function DashboardPage() {
       .or(`asesor_id_override.eq.${profile.id},and(asesor_id_override.is.null,asesor_id.eq.${profile.id})`)
       .order('arrendasoft_id', { ascending: false, nullsFirst: false })
       .limit(3);
-    inmueblesRecientes = data || [];
+    inmueblesRecientes = (data || []) as unknown as InmuebleReciente[];
   }
 
   // 3. Obtener Tareas de Captaciones en proceso (pendientes) asociadas al asesor comercial
-  let captacionesPendientes: any[] = [];
+  let captacionesPendientes: CaptacionPendiente[] = [];
   if (!isAdmin) {
     const { data: tareasPendientesAsesor } = await supabase
       .from('tareas')
@@ -143,7 +170,7 @@ export default async function DashboardPage() {
   }
 
   // 4. Obtener Solicitudes de Asociación de Contratos para Admins
-  let solicitudesAprobacion: any[] = [];
+  let solicitudesAprobacion: SolicitudAprobacion[] = [];
   if (isAdmin) {
     const { data: tareasAsociacion } = await supabase
       .from('tareas')
@@ -165,7 +192,7 @@ export default async function DashboardPage() {
         .in('id', inventarioIds as string[]);
 
       const invsMap = new Map(invs?.map(i => {
-        const usuario = Array.isArray(i.usuarios) ? i.usuarios[0] : (i.usuarios as any);
+        const usuario = (Array.isArray(i.usuarios) ? i.usuarios[0] : i.usuarios) as { nombre_completo?: string } | null | undefined;
         return [i.id, { 
           contrato_id_propuesto: i.contrato_id_propuesto, 
           creado_por: usuario?.nombre_completo || 'Asesor' 
@@ -176,7 +203,7 @@ export default async function DashboardPage() {
         const invInfo = invsMap.get(t.entidad_id) || { contrato_id_propuesto: 'Desconocido', creado_por: 'Asesor' };
         return {
           tareaId: t.id,
-          inventarioId: t.entidad_id,
+          inventarioId: t.entidad_id as string, // la consulta solo trae tareas de inventarios
           tituloInventario: t.evento_titulo,
           contratoIdPropuesto: invInfo.contrato_id_propuesto,
           creadoPorNombre: invInfo.creado_por,
@@ -366,7 +393,7 @@ export default async function DashboardPage() {
                           En espera de publicación
                         </span>
                         <div style={styles.pendingTasksBadgeContainer}>
-                          {capt.tareas.map((task: any) => (
+                          {capt.tareas.map((task) => (
                             <span key={task.id} className="badge" style={styles.pendingTaskBadge}>
                               Falta: {task.titulo === 'Subir a marketplace' ? 'Marketplace' : 'ERP'}
                             </span>

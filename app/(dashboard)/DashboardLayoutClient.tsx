@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logout } from '@/app/actions/auth';
@@ -45,6 +45,7 @@ interface EnlaceMenu {
 }
 
 const empiezaCon = (prefijo: string) => (pathname: string) => pathname.startsWith(prefijo);
+const suscribirNada = () => () => {};
 
 // Conversaciones del CRM: otra app. Sin la variable (p. ej. en local) no se muestra.
 const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL;
@@ -95,7 +96,8 @@ export default function DashboardLayoutClient({
 }: DashboardLayoutClientProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  // true solo en el navegador (en el servidor y al hidratar, false)
+  const mounted = useSyncExternalStore(suscribirNada, () => true, () => false);
   const pathname = usePathname();
 
   // Cargar estado de colapsado y manejar cambios responsivos
@@ -114,7 +116,6 @@ export default function DashboardLayoutClient({
     };
 
     handleResize(); // Ejecutar chequeo inicial
-    setMounted(true);
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);

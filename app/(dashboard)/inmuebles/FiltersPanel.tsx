@@ -56,10 +56,14 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, searchParams]);
 
-  // Sync state if URL changes externally (e.g. from Clear Filters)
-  useEffect(() => {
-    setSearchTerm(searchParams.get('q') || '');
-  }, [searchParams]);
+  // Si la URL cambia por fuera (p. ej. «Limpiar filtros»), el buscador la sigue.
+  // Se ajusta durante el render, como recomienda React, en vez de en un efecto.
+  const qUrl = searchParams.get('q') || '';
+  const [qVisto, setQVisto] = useState(qUrl);
+  if (qUrl !== qVisto) {
+    setQVisto(qUrl);
+    setSearchTerm(qUrl);
+  }
 
   const hasActiveFilters = 
     searchParams.has('q') || 

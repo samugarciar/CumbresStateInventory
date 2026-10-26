@@ -112,7 +112,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
   });
 
   function initializeSectionItems(itemsArray: string[]) {
-    const obj: Record<string, any> = {};
+    const obj: Record<string, { estado: "B" | "R" | "M" | null; obs: string }> = {};
     itemsArray.forEach(item => {
       obj[item] = { estado: null, obs: '' };
     });
@@ -755,7 +755,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             onClick={() => marcarTodosComoBueno(seccionKey)}
             style={styles.quickSelectBtn}
           >
-            <span className="desktop-only">Marcar todo "Bueno (B)"</span>
+            <span className="desktop-only">Marcar todo «Bueno (B)»</span>
             <span className="mobile-only">Marcar todo como Bueno (B)</span>
           </button>
         </div>

@@ -48,7 +48,7 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   const isLogsAction = resolvedParams.action === 'logs';
 
   // Obtener lista de asesores si es administrador (se usa para creación y filtros)
-  let asesores: any[] = [];
+  let asesores: { id: string; nombre_completo: string; activo?: boolean }[] = [];
   if (isAdmin) {
     const { data } = await supabase
       .from('usuarios')
@@ -69,7 +69,7 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .not('unidad', 'is', null);
     unidadesExistentes = Array.from(
-      new Set((data || []).map((r: any) => (r.unidad || '').trim()).filter(Boolean))
+      new Set((data || []).map((r: { unidad: string | null }) => (r.unidad || '').trim()).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, 'es'));
   }
 

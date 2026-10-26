@@ -185,8 +185,8 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
         } else {
           setStatus({ success: false, message: result.message });
         }
-      } catch (err: any) {
-        setStatus({ success: false, message: err?.message || 'Ocurrió un error inesperado al conectar con el servidor.' });
+      } catch (err) {
+        setStatus({ success: false, message: (err instanceof Error && err.message) || 'Ocurrió un error inesperado al conectar con el servidor.' });
       } finally {
         setUploadMsg(null);
       }

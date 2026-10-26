@@ -44,15 +44,15 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
       if (res.success) {
         setShowDetails(true);
       }
-    } catch (err: any) {
+    } catch (err) {
       setResult({
         success: false,
-        message: err.message || 'Ocurrió un error inesperado al conectar con el servidor.',
+        message: (err instanceof Error && err.message) || 'Ocurrió un error inesperado al conectar con el servidor.',
         processed: 0,
         imported: 0,
         updated: 0,
         failed: 0,
-        details: [err.toString()]
+        details: [String(err)]
       });
     } finally {
       setLoading(false);
