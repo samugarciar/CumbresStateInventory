@@ -516,9 +516,11 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
   },
+  // Con «border» completo (no borderColor): mezclar el atajo con su parte hacía que
+  // React avisara al cambiar de filtro y dejara el borde sin color.
   filterBtnActive: {
     backgroundColor: 'var(--primary)',
-    borderColor: 'var(--primary)',
+    border: '1px solid var(--primary)',
     color: '#ffffff',
   },
   groupsContainer: {
@@ -609,7 +611,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     padding: '0.75rem 1rem',
     borderRadius: '10px',
-    border: '1px solid var(--border-color)',
+    borderWidth: '1px',
+    borderStyle: 'solid',
     transition: 'all var(--transition-fast)',
     flexWrap: 'wrap',
     gap: '0.75rem',
