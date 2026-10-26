@@ -292,7 +292,7 @@ export default async function DashboardPage() {
         <section style={styles.columnRight}>
           <div style={styles.sectionHeaderFlex}>
             <h2 style={styles.sectionTitle}>Inmuebles Recientes</h2>
-            <Link href="/inmuebles" style={styles.viewAllLink}>
+            <Link href="/inmuebles" style={styles.viewAllLink} className="enlace-accion">
               Ver todos <ArrowRight size={14} />
             </Link>
           </div>
@@ -301,7 +301,7 @@ export default async function DashboardPage() {
             {inmueblesRecientes.length === 0 ? (
               <div style={styles.emptyState}>
                 <p>Aún no hay inmuebles registrados.</p>
-                <Link href="/inmuebles?action=captar" style={styles.emptyStateLink}>
+                <Link href="/inmuebles?action=captar" className="enlace" style={styles.emptyStateLink}>
                   Registrar mi primer inmueble
                 </Link>
               </div>
@@ -580,10 +580,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
   },
   emptyStateLink: {
-    color: 'var(--primary)',
-    fontWeight: '600',
     fontSize: '0.9rem',
-    textDecoration: 'underline',
   },
   pendingCaptCard: {
     display: 'flex',
