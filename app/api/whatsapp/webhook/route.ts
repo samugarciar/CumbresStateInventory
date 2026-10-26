@@ -14,6 +14,7 @@ import {
   type FilaMensaje,
   type MensajeCoexistencia,
 } from '@/lib/whatsapp/lineas';
+import { medioDe, prepararMedio, type MedioMeta, type MedioPreparado } from '@/lib/whatsapp/medios';
 
 /**
  * El webhook de la Cloud API de Meta: por aquí entra TODO.
@@ -56,6 +57,11 @@ interface MensajeMeta {
   timestamp?: string;
   text?: { body: string };
   referral?: Referral;
+  image?: MedioMeta;
+  audio?: MedioMeta;
+  video?: MedioMeta;
+  document?: MedioMeta;
+  sticker?: MedioMeta;
 }
 
 interface EstadoMeta {
@@ -429,7 +435,9 @@ async function guardarMensajeEntrante(
   supabase: Supabase,
   linea: Linea,
   m: MensajeMeta,
-  numero: string
+  numero: string,
+  /** La foto, el audio o el documento ya bajado y leído (ver medios.ts). */
+  preparado?: MedioPreparado
 ): Promise<{
   conversacionId: string;
   telefono: string;
@@ -442,10 +450,13 @@ async function guardarMensajeEntrante(
   // Solo texto despierta al agente. Una foto o un audio se guardan para
   // que la conversación no tenga huecos, pero llamar al bot con un
   // marcador de posición le haría contestar sobre algo que no leyó.
-  const esTexto = m.type === 'text' && Boolean(m.text?.body);
-  const contenido = esTexto
-    ? m.text!.body
-    : `[el cliente mandó ${m.type}, que todavía no sabemos leer]`;
+  // Una nota de voz transcrita o una foto descrita cuentan como texto.
+  const esTexto = preparado ? preparado.esTexto : m.type === 'text' && Boolean(m.text?.body);
+  const contenido = preparado
+    ? preparado.contenido
+    : esTexto
+      ? m.text!.body
+      : `[el cliente mandó ${m.type}, que todavía no sabemos leer]`;
 
   const { data: existente } = await supabase
     .from('agente_comercial_conversaciones')
@@ -501,6 +512,7 @@ async function guardarMensajeEntrante(
       // Por qué número entró: con varias líneas, la ventana de 24 h y el
       // contexto del bot son por línea.
       wa_phone_number_id: numero,
+      ...(preparado ? { medio: preparado.medio } : {}),
     });
 
   if (errorMensaje) {
@@ -533,6 +545,40 @@ async function procesarMensajesEntrantes(
   >();
 
   for (const m of mensajes) {
+    // Un medio se baja de Meta y se transcribe o describe: eso tarda, así
+    // que va en after() y se guarda ya leído. La proyección al CRM corre
+    // al insertar, por eso no se guarda antes un marcador para editarlo.
+    const medio = medioDe(m as unknown as { type: string } & Record<string, unknown>);
+    if (medio) {
+      after(async () => {
+        const credencial = await credencialDeLinea(supabase, numero);
+        const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
+        const preparado = await prepararMedio(
+          supabase,
+          credencial,
+          linea.inmobiliaria_id,
+          telefono,
+          m.id,
+          medio.tipo,
+          medio.meta
+        );
+        const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, preparado);
+        if (guardado?.esTexto && linea.bot_atiende) {
+          activarAgenteEnSegundoPlano(
+            supabase,
+            linea,
+            numero,
+            guardado.telefono,
+            guardado.conversacionId,
+            m.id,
+            guardado.contenido,
+            origen
+          );
+        }
+      });
+      continue;
+    }
+
     const guardado = await guardarMensajeEntrante(supabase, linea, m, numero);
     if (!guardado) continue;
 
