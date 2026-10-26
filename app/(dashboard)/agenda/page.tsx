@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import AgendaView from './AgendaView';
 
+type PropsAgenda = React.ComponentProps<typeof AgendaView>;
+
 export default async function AgendaPage({
   searchParams,
 }: {
@@ -65,7 +67,7 @@ export default async function AgendaPage({
     .order('hora_inicio', { ascending: true });
 
   // Para admin: obtener lista de asesores de la inmobiliaria
-  let asesores: any[] = [];
+  let asesores: PropsAgenda['asesores'] = [];
   if (isAdmin) {
     const { data } = await supabase
       .from('usuarios')
@@ -78,7 +80,7 @@ export default async function AgendaPage({
   }
 
   // Para admin: obtener inmuebles disponibles para el selector del formulario
-  let inmuebles: any[] = [];
+  let inmuebles: PropsAgenda['inmuebles'] = [];
   if (isAdmin) {
     const { data } = await supabase
       .from('inmuebles')
@@ -91,8 +93,8 @@ export default async function AgendaPage({
 
   return (
     <AgendaView
-      franjas={(franjas || []) as any[]}
-      citas={(citas || []) as any[]}
+      franjas={(franjas || []) as unknown as PropsAgenda['franjas']}
+      citas={(citas || []) as unknown as PropsAgenda['citas']}
       asesores={asesores}
       inmuebles={inmuebles}
       isAdmin={isAdmin}

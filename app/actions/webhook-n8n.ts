@@ -14,7 +14,7 @@ export interface WebhookResult {
  * Server Action para procesar la captación de inmuebles y retransmitirla de forma segura a n8n.
  * Registra cada intento en la tabla public.webhook_logs para auditoría y trazabilidad.
  */
-export async function enviarCaptacionWebhook(prevState: any, formData: FormData): Promise<WebhookResult> {
+export async function enviarCaptacionWebhook(prevState: WebhookResult | null, formData: FormData): Promise<WebhookResult> {
   const supabase = await createClient();
 
   // 1. Validar sesión de usuario
@@ -96,7 +96,7 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   }
 
   // 4. Agrupar campos para guardar en el payload del log
-  const payloadJson: Record<string, any> = {};
+  const payloadJson: Record<string, unknown> = {};
   formData.forEach((value, key) => {
     // Las fotos se manejan por separado, no en el JSON del payload
     if (key !== 'Fotos') {
@@ -277,7 +277,8 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
     revalidatePath('/inmuebles');
     return { success: true, message: 'Captación enviada con éxito. El flujo de automatización (Google Drive, Docs y Facebook) ha iniciado.' };
 
-  } catch (error: any) {
+  } catch (e: unknown) {
+    const error = e instanceof Error ? e : new Error(String(e));
     console.error('Error durante el envío de captación a n8n:', error);
     const errorMsg = error.name === 'TimeoutError' 
       ? 'Tiempo de espera de red agotado (90s). El servidor de n8n tardó demasiado en responder.' 
