@@ -27,12 +27,16 @@ export default async function AgendaPage({
   // ya sería mañana (y un domingo de noche, la semana siguiente). Se calcula
   // como en citas/page.tsx y se opera en UTC puro para que la zona del
   // servidor no mueva el día.
+  // El domingo no se trabaja: su semana es la que empieza al día siguiente
+  // (la semana que ya terminó no le sirve a nadie). Es la misma regla que
+  // aplica la vista en el navegador, así que los dos piden la misma semana
+  // y el domingo la página no se carga dos veces.
   const { semana } = await searchParams;
   const semanaValida = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana);
   const hoyBogota = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
   const [anio, mes, dia] = (semanaValida ? semana : hoyBogota).split('-').map(Number);
   const diaSemana = new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay(); // 0=dom, 1=lun...
-  const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const diffLunes = diaSemana === 0 ? 1 : 1 - diaSemana;
   const lunes = new Date(Date.UTC(anio, mes - 1, dia + diffLunes));
   const sabado = new Date(Date.UTC(anio, mes - 1, dia + diffLunes + 5));
 
