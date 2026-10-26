@@ -2,6 +2,7 @@ import { createAdminClient } from '../../../../lib/supabase/admin';
 import {
   listarPlantillas,
   crearPlantillaRevision,
+  borrarPlantilla,
   sanitizarTextoMeta,
 } from '../../../../lib/whatsapp/meta';
 import {
@@ -9,6 +10,8 @@ import {
   credencialDeLinea,
 } from '../../../../lib/whatsapp/lineas';
 import { tokenValido } from '@/lib/whatsapp/token';
+import { PLANTILLA_CONFIRMACION } from '@/lib/whatsapp/confirmacion-citas';
+import { PLANTILLA_NO_DISPONIBLE } from '@/lib/whatsapp/veredicto-solicitudes';
 
 export const maxDuration = 60;
 
@@ -16,7 +19,7 @@ export const maxDuration = 60;
  * Contrato C2 · Gestión de plantillas de WhatsApp (Meta HSM) por encargo del CRM.
  *
  * El CRM no habla con Meta directamente ni almacena credenciales de WABA:
- * solicita a la plataforma la sincronización o el alta de plantillas.
+ * solicita a la plataforma la sincronización, el alta o la baja de plantillas.
  *
  * Autenticado con `x-crm-token` (CRM_ENVIO_TOKEN).
  * La WABA y el token salen de `crm.credencial_linea`, nunca de variables
@@ -240,4 +243,88 @@ export async function POST(request: Request) {
     id_meta: metaRes.datos.id,
     status: metaRes.datos.status ?? 'PENDING',
   });
+}
+
+/**
+ * Las que manda la plataforma por su cuenta (confirmar citas, negar una
+ * solicitud de visita). Borrarlas desde el CRM dejaría esos avisos sin
+ * salir, y no se podrían volver a crear con el mismo nombre en 30 días.
+ */
+const PLANTILLAS_DE_LA_PLATAFORMA = [
+  PLANTILLA_CONFIRMACION.nombreMeta,
+  PLANTILLA_NO_DISPONIBLE.nombreMeta,
+];
+
+interface PeticionBorrarPlantilla {
+  inmobiliaria_id?: string;
+  wa_phone_number_id?: string;
+  nombre_meta?: string;
+  idioma?: string;
+}
+
+/**
+ * DELETE /api/whatsapp/plantillas
+ *
+ * Borra de la WABA de esa línea la plantilla con ese nombre e idioma. Si
+ * ya no estaba, responde ok con `existia: false`.
+ */
+export async function DELETE(request: Request) {
+  if (!validarTokenCRM(request)) {
+    return Response.json({ ok: false, error: 'No autorizado' }, { status: 401 });
+  }
+
+  const cuerpo: PeticionBorrarPlantilla | null = await request.json().catch(() => null);
+  const inmobiliariaId = cuerpo?.inmobiliaria_id?.trim();
+  const phoneNumberId = cuerpo?.wa_phone_number_id?.trim();
+  const nombreMeta = cuerpo?.nombre_meta?.trim().toLowerCase();
+  const idioma = cuerpo?.idioma?.trim() || 'es';
+
+  if (!inmobiliariaId || !phoneNumberId || !nombreMeta) {
+    return Response.json(
+      { ok: false, error: 'Faltan campos requeridos: inmobiliaria_id, wa_phone_number_id o nombre_meta' },
+      { status: 400 }
+    );
+  }
+  if (!/^[a-z0-9_]{1,512}$/.test(nombreMeta)) {
+    return Response.json({ ok: false, error: `Nombre de plantilla inválido: ${nombreMeta}` }, { status: 400 });
+  }
+  if (PLANTILLAS_DE_LA_PLATAFORMA.includes(nombreMeta)) {
+    return Response.json(
+      {
+        ok: false,
+        error: `«${nombreMeta}» la usa la plataforma para avisar de citas y solicitudes: no se borra desde el CRM.`,
+      },
+      { status: 409 }
+    );
+  }
+
+  const supabase = createAdminClient();
+  const resCred = await resolverCredencialesLinea(supabase, inmobiliariaId, phoneNumberId);
+  if (!resCred.ok) {
+    return Response.json({ ok: false, error: resCred.error }, { status: resCred.status });
+  }
+
+  const metaRes = await borrarPlantilla(resCred.wabaId, resCred.token, { nombreMeta, idioma });
+
+  if (!metaRes.ok) {
+    const codigo = metaRes.error.code;
+    const errorSanitizado = sanitizarTextoMeta(metaRes.error.message);
+    if (!resCred.esPrueba && codigo) {
+      await anotarResultadoCredencial(supabase, phoneNumberId, {
+        ok: false,
+        codigo,
+        error: errorSanitizado,
+      });
+    }
+    return Response.json(
+      { ok: false, codigo, error: errorSanitizado || 'Meta no dejó borrar la plantilla' },
+      { status: 502 }
+    );
+  }
+
+  if (!resCred.esPrueba) {
+    await anotarResultadoCredencial(supabase, phoneNumberId, { ok: true });
+  }
+
+  return Response.json({ ok: true, existia: metaRes.datos.existia });
 }

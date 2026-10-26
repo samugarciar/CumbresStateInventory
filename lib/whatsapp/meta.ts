@@ -199,7 +199,7 @@ export type RespuestaMeta<T> = { ok: true; datos: T } | { ok: false; error: Erro
 
 async function graph<T>(
   ruta: string,
-  opciones: { token?: string; metodo?: 'GET' | 'POST'; cuerpo?: Record<string, unknown> } = {}
+  opciones: { token?: string; metodo?: 'GET' | 'POST' | 'DELETE'; cuerpo?: Record<string, unknown> } = {}
 ): Promise<RespuestaMeta<T>> {
   try {
     const headers: Record<string, string> = {};
@@ -458,3 +458,44 @@ export function crearPlantillaRevision(
   );
 }
 
+/**
+ * Borra una plantilla de la WABA: la de ese nombre en ese idioma. Borrar
+ * solo por nombre se llevaría también las demás traducciones, por eso se
+ * busca primero su id. Si ya no estaba en Meta no es un error: el
+ * resultado lo dice con `existia: false`.
+ *
+ * Es definitivo. Meta no deja crear otra plantilla con ese nombre durante
+ * 30 días, y lo que se intente mandar con ella después falla.
+ */
+export async function borrarPlantilla(
+  wabaId: string,
+  token: string,
+  opciones: { nombreMeta: string; idioma: string }
+): Promise<RespuestaMeta<{ existia: boolean }>> {
+  const nombre = opciones.nombreMeta.toLowerCase().trim();
+  const lista = await graph<{ data?: { id: string; name: string; language: string }[] }>(
+    `${encodeURIComponent(wabaId)}/message_templates?${new URLSearchParams({
+      name: nombre,
+      fields: 'id,name,language',
+      limit: '100',
+    })}`,
+    { token }
+  );
+  if (!lista.ok) return lista;
+
+  // El filtro de Meta por nombre no es exacto: se compara aquí.
+  const plantilla = (lista.datos.data ?? []).find(
+    (p) => p.name === nombre && p.language === opciones.idioma
+  );
+  if (!plantilla) return { ok: true, datos: { existia: false } };
+
+  const borrada = await graph<{ success?: boolean }>(
+    `${encodeURIComponent(wabaId)}/message_templates?${new URLSearchParams({
+      hsm_id: plantilla.id,
+      name: nombre,
+    })}`,
+    { token, metodo: 'DELETE' }
+  );
+  if (!borrada.ok) return borrada;
+  return { ok: true, datos: { existia: true } };
+}
