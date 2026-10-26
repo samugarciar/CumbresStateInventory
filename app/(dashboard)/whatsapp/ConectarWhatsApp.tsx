@@ -74,6 +74,8 @@ type Resultado =
   | { tipo: 'cancelado'; texto: string }
   | { tipo: 'error'; texto: string; detalle?: string | null };
 
+type ModoConexion = 'coexistencia' | 'cloud_api';
+
 const fecha = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 
 /** Espera hasta `ms` a que la ventana mande su evento de fin. */
@@ -114,6 +116,8 @@ export default function ConectarWhatsApp({
   const [sdkFallo, setSdkFallo] = useState(false);
   const [enCurso, setEnCurso] = useState<string | null>(null);
   const [confirmandoCorte, setConfirmandoCorte] = useState<string | null>(null);
+  // Embudo que espera confirmar un número nuevo solo en la Cloud API.
+  const [confirmandoSoloApi, setConfirmandoSoloApi] = useState<string | null>(null);
   const [resultados, setResultados] = useState<Record<string, Resultado | undefined>>({});
   const iniciado = useRef(false);
   // El último evento de la ventana de Meta. Llega por `postMessage`, aparte
@@ -140,7 +144,12 @@ export default function ConectarWhatsApp({
     setResultados((previos) => ({ ...previos, [embudo]: resultado }));
   }
 
-  async function terminar(embudo: string, code: string | undefined, confirmacionCorte = false) {
+  async function terminar(
+    embudo: string,
+    code: string | undefined,
+    confirmacionCorte = false,
+    modo: ModoConexion = 'coexistencia'
+  ) {
     try {
       if (code) {
         // El código vence a los 30 segundos. Se le da un segundo al evento
@@ -150,6 +159,7 @@ export default function ConectarWhatsApp({
         const r = await llamarServidor({
           accion: 'conectar',
           embudo,
+          modo,
           confirmacion_corte: confirmacionCorte,
           code,
           waba_id: fin?.tipo === 'fin' ? fin.wabaId : undefined,
@@ -211,7 +221,7 @@ export default function ConectarWhatsApp({
     conectar(embudo, false);
   }
 
-  function conectar(embudo: string, confirmacionCorte = false) {
+  function conectar(embudo: string, confirmacionCorte = false, modo: ModoConexion = 'coexistencia') {
     if (!window.FB || enCurso) return;
     evento.current = null;
     setEnCurso(embudo);
@@ -219,14 +229,18 @@ export default function ConectarWhatsApp({
     // FB.login no admite una función async: se llama a una aparte.
     window.FB.login(
       (respuesta) => {
-        void terminar(embudo, respuesta?.authResponse?.code ?? undefined, confirmacionCorte);
+        void terminar(embudo, respuesta?.authResponse?.code ?? undefined, confirmacionCorte, modo);
       },
       {
         config_id: CONFIG_REGISTRO_ID,
         response_type: 'code',
         override_default_response_type: true,
-        // Coexistencia: el número sigue en la app del celular.
-        extras: { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' },
+        // Coexistencia: el número sigue en la app del celular. Solo API: el
+        // registro de siempre, con un número que deja la app.
+        extras:
+          modo === 'coexistencia'
+            ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
+            : { setup: {}, sessionInfoVersion: '3' },
       }
     );
   }
@@ -302,6 +316,7 @@ export default function ConectarWhatsApp({
                 </div>
 
                 {conectable ? (
+                  <div style={styles.botones}>
                   <button
                     className={conectada && !tokenCaido ? 'btn btn-secondary' : 'btn btn-primary'}
                     onClick={() => iniciarConexion(e.codigo)}
@@ -311,6 +326,18 @@ export default function ConectarWhatsApp({
                     {ocupado ? <Loader2 size={16} className="animate-spin" /> : <PlugZap size={16} />}
                     {ocupado ? 'Esperando a Meta…' : conectada ? 'Reconectar' : 'Conectar con WhatsApp'}
                   </button>
+                  {!esRevisor && !conectada && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setConfirmandoSoloApi(e.codigo)}
+                      disabled={!sdkListo || enCurso !== null}
+                      style={styles.boton}
+                      title="Un número nuevo que vive solo en la Cloud API, sin la app del celular"
+                    >
+                      Número nuevo (solo API)
+                    </button>
+                  )}
+                  </div>
                 ) : (
                   <span style={styles.bloqueado} title="Atiende clientes reales por Kommo: se conecta de última">
                     <Lock size={14} /> Se conecta de última
@@ -352,6 +379,52 @@ export default function ConectarWhatsApp({
       </ul>
 
       {!sdkListo && !sdkFallo && <p style={styles.nota}>Cargando la ventana de Meta…</p>}
+
+      {confirmandoSoloApi && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard} role="dialog" aria-modal="true" aria-labelledby="modal-solo-api-titulo">
+            <div style={styles.modalHeader}>
+              <AlertTriangle size={24} style={{ color: '#eab308', flexShrink: 0 }} />
+              <h2 id="modal-solo-api-titulo" style={styles.modalTitulo}>
+                ¿Conectar un número nuevo solo en la API?
+              </h2>
+            </div>
+            <p style={styles.modalTexto}>
+              El número queda registrado en la Cloud API de Meta y <strong>deja de funcionar en la app de
+              WhatsApp del celular</strong>: se atiende solo desde la plataforma y el CRM. No trae historial.
+              {requiereConfirmacionCorte(confirmandoSoloApi) &&
+                ' En la comercial, el bot de la plataforma contesta por este número.'}
+            </p>
+            <p style={styles.modalTextoSecundario}>
+              <strong>Antes de continuar:</strong> si el número tiene una cuenta en la app de WhatsApp o de
+              WhatsApp Business, bórrala en el celular (<em>Configuración &gt; Cuenta &gt; Eliminar cuenta</em>).
+              En la ventana de Meta elige <em>crear un número nuevo</em> y verifícalo por SMS o llamada.
+            </p>
+            <div style={styles.modalAcciones}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setConfirmandoSoloApi(null)}
+                style={styles.modalBoton}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const emb = confirmandoSoloApi;
+                  setConfirmandoSoloApi(null);
+                  conectar(emb, requiereConfirmacionCorte(emb), 'cloud_api');
+                }}
+                style={styles.modalBoton}
+              >
+                Sí, conectar solo API
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmandoCorte && (
         <div style={styles.modalOverlay}>
@@ -435,6 +508,7 @@ const styles: Record<string, React.CSSProperties> = {
   embudo: { fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' },
   estado: { margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' },
   boton: { display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' },
+  botones: { display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
   bloqueado: { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' },
   nota: { margin: 0, fontSize: 13, color: 'var(--text-secondary)' },
   exito: { margin: 0, fontSize: 13.5, color: 'var(--primary)', fontWeight: 600 },

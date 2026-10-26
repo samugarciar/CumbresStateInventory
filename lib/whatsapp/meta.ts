@@ -296,6 +296,22 @@ export function appsSuscritas(wabaId: string, token: string) {
 }
 
 /**
+ * Registra en la Cloud API un número que entró por el registro integrado
+ * SIN coexistencia. Sin este paso el número no manda ni recibe nada.
+ *
+ * El `pin` queda como verificación en dos pasos del número. No se guarda:
+ * si algún día hace falta, un administrador lo cambia en el Administrador
+ * de WhatsApp (Números de teléfono → Configuración → Verificación en dos
+ * pasos). En coexistencia no se llama: el número sigue registrado en la app.
+ */
+export function registrarNumero(phoneNumberId: string, token: string, pin: string) {
+  return graph<{ success?: boolean }>(`${encodeURIComponent(phoneNumberId)}/register`, {
+    token,
+    cuerpo: { messaging_product: 'whatsapp', pin },
+  });
+}
+
+/**
  * Pide a Meta el historial de mensajes de la app del celular.
  *
  * UNA sola vez y dentro de las 24 horas del registro: repetirlo exige

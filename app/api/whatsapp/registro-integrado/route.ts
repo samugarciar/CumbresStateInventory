@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
@@ -6,6 +7,7 @@ import {
   numerosDeCuenta,
   pedirHistorial,
   permisosDelToken,
+  registrarNumero,
   suscribirApp,
   type ErrorMeta,
 } from '@/lib/whatsapp/meta';
@@ -47,6 +49,11 @@ interface Peticion {
   accion?: 'conectar' | 'cancelar' | 'error';
   embudo?: string;
   confirmacion_corte?: boolean;
+  /**
+   * 'coexistencia' (por defecto): el número sigue en la app del celular.
+   * 'cloud_api': número nuevo, solo en la Cloud API; hay que registrarlo.
+   */
+  modo?: 'coexistencia' | 'cloud_api';
   /** El código de la ventana. Vence a los 30 segundos. */
   code?: string;
   waba_id?: string;
@@ -125,6 +132,14 @@ export async function POST(request: Request) {
   // El revisor no conecta la comercial: en su página ni aparece (ver whatsapp/page.tsx).
   if (usuario.profile.rol === 'revisor' && requiereConfirmacionCorte(embudo)) {
     return respuesta(403, { ok: false, error: 'Esta cuenta no conecta la línea comercial.' });
+  }
+  const modo = cuerpo?.modo ?? 'coexistencia';
+  if (modo !== 'coexistencia' && modo !== 'cloud_api') {
+    return respuesta(400, { ok: false, error: `Modo desconocido: ${String(modo)}` });
+  }
+  // El revisor de Meta prueba la coexistencia, que es lo que se revisa.
+  if (usuario.profile.rol === 'revisor' && modo !== 'coexistencia') {
+    return respuesta(403, { ok: false, error: 'Esta cuenta solo conecta por coexistencia.' });
   }
 
   const supabase = createAdminClient();
@@ -229,6 +244,15 @@ export async function POST(request: Request) {
     });
   }
 
+  // 4b · Solo API: el número entró sin la app del celular y hay que
+  // registrarlo en la Cloud API, o no manda ni recibe nada. El PIN es la
+  // verificación en dos pasos; no se guarda (ver registrarNumero).
+  if (modo === 'cloud_api') {
+    const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const registro = await registrarNumero(numero.id, token, pin);
+    if (!registro.ok) return fallar(502, 'Meta no dejó registrar el número en la Cloud API.', registro.error);
+  }
+
   // 5 · La línea, con su token en Vault. Reconectar reemplaza el token y
   // empieza un ciclo nuevo.
   const crm = supabase.schema('crm');
@@ -237,7 +261,7 @@ export async function POST(request: Request) {
     p_embudo: embudo,
     p_waba_id: wabaId,
     p_wa_phone_number_id: numero.id,
-    p_modo: 'coexistencia',
+    p_modo: modo,
     p_token: token,
     p_telefono_e164: aE164(numero.display_phone_number) ?? null,
     p_nombre: numero.verified_name ?? null,
@@ -266,6 +290,17 @@ export async function POST(request: Request) {
     wabaId,
   });
 
+  const linea = {
+    id: lineaId,
+    embudo,
+    modo,
+    telefono: aE164(numero.display_phone_number) ?? numero.display_phone_number ?? null,
+    nombre: numero.verified_name ?? null,
+  };
+
+  // Solo API: no hay app del celular, así que no hay historial que pedir.
+  if (modo === 'cloud_api') return respuesta(200, { ok: true, linea, historial: null });
+
   // 6 · El historial del celular: una sola vez y dentro de las 24 horas.
   // La línea ya está conectada; si Meta no acepta la solicitud, se anota y
   // se dice, pero no se deshace la conexión.
@@ -289,12 +324,7 @@ export async function POST(request: Request) {
 
   return respuesta(200, {
     ok: true,
-    linea: {
-      id: lineaId,
-      embudo,
-      telefono: aE164(numero.display_phone_number) ?? numero.display_phone_number ?? null,
-      nombre: numero.verified_name ?? null,
-    },
+    linea,
     historial: historial.ok
       ? { pedido: true }
       : { pedido: false, error: historial.error.message ?? 'Meta no aceptó la solicitud' },
