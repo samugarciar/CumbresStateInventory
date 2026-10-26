@@ -3,13 +3,14 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
-import { conversacionDe } from '@/lib/whatsapp/conversaciones';
-import { anotarResultadoCredencial, credencialDeLinea } from '@/lib/whatsapp/lineas';
+import { anotarResultadoCredencial } from '@/lib/whatsapp/lineas';
 import { enviarPlantilla } from '@/lib/whatsapp/meta';
 import {
   PLANTILLA_CONFIRMACION,
   asegurarPlantillaConfirmacion,
+  credencialComercial,
   diaLegible,
+  guardarEnConversacion,
   horaLegible,
   telefonoE164,
   textoConfirmacion,
@@ -485,17 +486,8 @@ export async function confirmarCitas(citaIds: string[]) {
     // tramo usa el cliente de administración. Nada del token sale de aquí.
     const admin = createAdminClient();
     const inmobiliariaId = (citas[0] as any).inmobiliaria_id as string;
-    const { data: lineaComercial } = await admin
-      .schema('crm')
-      .from('lineas')
-      .select('wa_phone_number_id')
-      .eq('inmobiliaria_id', inmobiliariaId)
-      .eq('embudo', 'comercial')
-      .eq('activa', true)
-      .maybeSingle();
-    const numeroSalida = lineaComercial?.wa_phone_number_id as string | undefined;
-    const credencial = numeroSalida ? await credencialDeLinea(admin, numeroSalida) : null;
-    if (!numeroSalida || !credencial) {
+    const credencial = await credencialComercial(admin, inmobiliariaId);
+    if (!credencial) {
       return {
         success: false,
         error: 'La línea comercial de WhatsApp no está conectada. Conéctala en WhatsApp antes de confirmar citas.',
@@ -567,22 +559,16 @@ export async function confirmarCitas(citaIds: string[]) {
       }
       confirmadas.push(c.id);
 
-      // En la conversación del cliente, para que se vea en el CRM y su
-      // respuesta caiga en el mismo hilo. Si no se puede guardar, el
-      // mensaje igual salió: se anota y se sigue.
-      const conversacionId = await conversacionDe(admin, inmobiliariaId, telefono);
-      if (conversacionId) {
-        const { error } = await admin.from('agente_comercial_mensajes').insert({
-          conversacion_id: conversacionId,
-          rol: 'asesor',
-          contenido: textoConfirmacion(variables),
-          wa_message_id: r.waMessageId,
-          wa_phone_number_id: credencial.phoneNumberId,
-        });
-        if (error) console.error('[Citas] Confirmación enviada pero no registrada:', error.message);
-      } else {
-        console.error('[Citas] Confirmación enviada, pero no se pudo crear la conversación de', c.id);
-      }
+      // En la conversación del cliente: se ve en el CRM y su respuesta cae
+      // en el mismo hilo, sin callar al bot.
+      await guardarEnConversacion(
+        admin,
+        inmobiliariaId,
+        telefono,
+        textoConfirmacion(variables),
+        r.waMessageId,
+        credencial.phoneNumberId
+      );
     }
 
     const ahora = new Date().toISOString();

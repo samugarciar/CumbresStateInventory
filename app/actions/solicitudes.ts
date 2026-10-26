@@ -1,7 +1,9 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
+import { enviarVeredictoPorWhatsApp } from '@/lib/whatsapp/veredicto-solicitudes';
 import { MAX_MOTIVO_DENEGACION } from '@/lib/solicitudes';
 
 interface AprobarData {
@@ -22,7 +24,7 @@ interface DenegarData {
   motivo: string; // obligatorio: un "no" sin explicación ni alternativa mata el lead
 }
 
-// Payload del webhook de veredicto (contrato acordado con el admin del agente n8n)
+// Lo que se le cuenta al cliente del veredicto.
 interface VeredictoPayload {
   solicitud_id: string;
   resultado: 'aprobada' | 'denegada';
@@ -43,50 +45,15 @@ interface VeredictoPayload {
   motivo: string | null;
 }
 
-// Dispara el webhook n8n del veredicto (Header Auth, mismo patrón que confirmarCitas).
-// La decisión ya quedó guardada: si el webhook falla o no está configurado,
-// devolvemos un aviso pero NO revertimos nada.
-async function enviarVeredicto(payload: VeredictoPayload): Promise<{ enviado: boolean; aviso?: string }> {
-  const url = process.env.N8N_APERTURA_VEREDICTO_URL;
-  const token = process.env.N8N_APERTURA_VEREDICTO_TOKEN;
-
-  if (!url || !token) {
-    console.warn('[Solicitudes] Webhook de veredicto sin configurar (N8N_APERTURA_VEREDICTO_URL/TOKEN).');
-    return { enviado: false, aviso: 'Decisión guardada, pero el veredicto NO se envió al cliente: el webhook de n8n no está configurado.' };
-  }
-
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Token': token,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      console.error('[Solicitudes] El webhook de veredicto respondió', resp.status);
-      return { enviado: false, aviso: `Decisión guardada, pero el webhook de veredicto respondió con error (${resp.status}).` };
-    }
-    // El workflow responde 200 SIEMPRE, con body [{ estado: 'ok' | 'error', mensaje?, ... }].
-    // estado != 'ok' = el flujo corrió pero no entregó el veredicto (ej. el teléfono no
-    // corresponde a ningún lead en Kommo) y manda un correo de alerta a la inmobiliaria.
-    try {
-      const body = await resp.json();
-      const r = Array.isArray(body) ? body[0] : body;
-      if (r && typeof r.estado === 'string' && r.estado !== 'ok') {
-        console.warn('[Solicitudes] El flujo de veredicto reportó estado:', r.estado, r.mensaje);
-        return {
-          enviado: true,
-          aviso: `n8n recibió el veredicto pero reportó "${r.estado}"${r.mensaje ? `: ${r.mensaje}` : ''}. Revisa el correo de alerta.`,
-        };
-      }
-    } catch { /* body vacío o no-JSON: lo tratamos como entregado */ }
-    return { enviado: true };
-  } catch (e: any) {
-    console.error('[Solicitudes] Error de red al enviar el veredicto:', e?.message);
-    return { enviado: false, aviso: 'Decisión guardada, pero no se pudo contactar el webhook de veredicto (error de red).' };
-  }
+// Le avisa al cliente por WhatsApp, desde la línea comercial (desde el
+// 26 oct 2026, sin n8n ni Kommo: lib/whatsapp/veredicto-solicitudes.ts).
+// La decisión ya quedó guardada: si el aviso no sale, se devuelve un aviso
+// para quien decidió pero NO se revierte nada.
+async function enviarVeredicto(
+  inmobiliariaId: string,
+  payload: VeredictoPayload
+): Promise<{ enviado: boolean; aviso?: string }> {
+  return enviarVeredictoPorWhatsApp(createAdminClient(), inmobiliariaId, payload);
 }
 
 // Fecha de hoy en Bogotá (el servidor de Vercel corre en UTC)
@@ -115,8 +82,8 @@ async function completarTareaSolicitud(supabase: any, solicitudId: string, userI
 
 /**
  * Aprueba una solicitud de apertura: crea la franja para el asesor elegido,
- * agenda la cita de una vez (respetando alcance inmueble/unidad) y dispara el
- * webhook de veredicto hacia n8n → WhatsApp del cliente. Solo admins.
+ * agenda la cita de una vez (respetando alcance inmueble/unidad) y le avisa
+ * al cliente por WhatsApp desde la línea comercial. Solo admins.
  */
 export async function aprobarSolicitud(data: AprobarData) {
   try {
@@ -292,9 +259,9 @@ export async function aprobarSolicitud(data: AprobarData) {
     // Completar la tarea automática de esta solicitud en /tareas (best-effort)
     await completarTareaSolicitud(supabase, solicitud.id, user.id);
 
-    // 5) Veredicto al cliente vía n8n (fire-and-forget; la decisión ya está guardada)
+    // 5) Veredicto al cliente por WhatsApp (la decisión ya está guardada)
     const inmueble = (solicitud as any).inmuebles;
-    const { enviado, aviso } = await enviarVeredicto({
+    const { enviado, aviso } = await enviarVeredicto(profile.inmobiliaria_id, {
       solicitud_id: solicitud.id,
       resultado: 'aprobada',
       cliente_nombre: solicitud.cliente_nombre,
@@ -333,8 +300,8 @@ export async function aprobarSolicitud(data: AprobarData) {
 }
 
 /**
- * Deniega una solicitud de apertura (motivo opcional) y dispara el webhook de
- * veredicto para avisarle al cliente por WhatsApp. Solo admins.
+ * Deniega una solicitud de apertura y le avisa al cliente por WhatsApp desde
+ * la línea comercial, con el motivo. Solo admins.
  */
 export async function denegarSolicitud(data: DenegarData) {
   try {
@@ -380,7 +347,7 @@ export async function denegarSolicitud(data: DenegarData) {
         success: false,
         error:
           `El motivo no puede pasar de ${MAX_MOTIVO_DENEGACION} caracteres y llevas ${motivo.length}. ` +
-          'Kommo no acepta el mensaje si es más largo y el cliente se queda sin respuesta. Resumilo: ' +
+          'Un mensaje más largo se le hace pesado al cliente en WhatsApp. Resúmelo: ' +
           'la fecha y la alternativa concreta son lo que importa.',
       };
     }
@@ -412,7 +379,7 @@ export async function denegarSolicitud(data: DenegarData) {
     await completarTareaSolicitud(supabase, solicitud.id, user.id);
 
     const inmueble = (solicitud as any).inmuebles;
-    const { enviado, aviso } = await enviarVeredicto({
+    const { enviado, aviso } = await enviarVeredicto(profile.inmobiliaria_id, {
       solicitud_id: solicitud.id,
       resultado: 'denegada',
       cliente_nombre: solicitud.cliente_nombre,
@@ -452,7 +419,7 @@ interface DescartarData {
 
 /**
  * Descarta una solicitud de apertura SIN responder al cliente: la borra y cierra
- * su tarea, sin disparar el webhook de veredicto ni exigir motivo. Para solicitudes
+ * su tarea, sin avisarle al cliente ni exigir motivo. Para solicitudes
  * irrelevantes/spam que no ameritan un aprobar/denegar. Solo admins. Borrado duro
  * (la RLS FOR ALL ya lo permite; no hay estado 'descartada' en el CHECK).
  */

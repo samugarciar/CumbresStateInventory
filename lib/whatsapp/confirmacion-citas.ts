@@ -1,9 +1,22 @@
+import type { createAdminClient } from '@/lib/supabase/admin';
+import { conversacionDe } from './conversaciones';
+import { credencialDeLinea, type CredencialDeLinea } from './lineas';
 import {
   crearPlantillaRevision,
   listarPlantillas,
   sanitizarTextoMeta,
 } from './meta';
-import type { CredencialDeLinea } from './lineas';
+
+type Admin = ReturnType<typeof createAdminClient>;
+
+/** Una plantilla propia: lo que Meta necesita para crearla y revisarla. */
+export interface DefinicionPlantilla {
+  nombreMeta: string;
+  idioma: string;
+  categoria: string;
+  cuerpo: string;
+  ejemplos: Record<string, string>;
+}
 
 /**
  * Confirmar citas por la línea comercial, sin Kommo ni n8n.
@@ -21,7 +34,7 @@ import type { CredencialDeLinea } from './lineas';
  * decía «el día de hoy» y solo servía para confirmar el mismo día.
  */
 
-export const PLANTILLA_CONFIRMACION = {
+export const PLANTILLA_CONFIRMACION: DefinicionPlantilla = {
   nombreMeta: process.env.WHATSAPP_PLANTILLA_CONFIRMAR_CITA?.trim() || 'confirmacion_cita_visita',
   idioma: 'es',
   categoria: 'utility',
@@ -39,7 +52,7 @@ export const PLANTILLA_CONFIRMACION = {
     direccion: 'Calle 33 # 76-20',
     asesor: 'Julián Ospina (300 123 4567)',
   },
-} as const;
+};
 
 export interface VariablesConfirmacion {
   inmueble: string;
@@ -49,9 +62,60 @@ export interface VariablesConfirmacion {
   asesor: string;
 }
 
-/** El texto que recibe el cliente, para guardarlo igual en su conversación. */
+/** El texto que recibe el cliente con una plantilla, para guardarlo igual en su conversación. */
+export function textoDePlantilla(def: DefinicionPlantilla, v: Record<string, string>): string {
+  return def.cuerpo.replace(/\{\{(\w+)\}\}/g, (_, clave: string) => v[clave] ?? '');
+}
+
 export function textoConfirmacion(v: VariablesConfirmacion): string {
-  return PLANTILLA_CONFIRMACION.cuerpo.replace(/\{\{(\w+)\}\}/g, (_, clave: keyof VariablesConfirmacion) => v[clave] ?? '');
+  return textoDePlantilla(PLANTILLA_CONFIRMACION, { ...v });
+}
+
+/**
+ * La línea comercial de la inmobiliaria con su token (de Vault, solo con
+ * service_role). Null si no está conectada. El token no sale del servidor.
+ */
+export async function credencialComercial(admin: Admin, inmobiliariaId: string): Promise<CredencialDeLinea | null> {
+  const { data } = await admin
+    .schema('crm')
+    .from('lineas')
+    .select('wa_phone_number_id')
+    .eq('inmobiliaria_id', inmobiliariaId)
+    .eq('embudo', 'comercial')
+    .eq('activa', true)
+    .maybeSingle();
+  const numero = data?.wa_phone_number_id as string | undefined;
+  return numero ? credencialDeLinea(admin, numero) : null;
+}
+
+/**
+ * Deja en la conversación del cliente un mensaje que mandó la plataforma,
+ * para que se vea en el CRM y su respuesta caiga en el mismo hilo. Sale
+ * como del equipo (rol 'asesor') y NO registra relevo: es un aviso
+ * automático, el bot sigue atendiendo. Si no se puede guardar, el mensaje
+ * igual salió: se anota en el log y se sigue.
+ */
+export async function guardarEnConversacion(
+  admin: Admin,
+  inmobiliariaId: string,
+  telefono: string,
+  texto: string,
+  waMessageId: string | undefined,
+  phoneNumberId: string
+): Promise<void> {
+  const conversacionId = await conversacionDe(admin, inmobiliariaId, telefono);
+  if (!conversacionId) {
+    console.error('[WhatsApp] Aviso enviado, pero no se pudo crear la conversación de', telefono);
+    return;
+  }
+  const { error } = await admin.from('agente_comercial_mensajes').insert({
+    conversacion_id: conversacionId,
+    rol: 'asesor',
+    contenido: texto,
+    wa_message_id: waMessageId,
+    wa_phone_number_id: phoneNumberId,
+  });
+  if (error) console.error('[WhatsApp] Aviso enviado pero no registrado:', error.message);
 }
 
 /**
@@ -110,11 +174,14 @@ export type EstadoPlantilla =
   | { estado: 'error'; mensaje: string };
 
 /**
- * Dice si la plantilla de confirmación ya se puede usar en la cuenta de la
- * línea. Si no existe, la manda a revisión de Meta (una sola vez: la
- * siguiente consulta ya la encuentra en revisión).
+ * Dice si una plantilla propia ya se puede usar en la cuenta de la línea.
+ * Si no existe, la manda a revisión de Meta (una sola vez: la siguiente
+ * consulta ya la encuentra en revisión).
  */
-export async function asegurarPlantillaConfirmacion(credencial: CredencialDeLinea): Promise<EstadoPlantilla> {
+export async function asegurarPlantilla(
+  credencial: CredencialDeLinea,
+  def: DefinicionPlantilla
+): Promise<EstadoPlantilla> {
   if (!credencial.wabaId) {
     return { estado: 'error', mensaje: 'La línea comercial no tiene cuenta de WhatsApp registrada: hay que reconectarla.' };
   }
@@ -123,7 +190,7 @@ export async function asegurarPlantillaConfirmacion(credencial: CredencialDeLine
     return { estado: 'error', mensaje: sanitizarTextoMeta(lista.error.message ?? 'Meta no dejó leer las plantillas.') };
   }
   const existente = (lista.datos.data ?? []).find(
-    (p) => p.name === PLANTILLA_CONFIRMACION.nombreMeta && p.language === PLANTILLA_CONFIRMACION.idioma
+    (p) => p.name === def.nombreMeta && p.language === def.idioma
   );
   if (existente) {
     const status = String(existente.status ?? '').toUpperCase();
@@ -135,14 +202,18 @@ export async function asegurarPlantillaConfirmacion(credencial: CredencialDeLine
   }
 
   const creada = await crearPlantillaRevision(credencial.wabaId, credencial.token, {
-    nombreMeta: PLANTILLA_CONFIRMACION.nombreMeta,
-    cuerpo: PLANTILLA_CONFIRMACION.cuerpo,
-    categoria: PLANTILLA_CONFIRMACION.categoria,
-    idioma: PLANTILLA_CONFIRMACION.idioma,
-    ejemplos: { ...PLANTILLA_CONFIRMACION.ejemplos },
+    nombreMeta: def.nombreMeta,
+    cuerpo: def.cuerpo,
+    categoria: def.categoria,
+    idioma: def.idioma,
+    ejemplos: { ...def.ejemplos },
   });
   if (!creada.ok) {
     return { estado: 'error', mensaje: sanitizarTextoMeta(creada.error.message ?? 'Meta no aceptó la plantilla.') };
   }
   return { estado: 'enviada_a_revision' };
+}
+
+export function asegurarPlantillaConfirmacion(credencial: CredencialDeLinea): Promise<EstadoPlantilla> {
+  return asegurarPlantilla(credencial, PLANTILLA_CONFIRMACION);
 }
