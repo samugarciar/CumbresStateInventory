@@ -23,12 +23,62 @@ import {
   Bot,
   Handshake,
   MessageCircle,
-  Eye
+  Eye,
+  ListTodo,
+  MessagesSquare,
+  ExternalLink,
+  type LucideIcon
 } from 'lucide-react';
 
+// --- Menú ---
+// Cada enlace dice quién lo ve; los grupos solo se rotulan si les queda algo.
+// (Mismos destinos y mismas restricciones por rol que antes de agruparlos.)
+type Rol = 'admin' | 'asesor';
+interface EnlaceMenu {
+  href: string;
+  label: string;
+  icono: LucideIcon;
+  roles: Rol[];
+  activo: (pathname: string) => boolean;
+  externo?: boolean;
+  conteo?: 'tareas';
+}
+
+const empiezaCon = (prefijo: string) => (pathname: string) => pathname.startsWith(prefijo);
+
+// Conversaciones del CRM: otra app. Sin la variable (p. ej. en local) no se muestra.
+const CRM_URL = process.env.NEXT_PUBLIC_CRM_URL;
+
+const GRUPOS_MENU: { titulo: string; enlaces: EnlaceMenu[] }[] = [
+  {
+    titulo: 'Día a día',
+    enlaces: [
+      { href: '/dashboard', label: 'Inicio', icono: Home, roles: ['admin', 'asesor'], activo: (p) => p === '/dashboard' },
+      { href: '/citas', label: 'Citas', icono: CalendarCheck, roles: ['admin', 'asesor'], activo: empiezaCon('/citas') },
+      { href: '/agenda', label: 'Agenda', icono: CalendarDays, roles: ['admin', 'asesor'], activo: empiezaCon('/agenda') },
+      { href: '/tareas', label: 'Tareas', icono: ListTodo, roles: ['admin'], activo: empiezaCon('/tareas'), conteo: 'tareas' },
+      ...(CRM_URL
+        ? [{ href: CRM_URL, label: 'Conversaciones (CRM)', icono: MessagesSquare, roles: ['admin', 'asesor'] as Rol[], activo: () => false, externo: true }]
+        : []),
+      { href: '/inmuebles', label: 'Inmuebles', icono: Building2, roles: ['admin', 'asesor'], activo: empiezaCon('/inmuebles') },
+      { href: '/inventarios', label: 'Inventarios', icono: ClipboardList, roles: ['admin', 'asesor'], activo: empiezaCon('/inventarios') },
+      { href: '/captaciones', label: 'Captaciones', icono: Handshake, roles: ['admin'], activo: empiezaCon('/captaciones') },
+    ],
+  },
+  {
+    titulo: 'Configuración',
+    enlaces: [
+      { href: '/asesores', label: 'Asesores', icono: Users, roles: ['admin'], activo: empiezaCon('/asesores') },
+      { href: '/whatsapp', label: 'WhatsApp', icono: MessageCircle, roles: ['admin'], activo: empiezaCon('/whatsapp') },
+      { href: '/agentes', label: 'Agentes', icono: Bot, roles: ['admin'], activo: empiezaCon('/agentes') },
+      { href: '/inteligencia', label: 'Arriendabot', icono: BrainCircuit, roles: ['admin'], activo: empiezaCon('/inteligencia') },
+    ],
+  },
+];
+
 interface DashboardLayoutClientProps {
-  profile: any;
-  inmobiliaria: any;
+  profile: { nombre_completo: string };
+  inmobiliaria: { nombre: string } | null;
   isAdmin: boolean;
   isRevisor?: boolean;
   pendingTasksCount?: number;
@@ -81,9 +131,50 @@ export default function DashboardLayoutClient({
 
   // Ancho activo del sidebar para pantallas no móviles
   const activeSidebarWidth = isCollapsed && mounted ? '72px' : '280px';
+  const compacto = isCollapsed && mounted;
+
+  const enlaceMenu = (e: EnlaceMenu) => {
+    const activo = e.activo(pathname);
+    const Icono = e.icono;
+    const conteo = e.conteo === 'tareas' ? pendingTasksCount : 0;
+    return (
+      <Link
+        key={e.href}
+        href={e.href}
+        onClick={() => setIsMobileOpen(false)}
+        {...(e.externo ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        aria-current={activo ? 'page' : undefined}
+        className="menu-enlace"
+        style={{
+          ...styles.navLink,
+          justifyContent: compacto ? 'center' : 'flex-start',
+          backgroundColor: activo ? 'rgba(0, 171, 216, 0.07)' : undefined,
+          color: activo ? 'var(--primary)' : 'var(--text-secondary)',
+          fontWeight: activo ? 700 : 500,
+        }}
+        title={compacto ? e.label : undefined}
+      >
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <Icono size={20} />
+          {compacto && conteo > 0 ? <span style={styles.collapsedBadge} /> : null}
+        </span>
+        {!compacto && (
+          <span style={styles.navLinkTexto}>
+            <span>{e.label}</span>
+            {e.externo && <ExternalLink size={13} aria-label="(se abre en otra pestaña)" style={{ flexShrink: 0, opacity: 0.7 }} />}
+            {conteo > 0 ? (
+              <span className="badge badge-danger" style={styles.expandedBadge}>
+                {conteo}
+              </span>
+            ) : null}
+          </span>
+        )}
+      </Link>
+    );
+  };
 
   return (
-    <div style={{ ...styles.layoutContainer, ['--sidebar-width' as any]: activeSidebarWidth }}>
+    <div style={{ ...styles.layoutContainer, '--sidebar-width': activeSidebarWidth } as React.CSSProperties}>
       {/* Overlay para móviles */}
       <div 
         className={`sidebar-overlay ${isMobileOpen ? 'active' : ''}`}
@@ -102,13 +193,8 @@ export default function DashboardLayoutClient({
         <div style={styles.mobileLogoContainer}>
           <img src="/logo.png" alt="Cumbres Inmobiliaria" style={{ height: '36px', width: 'auto' }} />
         </div>
-        <div style={styles.mobileRightSection}>
-          {inmobiliaria && (
-            <span className="mobile-inmobiliaria-badge" style={styles.mobileInmobiliariaBadge}>
-              {inmobiliaria.nombre}
-            </span>
-          )}
-        </div>
+        {/* Hueco del mismo ancho que el botón del menú, para que el logo quede centrado */}
+        <div style={styles.mobileRightSection} aria-hidden="true" />
       </header>
 
       {/* Sidebar Lateral */}
@@ -139,222 +225,26 @@ export default function DashboardLayoutClient({
           )}
         </div>
 
-        <nav style={{ ...styles.nav, padding: isCollapsed && mounted ? '1.5rem 0.5rem' : '1.5rem 1rem' }}>
-          {isRevisor && (
-            <Link
-              href="/whatsapp"
-              onClick={() => setIsMobileOpen(false)}
-              style={{
-                ...styles.navLink,
-                justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                backgroundColor: pathname.startsWith('/whatsapp') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                color: pathname.startsWith('/whatsapp') ? 'var(--primary)' : 'var(--text-secondary)',
-                fontWeight: pathname.startsWith('/whatsapp') ? '700' : '500'
-              }}
-              title={isCollapsed ? 'WhatsApp' : undefined}
-            >
-              <MessageCircle size={20} />
-              {(!isCollapsed || !mounted) && <span>WhatsApp</span>}
-            </Link>
-          )}
-
-          {!isRevisor && (
-            <>
-              <Link 
-                href="/dashboard" 
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname === '/dashboard' ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname === '/dashboard' ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname === '/dashboard' ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Inicio' : undefined}
-              >
-                <Home size={20} />
-                {(!isCollapsed || !mounted) && <span>Inicio</span>}
-              </Link>
-          
-              <Link 
-                href="/inmuebles" 
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/inmuebles') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/inmuebles') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/inmuebles') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Inmuebles' : undefined}
-              >
-                <Building2 size={20} />
-                {(!isCollapsed || !mounted) && <span>Inmuebles</span>}
-              </Link>
-          
-              <Link 
-                href="/inventarios" 
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/inventarios') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/inventarios') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/inventarios') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Inventarios' : undefined}
-              >
-                <ClipboardList size={20} />
-                {(!isCollapsed || !mounted) && <span>Inventarios</span>}
-              </Link>
-
-              <Link 
-                href="/agenda" 
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/agenda') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/agenda') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/agenda') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Agenda' : undefined}
-              >
-                <CalendarDays size={20} />
-                {(!isCollapsed || !mounted) && <span>Agenda</span>}
-              </Link>
-
-              <Link
-                href="/citas"
-                onClick={() => setIsMobileOpen(false)}
-                style={{
-                  ...styles.navLink,
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/citas') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/citas') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/citas') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Citas' : undefined}
-              >
-                <CalendarCheck size={20} />
-                {(!isCollapsed || !mounted) && <span>Citas</span>}
-              </Link>
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-              <Link
-                href="/captaciones"
-                onClick={() => setIsMobileOpen(false)}
-                style={{
-                  ...styles.navLink,
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/captaciones') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/captaciones') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/captaciones') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Captaciones' : undefined}
-              >
-                <Handshake size={20} />
-                {(!isCollapsed || !mounted) && <span>Captaciones</span>}
-              </Link>
-
-              <Link
-                href="/inteligencia"
-                onClick={() => setIsMobileOpen(false)}
-                style={{
-                  ...styles.navLink,
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/inteligencia') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/inteligencia') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/inteligencia') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Arriendabot' : undefined}
-              >
-                <BrainCircuit size={20} />
-                {(!isCollapsed || !mounted) && <span>Arriendabot</span>}
-              </Link>
-
-              <Link
-                href="/agentes"
-                onClick={() => setIsMobileOpen(false)}
-                style={{
-                  ...styles.navLink,
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/agentes') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/agentes') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/agentes') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Agentes' : undefined}
-              >
-                <Bot size={20} />
-                {(!isCollapsed || !mounted) && <span>Agentes</span>}
-              </Link>
-
-              <Link
-                href="/whatsapp"
-                onClick={() => setIsMobileOpen(false)}
-                style={{
-                  ...styles.navLink,
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/whatsapp') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/whatsapp') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/whatsapp') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'WhatsApp' : undefined}
-              >
-                <MessageCircle size={20} />
-                {(!isCollapsed || !mounted) && <span>WhatsApp</span>}
-              </Link>
-
-              <Link
-                href="/tareas"
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/tareas') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/tareas') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/tareas') ? '700' : '500',
-                  position: 'relative'
-                }}
-                title={isCollapsed ? 'Tareas' : undefined}
-              >
-                <div style={{ position: 'relative', display: 'inline-flex' }}>
-                  <ClipboardList size={20} />
-                  {isCollapsed && mounted && pendingTasksCount > 0 ? (
-                    <span style={styles.collapsedBadge} />
-                  ) : null}
+        <nav
+          aria-label="Menú principal"
+          style={{ ...styles.nav, padding: compacto ? '1.25rem 0.5rem' : '1.25rem 1rem' }}
+        >
+          {/* La cuenta del revisor de Meta solo ve WhatsApp */}
+          {isRevisor ? (
+            enlaceMenu({ href: '/whatsapp', label: 'WhatsApp', icono: MessageCircle, roles: [], activo: empiezaCon('/whatsapp') })
+          ) : (
+            GRUPOS_MENU.map(grupo => {
+              const visibles = grupo.enlaces.filter(e => e.roles.includes(isAdmin ? 'admin' : 'asesor'));
+              if (visibles.length === 0) return null;
+              return (
+                <div key={grupo.titulo} style={styles.navGrupo}>
+                  {compacto
+                    ? <div style={styles.navSeparador} aria-hidden="true" />
+                    : <div style={styles.navGrupoTitulo}>{grupo.titulo}</div>}
+                  {visibles.map(e => enlaceMenu(e))}
                 </div>
-                {(!isCollapsed || !mounted) && (
-                  <span style={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: 'space-between' }}>
-                    <span>Tareas</span>
-                    {pendingTasksCount > 0 ? (
-                      <span className="badge badge-danger" style={styles.expandedBadge}>
-                        {pendingTasksCount}
-                      </span>
-                    ) : null}
-                  </span>
-                )}
-              </Link>
-
-              <Link 
-                href="/asesores" 
-                onClick={() => setIsMobileOpen(false)}
-                style={{ 
-                  ...styles.navLink, 
-                  justifyContent: isCollapsed && mounted ? 'center' : 'flex-start',
-                  backgroundColor: pathname.startsWith('/asesores') ? 'rgba(0, 171, 216, 0.05)' : 'transparent',
-                  color: pathname.startsWith('/asesores') ? 'var(--primary)' : 'var(--text-secondary)',
-                  fontWeight: pathname.startsWith('/asesores') ? '700' : '500'
-                }}
-                title={isCollapsed ? 'Asesores' : undefined}
-              >
-                <Users size={20} />
-                {(!isCollapsed || !mounted) && <span>Asesores</span>}
-              </Link>
-            </>
+              );
+            })
           )}
         </nav>
 
@@ -394,15 +284,16 @@ export default function DashboardLayoutClient({
           <form action={logout}>
             <button 
               type="submit" 
+              className="menu-cerrar-sesion"
               style={{ 
                 ...styles.logoutBtn, 
-                justifyContent: isCollapsed && mounted ? 'center' : 'center',
-                padding: isCollapsed && mounted ? '0.65rem 0' : '0.65rem'
+                justifyContent: compacto ? 'center' : 'flex-start',
+                padding: compacto ? '0.5rem 0' : '0.5rem 0.5rem'
               }}
-              title={isCollapsed ? 'Cerrar Sesión' : undefined}
+              title={compacto ? 'Cerrar sesión' : undefined}
             >
               <LogOut size={16} />
-              {(!isCollapsed || !mounted) && <span>Cerrar Sesión</span>}
+              {!compacto && <span>Cerrar sesión</span>}
             </button>
           </form>
         </div>
@@ -491,24 +382,50 @@ const styles: Record<string, React.CSSProperties> = {
   nav: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.25rem',
+    gap: '1.1rem',
     flex: 1,
+    overflowY: 'auto',
     transition: 'padding 0.25s ease',
+  },
+  navGrupo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.15rem',
+  },
+  navGrupoTitulo: {
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    padding: '0 1rem 0.35rem',
+  },
+  navSeparador: {
+    height: '1px',
+    backgroundColor: 'var(--border-color)',
+    margin: '0 0.5rem 0.4rem',
   },
   navLink: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.75rem',
-    padding: '0.75rem 1rem',
+    padding: '0.6rem 1rem',
     borderRadius: 'var(--border-radius-sm)',
-    fontSize: '0.95rem',
+    fontSize: '0.93rem',
     transition: 'all var(--transition-fast)',
+  },
+  navLinkTexto: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+    flex: 1,
+    minWidth: 0,
   },
   sidebarFooter: {
     borderTop: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
+    gap: '0.5rem',
     transition: 'padding 0.25s ease',
   },
   profileSection: {
@@ -549,18 +466,18 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.1rem 0.5rem',
     fontSize: '0.65rem',
   },
+  // Texto gris: salir no es una acción de todos los días.
   logoutBtn: {
     width: '100%',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: '0.5rem',
     borderRadius: 'var(--border-radius-sm)',
     backgroundColor: 'transparent',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    color: 'var(--danger)',
+    border: 'none',
+    color: 'var(--text-muted)',
     fontSize: '0.85rem',
-    fontWeight: '600',
+    fontWeight: 500,
     cursor: 'pointer',
     transition: 'all var(--transition-fast)',
   },
@@ -588,6 +505,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   expandedBadge: {
     marginLeft: 'auto',
+    flexShrink: 0,
     borderRadius: '10px',
     padding: '0.1rem 0.45rem',
     fontSize: '0.7rem',
@@ -612,21 +530,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   mobileRightSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  mobileInmobiliariaBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '600',
-    color: 'var(--primary)',
-    backgroundColor: 'rgba(0, 171, 216, 0.05)',
-    border: '1px solid rgba(0, 171, 216, 0.1)',
-    borderRadius: '4px',
-    padding: '0.25rem 0.5rem',
-    maxWidth: '120px',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    width: '32px',
   },
 };

@@ -836,3 +836,13 @@ a:focus-visible {
     gap: 1rem;
   }
 }
+
+/* --- MENÚ LATERAL --- */
+.menu-enlace:hover {
+  background-color: rgba(var(--brand-rgb), 0.05);
+  color: var(--text-primary);
+}
+.menu-cerrar-sesion:hover {
+  color: var(--text-primary) !important;
+  background-color: var(--bg-surface-elevated) !important;
+}
