@@ -447,6 +447,7 @@ a:focus-visible {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1.5rem;
+  align-items: start; /* una tarjeta con un panel abierto no estira a sus vecinas */
   overflow: hidden; /* Impide que tarjetas hijas se desborden lateralmente */
   min-width: 0; /* Desactiva min-width: auto implícito del grid */
   width: 100%;
@@ -806,5 +807,32 @@ a:focus-visible {
     width: 100% !important;
     min-width: 0 !important;
     justify-content: center;
+  }
+}
+
+/* --- INMUEBLES: buscador y filtros --- */
+.filter-group-buscador {
+  flex: 1.5 1 240px;
+}
+.filtros-toggle {
+  display: none !important;
+}
+.filtros-extra {
+  display: contents;
+}
+@media (max-width: 767px) {
+  .filter-group-buscador {
+    flex: 0 0 auto;
+  }
+  .filtros-toggle {
+    display: inline-flex !important;
+  }
+  .filtros-extra {
+    display: none;
+  }
+  .filtros-extra.abierto {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 }

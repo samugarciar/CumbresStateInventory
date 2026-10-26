@@ -374,7 +374,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
               <input 
                 type="text" 
                 placeholder="Buscar por código Arrendasoft, título o dirección..." 
-                className="form-control"
+                className="form-input"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.95rem' }}

@@ -40,11 +40,14 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
   const [enUnidad, setEnUnidad] = useState(false);
   const [unidadSel, setUnidadSel] = useState('');
   const [unidadNueva, setUnidadNueva] = useState('');
-  // Asesor: se envía el id del ERP (Asesor_id) + el nombre (Asesor). Default: Sebastian.
-  const [asesorId, setAsesorId] = useState(String(ASESORES[0].id));
+  // Asesor: se envía el id del ERP (Asesor_id) + el nombre (Asesor). Arranca vacío
+  // (antes arrancaba en el primero y los registros salían con un asesor que nadie eligió).
+  const [asesorId, setAsesorId] = useState('');
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // El navegador dispara un «invalid» por cada campo vacío: solo se atiende el primero.
+  const invalidoAtendido = useRef(false);
 
   // Límites de tamaño
   const MAX_FILE_SIZE_MB = 5;
@@ -177,7 +180,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           setEnUnidad(false);
           setUnidadSel('');
           setUnidadNueva('');
-          setAsesorId(String(ASESORES[0].id));
+          setAsesorId('');
           setActiveTab('general');
         } else {
           setStatus({ success: false, message: result.message });
@@ -274,9 +277,9 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
       `}</style>
 
       <header style={styles.formTitleHeader}>
-        <h2 style={styles.formTitle}>Formulario de Captaciones (n8n Webhook)</h2>
+        <h2 style={styles.formTitle}>Ficha del inmueble</h2>
         <p style={styles.formSub}>
-          Registra una propiedad y retransmite datos e imágenes en tiempo real a nuestro flujo de automatización en n8n.
+          Llena las cinco partes y sube las fotos. Al enviarla, el inmueble queda registrado y se publica.
         </p>
       </header>
 
@@ -363,17 +366,35 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
         </div>
       )}
 
-      <form ref={formRef} onSubmit={handleSubmit} style={styles.form}>
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        // Un campo obligatorio vacío en otra pestaña (oculta) bloqueaba el envío sin
+        // decir nada: se salta a esa pestaña y se avisa qué falta.
+        onInvalidCapture={(e) => {
+          if (invalidoAtendido.current) return;
+          invalidoAtendido.current = true;
+          setTimeout(() => { invalidoAtendido.current = false; }, 0);
+          const campo = e.target as HTMLInputElement;
+          const tab = campo.closest('[data-tab]')?.getAttribute('data-tab') as TabType | null;
+          if (tab && tab !== activeTab) {
+            setActiveTab(tab);
+            const etiqueta = tabs.find(t => t.id === tab)?.label.replace(/^\d+\.\s*/, '') || '';
+            setStatus({ success: false, message: `Falta un dato obligatorio en «${etiqueta}». Complétalo y vuelve a enviar.` });
+          }
+        }}
+        style={styles.form}
+      >
         
         {/* PESTAÑA 1: GENERAL */}
-          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'general' ? 'flex' : 'none' }}>
+          <div data-tab="general" className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'general' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={{ ...styles.fieldGroup, gridColumn: '1 / -1' }}>
                 <label style={styles.label}>Título de Captación *</label>
                 <input 
                   type="text" 
                   name="Titulo Captacion" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. Arriendo apartamento en Robledo con vista" 
                   required
                   defaultValue=""
@@ -385,7 +406,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="text" 
                   name="Direccion" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. Calle 67 # 99 - 183" 
                   required 
                 />
@@ -485,7 +506,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                     {unidadSel === '__otra__' && (
                       <input
                         type="text"
-                        className="form-control"
+                        className="form-input"
                         required
                         value={unidadNueva}
                         onChange={(e) => setUnidadNueva(e.target.value)}
@@ -506,7 +527,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="text" 
                   name="Apartamento" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. Apto 903" 
                   defaultValue="n/a"
                 />
@@ -517,7 +538,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="number" 
                   name="Precio(COP)" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. 1500000" 
                   required 
                 />
@@ -532,6 +553,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                   value={asesorId}
                   onChange={(e) => setAsesorId(e.target.value)}
                 >
+                  <option value="" disabled>Elige el asesor…</option>
                   {ASESORES.map((a) => (
                     <option key={a.id} value={a.id}>{a.nombre}</option>
                   ))}
@@ -554,14 +576,14 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           </div>
 
         {/* PESTAÑA 2: CARACTERÍSTICAS */}
-          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'caracteristicas' ? 'flex' : 'none' }}>
+          <div data-tab="caracteristicas" className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'caracteristicas' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Número de Habitaciones *</label>
                 <input 
                   type="number" 
                   name="num de habitaciones" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. 3" 
                   required 
                   defaultValue="1"
@@ -573,7 +595,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="number" 
                   name="num de baños" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. 2" 
                   required 
                   defaultValue="1"
@@ -585,7 +607,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="number" 
                   name="num de closet" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. 3" 
                   required 
                   defaultValue="0"
@@ -597,7 +619,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="number" 
                   name="Area" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. 55" 
                   required 
                 />
@@ -623,7 +645,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           </div>
 
         {/* PESTAÑA 3: COMODIDADES */}
-          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'comodidades' ? 'flex' : 'none' }}>
+          <div data-tab="comodidades" className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'comodidades' ? 'flex' : 'none' }}>
             
             <div style={{ ...styles.fieldGrid, marginBottom: '1.5rem' }} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
@@ -650,7 +672,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="text" 
                   name="Otra Zona común" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. Turco, Salón Social (n/a si no aplica)" 
                   defaultValue="n/a"
                 />
@@ -704,14 +726,14 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           </div>
 
         {/* PESTAÑA 4: PROPIETARIO */}
-          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'propietario' ? 'flex' : 'none' }}>
+          <div data-tab="propietario" className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'propietario' ? 'flex' : 'none' }}>
             <div style={styles.fieldGrid} className="field-grid-responsive">
               <div style={styles.fieldGroup}>
                 <label style={styles.label}>Nombre del Propietario *</label>
                 <input 
                   type="text" 
                   name="Nombre prop" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. María Elena Restrepo" 
                   required 
                 />
@@ -722,7 +744,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input
                   type="tel"
                   name="Num Prop"
-                  className="form-control"
+                  className="form-input"
                   placeholder="Ej. 3012345678"
                   required
                 />
@@ -733,7 +755,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input
                   type="email"
                   name="Email prop"
-                  className="form-control"
+                  className="form-input"
                   placeholder="Ej. propietario@correo.com"
                   required
                 />
@@ -744,7 +766,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <input 
                   type="text" 
                   name="Comision(portero)" 
-                  className="form-control" 
+                  className="form-input" 
                   placeholder="Ej. $100.000 COP al portero don Luis (n/a si no aplica)" 
                   defaultValue="n/a"
                 />
@@ -754,7 +776,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                 <label style={styles.label}>Observaciones y Notas Internas</label>
                 <textarea 
                   name="Observaciones" 
-                  className="form-control" 
+                  className="form-textarea" 
                   rows={3}
                   placeholder="Ej. El propietario prefiere contrato rápido..." 
                   defaultValue="n/a"
@@ -782,7 +804,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
           </div>
 
         {/* PESTAÑA 5: FOTOS */}
-          <div className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'fotos' ? 'flex' : 'none' }}>
+          <div data-tab="fotos" className="animate-fade-in" style={{ ...styles.tabContent, display: activeTab === 'fotos' ? 'flex' : 'none' }}>
             
             <div 
               onDragEnter={handleDrag}
@@ -871,7 +893,7 @@ export default function FormCaptarInmueble({ isAdmin, unidades }: FormCaptarInmu
                     <span>{uploadMsg || 'Enviando...'}</span>
                   </div>
                 ) : (
-                  <span>¡Disparar Captación a n8n!</span>
+                  <span>Registrar inmueble</span>
                 )}
               </button>
             </div>

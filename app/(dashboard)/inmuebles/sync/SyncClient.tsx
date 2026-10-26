@@ -127,7 +127,7 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
                     <label style={styles.label}>Instancia del ERP (Base URL)</label>
                     <input 
                       type="text" 
-                      className="form-control"
+                      className="form-input"
                       value={instancia}
                       onChange={(e) => setInstancia(e.target.value)}
                       placeholder="ej. invosadia.arrendasoft.co"
@@ -141,7 +141,7 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
                       <label style={styles.label}>OAuth2 Client ID (Opcional)</label>
                       <input 
                         type="text" 
-                        className="form-control"
+                        className="form-input"
                         value={clientId}
                         onChange={(e) => setClientId(e.target.value)}
                         placeholder="Dejar vacío para usar .env.local"
@@ -152,7 +152,7 @@ export default function SyncClient({ defaultInstancia }: SyncClientProps) {
                       <label style={styles.label}>OAuth2 Client Secret (Opcional)</label>
                       <input 
                         type="password" 
-                        className="form-control"
+                        className="form-input"
                         value={clientSecret}
                         onChange={(e) => setClientSecret(e.target.value)}
                         placeholder="Dejar vacío para usar .env.local"

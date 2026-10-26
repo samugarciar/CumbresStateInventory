@@ -23,6 +23,8 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
 
   // Local state for the text input to ensure fluid typing
   const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
+  // Móvil: los selects van plegados detrás de «Filtros (n)»
+  const [abiertoMovil, setAbiertoMovil] = useState(false);
 
   // Apply filters instantly
   const updateFilters = (key: string, value: string) => {
@@ -67,6 +69,11 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
     searchParams.has('order') || 
     searchParams.has('asesor');
 
+  // Cuántos filtros (fuera del buscador) están puestos, para el botón del celular
+  const filtrosActivos =
+    ['tipo', 'transaccion', 'estado', 'asesor'].filter(k => searchParams.has(k)).length +
+    (searchParams.get('order') === 'asc' ? 1 : 0);
+
   const handleClearFilters = () => {
     setSearchTerm('');
     startTransition(() => {
@@ -78,7 +85,7 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
     <section className="glass-card" style={{ ...styles.filtersCard, opacity: isPending ? 0.75 : 1 }}>
       <div style={styles.filtersTitleRow}>
         <SlidersHorizontal size={16} color="var(--primary)" />
-        <span style={styles.filtersTitle}>Filtros de Búsqueda</span>
+        <span style={styles.filtersTitle}>Buscar y filtrar</span>
         {isPending && (
           <div style={styles.loaderWrapper}>
             <Loader2 size={16} className="animate-spin" color="var(--primary)" />
@@ -88,21 +95,40 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
       </div>
 
       <div className="filters-form-responsive">
-        {/* Buscador */}
-        <div className="filter-group-responsive" style={{ flex: '1.5 1 240px' }}>
-          <label style={styles.filterLabel}>Buscador</label>
-          <div style={styles.searchWrapper}>
-            <Search size={14} color="var(--text-muted)" style={styles.searchIcon} />
-            <input 
-              type="text" 
-              className="form-input" 
-              placeholder="Buscar por título, dirección, ID..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={styles.filterInput}
-            />
+        {/* Buscador (su flex vive en .filter-group-buscador para que el celular lo anule;
+            en línea dejaba un hueco en blanco de 240 px al apilar los filtros) */}
+        <div className="filter-group-responsive filter-group-buscador">
+          <label style={styles.filterLabel} htmlFor="inmuebles-buscar">Buscar</label>
+          <div style={styles.buscadorFila}>
+            <div style={styles.searchWrapper}>
+              <Search size={14} color="var(--text-muted)" style={styles.searchIcon} />
+              <input 
+                id="inmuebles-buscar"
+                type="text" 
+                className="form-input" 
+                placeholder="Título, dirección o código..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={styles.filterInput}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary filtros-toggle"
+              style={styles.toggleBtn}
+              aria-expanded={abiertoMovil}
+              aria-controls="inmuebles-filtros-extra"
+              onClick={() => setAbiertoMovil(v => !v)}
+            >
+              <SlidersHorizontal size={15} />
+              Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ''}
+            </button>
           </div>
         </div>
+
+        {/* En escritorio estos grupos se ven siempre (display: contents); en el
+            celular se despliegan con «Filtros (n)» */}
+        <div id="inmuebles-filtros-extra" className={`filtros-extra${abiertoMovil ? ' abierto' : ''}`}>
 
         {/* Tipo de Inmueble */}
         <div className="filter-group-responsive">
@@ -175,17 +201,17 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
           </div>
         )}
 
-        {/* Orden por Código */}
+        {/* Orden (por código: el más alto es el más nuevo) */}
         <div className="filter-group-responsive">
-          <label style={styles.filterLabel}>Orden por Código</label>
+          <label style={styles.filterLabel}>Orden</label>
           <select 
             className="form-select" 
             value={searchParams.get('order') || 'desc'} 
             onChange={(e) => updateFilters('order', e.target.value)}
             style={styles.filterSelect}
           >
-            <option value="desc">Código: Mayor a Menor</option>
-            <option value="asc">Código: Menor a Mayor</option>
+            <option value="desc">Más nuevos primero</option>
+            <option value="asc">Más antiguos primero</option>
           </select>
         </div>
 
@@ -198,10 +224,11 @@ export default function FiltersPanel({ asesores, isAdmin }: FiltersPanelProps) {
               style={styles.clearBtn}
               disabled={isPending}
             >
-              Limpiar Filtros
+              Limpiar filtros
             </button>
           </div>
         )}
+        </div>
       </div>
     </section>
   );
@@ -225,8 +252,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.9rem',
     fontWeight: '700',
     color: 'var(--text-primary)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
   },
   loaderWrapper: {
     display: 'flex',
@@ -257,11 +282,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     color: 'var(--text-secondary)',
   },
+  buscadorFila: {
+    display: 'flex',
+    gap: '0.5rem',
+    alignItems: 'stretch',
+  },
   searchWrapper: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
     width: '100%',
+    flex: 1,
+    minWidth: 0,
+  },
+  toggleBtn: {
+    padding: '0.5rem 0.85rem',
+    fontSize: '0.85rem',
+    gap: '0.35rem',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   searchIcon: {
     position: 'absolute',
