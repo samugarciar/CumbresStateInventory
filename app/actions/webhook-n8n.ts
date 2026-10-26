@@ -26,12 +26,18 @@ export async function enviarCaptacionWebhook(prevState: any, formData: FormData)
   // 2. Obtener perfil e inmobiliaria
   const { data: profile, error: profileErr } = await supabase
     .from('usuarios')
-    .select('inmobiliaria_id, nombre_completo')
+    .select('inmobiliaria_id, nombre_completo, rol, activo')
     .eq('id', user.id)
     .single();
 
   if (profileErr || !profile) {
     return { success: false, message: 'No se pudo verificar el perfil del usuario.' };
+  }
+
+  // Solo el equipo que capta: admin o asesor ACTIVO. Un usuario desactivado
+  // o el rol revisor (la cuenta de Meta) no mandan captaciones a n8n.
+  if (!profile.activo || (profile.rol !== 'admin' && profile.rol !== 'asesor')) {
+    return { success: false, message: 'Tu usuario no puede registrar captaciones.' };
   }
 
   // 3. Extraer y validar campos obligatorios

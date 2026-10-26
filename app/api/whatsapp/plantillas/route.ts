@@ -8,6 +8,7 @@ import {
   anotarResultadoCredencial,
   credencialDeLinea,
 } from '../../../../lib/whatsapp/lineas';
+import { tokenValido } from '@/lib/whatsapp/token';
 
 export const maxDuration = 60;
 
@@ -50,8 +51,8 @@ function ejemplosValidos(ejemplos: unknown): string[] | Record<string, string> |
 }
 
 function validarTokenCRM(request: Request): boolean {
-  const token = request.headers.get('x-crm-token');
-  return Boolean(token && process.env.CRM_ENVIO_TOKEN && token === process.env.CRM_ENVIO_TOKEN);
+  // Comparación en tiempo constante (lib/whatsapp/token.ts).
+  return tokenValido(request.headers.get('x-crm-token'), process.env.CRM_ENVIO_TOKEN);
 }
 
 type Supabase = ReturnType<typeof createAdminClient>;

@@ -5,6 +5,7 @@ import { cargarPromptSistema, contextoVariable } from '@/lib/agente-comercial/pr
 import { correrAgenteComercial, extraerCitaAgendada } from '@/lib/agente-comercial/graph';
 import { calcularCostoUSD } from '@/lib/agente-comercial/costos';
 import { botPuedeResponder } from '@/lib/whatsapp/bot';
+import { tokenValido } from '@/lib/whatsapp/token';
 
 // n8n sigue activando este agente (recibe el mensaje de Kommo, llama acá,
 // escribe la respuesta de vuelta a Kommo) — solo el razonamiento se mudó
@@ -104,8 +105,8 @@ function envolverConFecha(mensaje: string, fecha: Date): string {
 }
 
 export async function POST(request: Request) {
-  const token = request.headers.get('x-webhook-token');
-  if (!token || token !== process.env.N8N_AGENTE_COMERCIAL_TOKEN) {
+  // Comparación en tiempo constante (lib/whatsapp/token.ts).
+  if (!tokenValido(request.headers.get('x-webhook-token'), process.env.N8N_AGENTE_COMERCIAL_TOKEN)) {
     return Response.json({ estado: 'error', error: 'No autorizado' }, { status: 401 });
   }
   if (!process.env.OPENAI_API_KEY) {

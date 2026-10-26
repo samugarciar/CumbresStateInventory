@@ -7,6 +7,7 @@ import {
 } from '@/lib/whatsapp/meta';
 import { anotarResultadoCredencial, credencialDeLinea } from '@/lib/whatsapp/lineas';
 import { conversacionDe } from '@/lib/whatsapp/conversaciones';
+import { tokenValido } from '@/lib/whatsapp/token';
 
 /**
  * Por aquí manda el CRM.
@@ -45,14 +46,15 @@ interface Peticion {
   };
   /**
    * Por qué línea quiere mandar el CRM (contrato del 1 oct, nota 9). Sin
-   * él, sale por el número de las variables de entorno, como siempre.
+   * él, sale por el número de las variables de entorno, pero solo si ese
+   * número es una línea de esta inmobiliaria (26 oct).
    */
   desde?: { wa_phone_number_id?: string; embudo?: string };
 }
 
 export async function POST(request: Request) {
-  const token = request.headers.get('x-crm-token');
-  if (!token || token !== process.env.CRM_ENVIO_TOKEN) {
+  // Comparación en tiempo constante (lib/whatsapp/token.ts).
+  if (!tokenValido(request.headers.get('x-crm-token'), process.env.CRM_ENVIO_TOKEN)) {
     return Response.json({ ok: false, error: 'No autorizado' }, { status: 401 });
   }
 
@@ -107,6 +109,25 @@ export async function POST(request: Request) {
       },
       { status: 503 }
     );
+  } else {
+    // Sin `desde`, el número de las variables de entorno es el de UNA
+    // inmobiliaria. Con el token del CRM se puede pedir por cualquiera: sin
+    // esta guarda, un envío de otra inmobiliaria saldría desde el número de
+    // Cumbres, a nombre de Cumbres.
+    const numeroEntorno = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+    const { data: lineas } = numeroEntorno
+      ? await supabase.schema('crm').rpc('linea_por_numero', { p_wa_phone_number_id: numeroEntorno })
+      : { data: null };
+    const linea = (Array.isArray(lineas) ? lineas[0] : lineas) as { inmobiliaria_id?: string } | undefined;
+    if (!linea || linea.inmobiliaria_id !== inmobiliariaId) {
+      return Response.json(
+        {
+          ok: false,
+          error: 'Esta inmobiliaria no tiene una línea de WhatsApp por la que salir: hay que elegir una o conectarla.',
+        },
+        { status: 409 }
+      );
+    }
   }
   const numeroSalida = credencial?.phoneNumberId ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? null;
 
