@@ -81,9 +81,24 @@ function ahoraBogota(): { fecha: string; minutos: number } {
   return { fecha, minutos: h * 60 + m };
 }
 
-// Margen mínimo entre "ahora" y el inicio de una visita que se puede ofrecer o
-// agendar. El cliente necesita tiempo para llegar y el asesor para prepararse.
-const MARGEN_MIN = 30;
+// Anticipación mínima entre "ahora" y el inicio de una visita que se puede
+// ofrecer o agendar: el equipo necesita tiempo para confirmar con el cliente y
+// cuadrar quién abre. Decisión de Samuel (25 oct 2026): las visitas que
+// empiezan a las 12:00 m. o antes piden 3 horas —una de las 8:00 a. m. no se
+// agenda en la madrugada, cuando nadie puede confirmarla— y las de la tarde, 1.
+const HORA_LIMITE_MANANA_MIN = 12 * 60;
+const ANTICIPACION_MANANA_MIN = 3 * 60;
+const ANTICIPACION_TARDE_MIN = 1 * 60;
+
+function anticipacionMinima(horaInicio: string): number {
+  const [h, m] = String(horaInicio).split(':').map(Number);
+  return h * 60 + m <= HORA_LIMITE_MANANA_MIN ? ANTICIPACION_MANANA_MIN : ANTICIPACION_TARDE_MIN;
+}
+
+// La regla dicha en palabras, para que el agente se la explique al cliente.
+const REGLA_ANTICIPACION =
+  'las visitas que empiezan a las 12:00 m. o antes se agendan con al menos 3 horas de anticipación, ' +
+  'y las de la tarde con al menos 1 hora';
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
@@ -120,17 +135,25 @@ function esDomingo(fecha: string): boolean {
   return diaSemana(fecha) === 'domingo';
 }
 
-// ¿Ese bloque ya pasó, o arranca en menos de MARGEN_MIN minutos?
+// ¿Ese bloque ya pasó, o arranca antes de la anticipación mínima?
 // Caso real (12/ago 16:37): el agente ofreció "3:00 pm o 3:30 pm" para hoy y
 // el cliente respondió "Hoy ya son las 4y38". La RPC devuelve los bloques del
 // día aunque la hora ya haya pasado, así que filtrarlos es responsabilidad
 // nuestra y se hace en código, no confiando en que el modelo mire el reloj.
+// Se mide en minutos hasta el inicio, contando los días: con 3 horas, una
+// visita de mañana a las 8:00 a. m. ya queda dentro del margen a las 5:00 a. m.
 function bloqueDemasiadoPronto(fecha: string, horaInicio: string): boolean {
   const ahora = ahoraBogota();
-  if (fecha > ahora.fecha) return false; // otro día futuro: siempre válido
-  if (fecha < ahora.fecha) return true; // día pasado
+  const dia = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fecha ?? ''));
+  const hoy = /^(\d{4})-(\d{2})-(\d{2})/.exec(ahora.fecha);
+  if (!dia || !hoy) return true; // sin fecha legible no se ofrece ni se agenda
+  const dias =
+    (Date.UTC(Number(dia[1]), Number(dia[2]) - 1, Number(dia[3])) -
+      Date.UTC(Number(hoy[1]), Number(hoy[2]) - 1, Number(hoy[3]))) /
+    86_400_000;
   const [h, m] = String(horaInicio).split(':').map(Number);
-  return h * 60 + m < ahora.minutos + MARGEN_MIN;
+  const minutosHastaLaVisita = dias * 24 * 60 + h * 60 + m - ahora.minutos;
+  return minutosHastaLaVisita < anticipacionMinima(horaInicio);
 }
 
 // ¿Es un teléfono de verdad, o un texto puesto en su lugar?
@@ -364,8 +387,9 @@ export function crearToolsAgenteComercial(
             hora_inicio: null,
             hora_fin: null,
             mensaje:
-              `Los ${descartados} horario(s) que quedaban ya pasaron o empiezan en menos de ${MARGEN_MIN} ` +
-              'minutos. NO se los ofrezcas. Pregúntale al cliente qué día y hora le sirve y registra la solicitud.',
+              `Los ${descartados} horario(s) que quedaban ya pasaron o no cumplen la anticipación mínima ` +
+              `(${REGLA_ANTICIPACION}). NO se los ofrezcas. Pregúntale al cliente qué día y hora le sirve y ` +
+              'registra la solicitud.',
           },
         ]);
       }
@@ -382,7 +406,7 @@ export function crearToolsAgenteComercial(
           ? {
               horarios: salida,
               descartados_por_hora: descartados,
-              nota: `Se ocultaron ${descartados} bloque(s) de hoy que ya pasaron o empiezan en menos de ${MARGEN_MIN} minutos. Ofrece SOLO los que ves acá.`,
+              nota: `Se ocultaron ${descartados} bloque(s) que ya pasaron o no cumplen la anticipación mínima (${REGLA_ANTICIPACION}). Ofrece SOLO los que ves acá.`,
             }
           : salida
       );
@@ -430,7 +454,8 @@ export function crearToolsAgenteComercial(
           success: false,
           horario_ya_paso: true,
           error:
-            `Ese horario ya pasó o empieza en menos de ${MARGEN_MIN} minutos, así que no se puede agendar. ` +
+            `Ese horario ya pasó o no cumple la anticipación mínima (${REGLA_ANTICIPACION}), así que no se ` +
+            'puede agendar. Explícale al cliente que así alcanzamos a confirmar la visita con el equipo. ' +
             'Vuelve a consultar disponibilidad y ofrécele al cliente los horarios que siguen vigentes; ' +
             'si ninguno le sirve, pregúntale qué día y hora prefiere y registra la solicitud de apertura.',
         });
