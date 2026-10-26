@@ -1,7 +1,19 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
+import { conversacionDe } from '@/lib/whatsapp/conversaciones';
+import { anotarResultadoCredencial, credencialDeLinea } from '@/lib/whatsapp/lineas';
+import { enviarPlantilla } from '@/lib/whatsapp/meta';
+import {
+  PLANTILLA_CONFIRMACION,
+  asegurarPlantillaConfirmacion,
+  diaLegible,
+  horaLegible,
+  telefonoE164,
+  textoConfirmacion,
+} from '@/lib/whatsapp/confirmacion-citas';
 
 interface FranjaData {
   inmueble_id: string;
@@ -389,15 +401,6 @@ export async function agendarCitaManual(data: CitaManualData) {
 }
 
 /**
- * Dispara el webhook del flujo n8n "Confirmacion citas cumbres" con las citas
- * seleccionadas por el admin. El webhook responde 200 de inmediato (fire-and-forget,
- * sin auth), así que "éxito" aquí significa que el POST se entregó, no que el flujo
- * haya terminado de reflejar cada cita en Kommo.
- *
- * Contrato del payload (según el flujo): { citas: [ { Inmueble, Tercero, Telefono, Hora, ... } ] }
- * donde Inmueble debe coincidir con el título del inmueble para que el flujo lo cruce.
- */
-/**
  * El asesor marca una de SUS citas como realizada (estado='completada').
  * Va por el RPC marcar_cita_realizada (SECURITY DEFINER) porque los asesores solo
  * tienen SELECT sobre citas por RLS; el RPC valida que quien llama sea el asesor
@@ -430,6 +433,17 @@ export async function marcarCitaRealizada(citaId: string) {
   }
 }
 
+/**
+ * Confirma las citas seleccionadas mandándole a cada cliente la plantilla
+ * de confirmación por la línea comercial (lib/whatsapp/confirmacion-citas).
+ * Desde el 26 oct 2026 no pasa por n8n ni por Kommo.
+ *
+ * Una cita queda confirmada solo si Meta acepta el mensaje; las demás
+ * quedan con su motivo en /citas y su tarea abierta, para confirmarla a
+ * mano. El mensaje se guarda en la conversación del cliente (la ve el CRM
+ * y su respuesta cae en el mismo hilo) y NO calla al bot: es un aviso
+ * automático, no un asesor tomando la conversación.
+ */
 export async function confirmarCitas(citaIds: string[]) {
   try {
     if (!citaIds || citaIds.length === 0) {
@@ -455,7 +469,7 @@ export async function confirmarCitas(citaIds: string[]) {
     const { data: citas } = await supabase
       .from('citas')
       .select(`
-        id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono, kommo_lead_id,
+        id, inmobiliaria_id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono,
         inmuebles ( titulo, direccion ),
         franjas_horarias ( usuarios!franjas_horarias_asesor_id_fkey ( nombre_completo, telefono ) )
       `)
@@ -466,91 +480,112 @@ export async function confirmarCitas(citaIds: string[]) {
       return { success: false, error: 'No se encontraron las citas seleccionadas.' };
     }
 
-    // Payload con la forma que espera el flujo de n8n.
-    // Nota: los nombres de campo vienen del workflow ("Standardize Appointment").
-    const payload = {
-      citas: citas.map((c: any) => ({
-        cita_id: c.id,
-        Inmueble: c.inmuebles?.titulo || '',
-        Direccion: c.inmuebles?.direccion || '',
-        Tercero: c.cliente_nombre,
-        Telefono: c.cliente_telefono,
-        Fecha: c.fecha,
-        Hora: c.hora_inicio?.substring(0, 5) || '',
-        Asesor: c.franjas_horarias?.usuarios?.nombre_completo || '',
-        TelefonoAsesor: c.franjas_horarias?.usuarios?.telefono || '',
-        // El lead de la conversación que agendó la cita. Con él, n8n va
-        // directo al lead del cliente en vez de buscarlo por teléfono, que
-        // falla con quienes escriben con usuario (@). Vacío en las citas
-        // creadas a mano: ahí n8n sigue buscando por teléfono.
-        KommoLeadId: c.kommo_lead_id || '',
-      })),
-    };
-
-    const url = process.env.N8N_CONFIRMAR_CITAS_URL
-      || 'https://n8n.arriendabot.com/webhook/confirmar-citas';
-    // El webhook exige Header Auth (X-Webhook-Token). El token va en el entorno,
-    // nunca en el código ni en el navegador (este action corre en el servidor).
-    const token = process.env.N8N_CONFIRMAR_CITAS_TOKEN;
-
-    if (!token) {
-      console.error('[Citas] Falta N8N_CONFIRMAR_CITAS_TOKEN en el entorno.');
-      return { success: false, error: 'El servicio de confirmación no está configurado (falta el token). Avisa al administrador.' };
+    // ── La línea comercial de la inmobiliaria y su token ───────────────
+    // El token vive en Vault y solo lo lee el service_role: por eso este
+    // tramo usa el cliente de administración. Nada del token sale de aquí.
+    const admin = createAdminClient();
+    const inmobiliariaId = (citas[0] as any).inmobiliaria_id as string;
+    const { data: lineaComercial } = await admin
+      .schema('crm')
+      .from('lineas')
+      .select('wa_phone_number_id')
+      .eq('inmobiliaria_id', inmobiliariaId)
+      .eq('embudo', 'comercial')
+      .eq('activa', true)
+      .maybeSingle();
+    const numeroSalida = lineaComercial?.wa_phone_number_id as string | undefined;
+    const credencial = numeroSalida ? await credencialDeLinea(admin, numeroSalida) : null;
+    if (!numeroSalida || !credencial) {
+      return {
+        success: false,
+        error: 'La línea comercial de WhatsApp no está conectada. Conéctala en WhatsApp antes de confirmar citas.',
+      };
     }
 
-    let resp: Response;
-    try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Token': token,
-        },
-        body: JSON.stringify(payload),
-      });
-    } catch (e: any) {
-      console.error('[Citas] Error de red al disparar el webhook:', e?.message);
-      return { success: false, error: 'No se pudo contactar el servicio de confirmación. Revisa la conexión.' };
+    // ── La plantilla: aprobada, o se manda a revisión la primera vez ───
+    const plantilla = await asegurarPlantillaConfirmacion(credencial);
+    if (plantilla.estado !== 'aprobada') {
+      const motivo = {
+        enviada_a_revision:
+          'La plantilla de confirmación se acaba de mandar a revisión de Meta. Suele aprobarse en minutos u horas: vuelve a intentarlo más tarde. Mientras tanto, confirma estas citas a mano.',
+        en_revision:
+          'La plantilla de confirmación sigue en revisión de Meta. Vuelve a intentarlo más tarde; mientras tanto, confirma estas citas a mano.',
+        rechazada: `Meta rechazó la plantilla de confirmación${plantilla.estado === 'rechazada' && plantilla.motivo ? ` (${plantilla.motivo})` : ''}. Hay que ajustar su texto.`,
+        error: `No se pudo revisar la plantilla de confirmación: ${plantilla.estado === 'error' ? plantilla.mensaje : ''}`,
+      }[plantilla.estado];
+      return { success: false, error: motivo };
     }
 
-    if (!resp.ok) {
-      console.error('[Citas] El webhook respondió con estado', resp.status);
-      return { success: false, error: `El servicio de confirmación respondió con un error (${resp.status}).` };
-    }
-
-    // n8n responde una fila por cita: { cita_id, estado, mensaje }. Hasta el
-    // 2 oct esta respuesta se ignoraba y TODA cita enviada quedaba
-    // "Confirmada", saliera o no — y un tercio no salía. Ahora solo se marca
-    // la que n8n confirma; las demás quedan con su motivo a la vista, y su
-    // tarea sigue abierta, que es lo que hace que alguien la confirme a mano.
-    const cuerpo = await resp.json().catch(() => null);
-    const resultados: { cita_id?: string; estado?: string; mensaje?: string }[] =
-      Array.isArray(cuerpo) ? cuerpo : [];
-    const porCita = new Map(
-      resultados.filter((r) => r?.cita_id).map((r) => [String(r.cita_id), r])
-    );
-
-    const ahora = new Date().toISOString();
     const confirmadas: string[] = [];
     const fallidas: { cita_id: string; cliente: string; motivo: string }[] = [];
-    // Sin fila para la cita: no se sabe si salió. No se marca ni como
-    // confirmada ni como fallida — decir cualquiera de las dos sería adivinar.
+    // Fallo de RED: no se sabe si el mensaje salió. No se marca ni como
+    // confirmada ni como fallida: decir cualquiera de las dos sería adivinar,
+    // y reintentarla podría mandarle dos mensajes al cliente.
     const sinRespuesta: { cita_id: string; cliente: string }[] = [];
 
+    // Uno por uno: son pocas por tanda y así cada fallo queda con su motivo.
     for (const c of citas as any[]) {
-      const r = porCita.get(c.id);
-      if (!r) {
-        sinRespuesta.push({ cita_id: c.id, cliente: c.cliente_nombre });
-      } else if (r.estado === 'confirmada') {
-        confirmadas.push(c.id);
-      } else {
+      const cliente = c.cliente_nombre || 'Cliente';
+      const telefono = telefonoE164(c.cliente_telefono);
+      if (!telefono) {
         fallidas.push({
           cita_id: c.id,
-          cliente: c.cliente_nombre,
-          motivo: r.mensaje || `n8n respondió «${r.estado ?? 'sin estado'}».`,
+          cliente,
+          motivo: `El teléfono «${c.cliente_telefono || 'vacío'}» no es un número de WhatsApp válido.`,
         });
+        continue;
+      }
+
+      const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo?.trim();
+      const asesorTelefono = c.franjas_horarias?.usuarios?.telefono?.trim();
+      const variables = {
+        inmueble: c.inmuebles?.titulo?.trim() || 'el inmueble',
+        dia: diaLegible(c.fecha),
+        hora: horaLegible(c.hora_inicio ?? ''),
+        // Meta no acepta variables vacías.
+        direccion: c.inmuebles?.direccion?.trim() || 'te la compartimos por este medio',
+        asesor: asesorNombre
+          ? asesorTelefono
+            ? `${asesorNombre} (${asesorTelefono})`
+            : asesorNombre
+          : 'nuestro equipo',
+      };
+
+      const r = await enviarPlantilla(
+        telefono,
+        PLANTILLA_CONFIRMACION.nombreMeta,
+        PLANTILLA_CONFIRMACION.idioma,
+        variables,
+        credencial
+      );
+      await anotarResultadoCredencial(admin, credencial.phoneNumberId, r);
+
+      if (!r.ok) {
+        if (r.codigo) fallidas.push({ cita_id: c.id, cliente, motivo: r.error || 'WhatsApp rechazó el mensaje.' });
+        else sinRespuesta.push({ cita_id: c.id, cliente });
+        continue;
+      }
+      confirmadas.push(c.id);
+
+      // En la conversación del cliente, para que se vea en el CRM y su
+      // respuesta caiga en el mismo hilo. Si no se puede guardar, el
+      // mensaje igual salió: se anota y se sigue.
+      const conversacionId = await conversacionDe(admin, inmobiliariaId, telefono);
+      if (conversacionId) {
+        const { error } = await admin.from('agente_comercial_mensajes').insert({
+          conversacion_id: conversacionId,
+          rol: 'asesor',
+          contenido: textoConfirmacion(variables),
+          wa_message_id: r.waMessageId,
+          wa_phone_number_id: credencial.phoneNumberId,
+        });
+        if (error) console.error('[Citas] Confirmación enviada pero no registrada:', error.message);
+      } else {
+        console.error('[Citas] Confirmación enviada, pero no se pudo crear la conversación de', c.id);
       }
     }
+
+    const ahora = new Date().toISOString();
 
     // Best-effort: si una marca falla, el envío al flujo ya ocurrió y solo se
     // pierde la insignia.
@@ -565,7 +600,7 @@ export async function confirmarCitas(citaIds: string[]) {
         })
         .in('id', confirmadas);
       if (markErr) {
-        console.warn('[Citas] Confirmadas en n8n pero no se pudieron marcar:', markErr.message);
+        console.warn('[Citas] Confirmaciones enviadas pero no se pudieron marcar:', markErr.message);
       }
 
       // Cerrar la tarea "Confirmar cita" que el agente creó al agendarla —
@@ -596,7 +631,7 @@ export async function confirmarCitas(citaIds: string[]) {
     revalidatePath('/tareas');
     return {
       success: true,
-      count: payload.citas.length,
+      count: citas.length,
       confirmadas: confirmadas.length,
       fallidas,
       sinRespuesta,

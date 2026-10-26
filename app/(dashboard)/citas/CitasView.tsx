@@ -19,8 +19,8 @@ interface Cita {
   cliente_telefono: string;
   cliente_email: string | null;
   origen: string;
-  confirmada_at?: string | null; // última vez que n8n la confirmó en Kommo
-  confirmacion_error?: string | null; // por qué falló el último intento, tal como lo dijo n8n
+  confirmada_at?: string | null; // cuándo salió la última confirmación por WhatsApp
+  confirmacion_error?: string | null; // por qué falló el último intento
   confirmacion_fallida_at?: string | null;
   alcance?: string; // 'inmueble' | 'unidad'
   unidad?: string | null; // nombre de la unidad cuando alcance='unidad'
@@ -121,7 +121,7 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
   const [realizandoId, setRealizandoId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  // Modo "Confirmar citas": selección múltiple para disparar el flujo n8n
+  // Modo "Confirmar citas": selección múltiple para mandar la confirmación por WhatsApp
   const [seleccionando, setSeleccionando] = useState(false);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
   const [confirmando, setConfirmando] = useState(false);
@@ -199,14 +199,14 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
   const confirmar = async () => {
     const ids = Array.from(seleccionadas);
     if (ids.length === 0) return;
-    if (!confirm(`¿Enviar ${ids.length} cita(s) al flujo de confirmación de n8n?`)) return;
+    if (!confirm(`¿Mandar la confirmación por WhatsApp a ${ids.length} cliente(s)?`)) return;
     setConfirmando(true);
     const result = await confirmarCitas(ids);
     setConfirmando(false);
     if (result.success) {
       // Antes decía "N enviadas" y todas quedaban en verde, salieran o no.
       // Ahora se dice cuáles NO salieron, que son las que hay que confirmar a mano.
-      const partes = [`${result.confirmadas ?? 0} de ${result.count} cita(s) confirmada(s) en Kommo.`];
+      const partes = [`${result.confirmadas ?? 0} de ${result.count} cita(s) confirmada(s) por WhatsApp.`];
       if (result.fallidas?.length) {
         partes.push(
           `\nNo se pudieron confirmar ${result.fallidas.length} — confírmalas a mano:\n` +
@@ -215,9 +215,9 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
       }
       if (result.sinRespuesta?.length) {
         partes.push(
-          `\nn8n no devolvió resultado de ${result.sinRespuesta.length}: ` +
+          `\nNo se supo si le llegó a ${result.sinRespuesta.length} (falló la conexión): ` +
             result.sinRespuesta.map((s) => s.cliente).join(', ') +
-            '. Revisa en Kommo si les llegó.'
+            '. Revisa su chat en el CRM antes de volver a intentarlo.'
         );
       }
       alert(partes.join('\n'));
@@ -320,7 +320,7 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
               ) : c.confirmada_at && (
                 <span
                   style={styles.confirmadaBadge}
-                  title={`Confirmada en Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
+                  title={`Confirmación enviada por WhatsApp el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
                 >
                   <CheckCheck size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
                   Confirmada
