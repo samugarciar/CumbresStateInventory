@@ -886,6 +886,9 @@ a:focus-visible {
   }
   .inicio-cifra {
     padding: 0.7rem 0.75rem !important;
+    /* Arriba, no centrado: si una etiqueta ocupa dos líneas («Inventarios
+       firmados»), su cifra no se sube y todas quedan a la misma altura. */
+    align-items: flex-start;
   }
   .inicio-cifra-icono {
     display: none !important;

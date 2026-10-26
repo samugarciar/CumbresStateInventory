@@ -235,7 +235,9 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
     const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo;
     const estaSeleccionada = seleccionadas.has(c.id);
     // El último intento falló y no hubo una confirmación después.
-    const noConfirmada = Boolean(
+    // En una visita de un día anterior («Sin marcar») ya no hay nada que confirmar:
+    // el aviso «Confírmala a mano» solo confundiría.
+    const noConfirmada = c.fecha >= hoy && Boolean(
       c.confirmacion_fallida_at &&
         (!c.confirmada_at || c.confirmacion_fallida_at > c.confirmada_at)
     );

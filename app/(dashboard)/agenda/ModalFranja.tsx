@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Loader2, Trash2, Building2, Clock, Users, PhoneCall } from 'lucide-react';
 import { crearFranjaHoraria, actualizarFranjaHoraria, eliminarFranjaHoraria, cancelarCitaAdmin } from '@/app/actions/agenda';
 
@@ -95,6 +95,16 @@ export default function ModalFranja({
   const [error, setError] = useState<string | null>(null);
   const [busquedaInmueble, setBusquedaInmueble] = useState('');
   const [cancelandoCitaId, setCancelandoCitaId] = useState<string | null>(null);
+
+  // Escape cierra, como cualquier diálogo (salvo mientras se guarda o se borra).
+  useEffect(() => {
+    if (!isOpen) return;
+    const alTeclear = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading && !cancelandoCitaId) onClose();
+    };
+    window.addEventListener('keydown', alTeclear);
+    return () => window.removeEventListener('keydown', alTeclear);
+  }, [isOpen, loading, cancelandoCitaId, onClose]);
 
   if (!isOpen) return null;
 
