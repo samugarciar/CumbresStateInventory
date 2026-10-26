@@ -78,6 +78,17 @@ type ModoConexion = 'coexistencia' | 'cloud_api';
 
 const fecha = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 
+/** Cómo está conectada la línea, en palabras del equipo. */
+function insigniaModo(modo: string | null): { texto: string; titulo: string } | null {
+  if (modo === 'cloud_api') {
+    return { texto: 'Solo plataforma (API)', titulo: 'El número vive en la Cloud API de Meta: se atiende desde la plataforma y el CRM, no desde la app del celular.' };
+  }
+  if (modo === 'coexistencia') {
+    return { texto: 'App del celular + plataforma', titulo: 'El número sigue en la app de WhatsApp Business del celular y los mensajes llegan también a la plataforma.' };
+  }
+  return null;
+}
+
 /** Espera hasta `ms` a que la ventana mande su evento de fin. */
 function esperarEvento(ref: React.RefObject<EventoRegistro | null>, ms: number) {
   return new Promise<EventoRegistro | null>((resolver) => {
@@ -247,6 +258,8 @@ export default function ConectarWhatsApp({
 
   // El número que la comercial tiene hoy, para decirlo antes de reemplazarlo.
   const telefonoComercial = lineas.find((l) => requiereConfirmacionCorte(l.embudo))?.telefono_e164 ?? null;
+  // El aviso técnico del webhook solo importa si queda algo por conectar.
+  const haySinConectar = embudos.some((e) => !lineas.find((l) => l.embudo === e.codigo)?.conectada_at);
 
   return (
     <div style={styles.pagina}>
@@ -263,22 +276,22 @@ export default function ConectarWhatsApp({
         <h1 style={styles.titulo}>
           <MessageCircle size={24} /> WhatsApp
         </h1>
-        <p style={styles.bajada}>
-          Cada embudo tiene su número. Se conecta con la ventana de Meta y el equipo sigue usando la app de
-          WhatsApp Business del celular: los mensajes llegan a los dos lados.
-        </p>
+        <p style={styles.bajada}>Aquí se conectan los números de WhatsApp de cada embudo.</p>
       </header>
 
-      {!esRevisor && (
-        <div style={styles.aviso} role="note">
-          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div>
-            <strong>Antes de conectar un número real</strong>, el webhook de la app de Meta tiene que estar
-            configurado y suscrito a <code>messages</code>, <code>history</code> y{' '}
-            <code>smb_message_echoes</code>. Al conectar, la plataforma pide el historial del celular, y Meta
-            solo deja pedirlo una vez y en las primeras 24 horas: si el webhook no está, ese historial se pierde.
+      {!esRevisor && haySinConectar && (
+        <details style={styles.aviso}>
+          <summary style={styles.avisoResumen}>
+            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+            Antes de conectar un número real
+          </summary>
+          <div style={{ marginTop: 8 }}>
+            El webhook de la app de Meta tiene que estar configurado y suscrito a <code>messages</code>,{' '}
+            <code>history</code> y <code>smb_message_echoes</code>. Al conectar, la plataforma pide el historial
+            del celular, y Meta solo deja pedirlo una vez y en las primeras 24 horas: si el webhook no está, ese
+            historial se pierde.
           </div>
-        </div>
+        </details>
       )}
 
       {sdkFallo && (
@@ -293,6 +306,9 @@ export default function ConectarWhatsApp({
           const ocupado = enCurso === e.codigo;
           const conectada = Boolean(linea?.conectada_at);
           const tokenCaido = Boolean(linea?.token_invalido_at);
+          const modo = insigniaModo(linea?.modo ?? null);
+          // «Reconectar…» abre el flujo de coexistencia: no les corresponde a las líneas solo API.
+          const puedeReconectar = linea?.modo !== 'cloud_api';
 
           return (
             <li
@@ -308,7 +324,14 @@ export default function ConectarWhatsApp({
                     ) : conectada ? (
                       <>
                         <span className="badge badge-success">Conectada</span>{' '}
-                        {linea?.telefono_e164 ?? 'sin teléfono'} · desde {fecha.format(new Date(linea!.conectada_at!))}
+                        {modo && (
+                          <>
+                            <span className="badge" style={styles.insigniaModo} title={modo.titulo}>{modo.texto}</span>{' '}
+                          </>
+                        )}
+                        <span style={{ whiteSpace: 'nowrap' }}>
+                          {linea?.telefono_e164 ?? 'sin teléfono'} · desde {fecha.format(new Date(linea!.conectada_at!))}
+                        </span>
                       </>
                     ) : linea ? (
                       <span className="badge badge-info">Registrada a mano, sin el registro integrado</span>
@@ -320,15 +343,31 @@ export default function ConectarWhatsApp({
 
                 {conectable ? (
                   <div style={styles.botones}>
-                  <button
-                    className={conectada && !tokenCaido ? 'btn btn-secondary' : 'btn btn-primary'}
-                    onClick={() => iniciarConexion(e.codigo)}
-                    disabled={!sdkListo || enCurso !== null}
-                    style={styles.boton}
-                  >
-                    {ocupado ? <Loader2 size={16} className="animate-spin" /> : <PlugZap size={16} />}
-                    {ocupado ? 'Esperando a Meta…' : conectada ? 'Reconectar' : 'Conectar con WhatsApp'}
-                  </button>
+                  {conectada && !tokenCaido ? (
+                    // Conectada: reconectar es raro, así que queda como enlace secundario
+                    puedeReconectar && (
+                      <button
+                        type="button"
+                        className="wa-reconectar"
+                        onClick={() => iniciarConexion(e.codigo)}
+                        disabled={!sdkListo || enCurso !== null}
+                        style={styles.reconectar}
+                      >
+                        {ocupado ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {ocupado ? 'Esperando a Meta…' : 'Reconectar…'}
+                      </button>
+                    )
+                  ) : (conectada && !puedeReconectar) ? null : (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => iniciarConexion(e.codigo)}
+                      disabled={!sdkListo || enCurso !== null}
+                      style={styles.boton}
+                    >
+                      {ocupado ? <Loader2 size={16} className="animate-spin" /> : <PlugZap size={16} />}
+                      {ocupado ? 'Esperando a Meta…' : conectada ? 'Reconectar' : 'Conectar con WhatsApp'}
+                    </button>
+                  )}
                   {!esRevisor && !conectada && (
                     <button
                       className="btn btn-secondary"
@@ -342,7 +381,7 @@ export default function ConectarWhatsApp({
                   )}
                   </div>
                 ) : (
-                  <span style={styles.bloqueado} title="Atiende clientes reales por Kommo: se conecta de última">
+                  <span style={styles.bloqueado} title="Atiende clientes reales: se conecta de última">
                     <Lock size={14} /> Se conecta de última
                   </span>
                 )}
@@ -351,15 +390,15 @@ export default function ConectarWhatsApp({
               {requiereConfirmacionCorte(e.codigo) && (
                 <p style={styles.nota}>
                   {conectada
-                    ? 'Esta línea atiende clientes reales y el bot comercial contesta por ella. Reconectarla exige confirmación explícita.'
+                    ? `Esta línea atiende clientes reales y el bot comercial contesta por ella.${puedeReconectar ? ' Reconectarla exige confirmación explícita.' : ''}`
                     : 'Esta línea atiende clientes reales. Conectarla exige confirmación explícita.'}
                 </p>
               )}
 
               {!conectable && (
                 <p style={styles.nota}>
-                  Esta línea atiende clientes reales por Kommo. Se conecta al final, cuando las otras dos lleven
-                  días estables.
+                  Esta línea atiende clientes reales. Se conecta al final, cuando las otras dos lleven días
+                  estables.
                 </p>
               )}
 
@@ -485,14 +524,31 @@ const styles: Record<string, React.CSSProperties> = {
   titulo: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', margin: 0 },
   bajada: { color: 'var(--text-secondary)', fontSize: 14.5, maxWidth: '64ch', margin: 0 },
   aviso: {
-    display: 'flex',
-    gap: 10,
-    padding: '12px 14px',
+    padding: '10px 14px',
     borderRadius: 'var(--border-radius-md)',
     background: 'rgba(234, 179, 8, 0.08)',
     border: '1px solid rgba(234, 179, 8, 0.3)',
     color: 'var(--text-primary)',
     fontSize: 14,
+  },
+  avisoResumen: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600 },
+  insigniaModo: {
+    background: 'var(--bg-surface-elevated)',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-color)',
+    padding: '0.15rem 0.6rem',
+  },
+  reconectar: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'none',
+    border: 'none',
+    color: 'var(--primary)',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '6px 4px',
   },
   lista: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 },
   tarjeta: {

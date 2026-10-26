@@ -910,3 +910,14 @@ a:focus-visible {
   outline-offset: 3px;
   border-radius: 6px;
 }
+
+/* --- WHATSAPP --- */
+.wa-reconectar:hover:not(:disabled),
+.wa-reconectar:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wa-reconectar:disabled {
+  color: var(--text-muted) !important;
+  cursor: not-allowed !important;
+}
