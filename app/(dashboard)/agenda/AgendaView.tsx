@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, X, Loader2, Phone } from 'lucide-react';
 import ModalFranja from './ModalFranja';
 import { eliminarFranjaHoraria } from '@/app/actions/agenda';
+import { telefonoLegible } from '../citas/telefono';
 
 // --- Tipos ---
 interface Franja {
@@ -115,18 +116,6 @@ function etiquetaUbicacion(inm?: { unidad?: string | null; direccion?: string | 
   if (!inm) return 'Sin ubicación';
   const u = (inm.unidad || '').trim();
   return u || inm.direccion || 'Sin ubicación';
-}
-
-// +573000000106 → «+57 300 000 0106» y el número para tel:. Si no parece un
-// celular colombiano (p. ej. «kommo-123»), se muestra tal cual y sin enlace.
-function telefonoLegible(tel: string): { texto: string; href: string | null } {
-  const dig = (tel || '').replace(/\D/g, '');
-  const nacional = dig.length === 12 && dig.startsWith('57') ? dig.slice(2) : dig.length === 10 ? dig : null;
-  if (!nacional || /[a-z]/i.test(tel)) return { texto: tel, href: null };
-  return {
-    texto: `+57 ${nacional.slice(0, 3)} ${nacional.slice(3, 6)} ${nacional.slice(6)}`,
-    href: `tel:+57${nacional}`,
-  };
 }
 
 // Reparte en carriles las franjas que se cruzan en el mismo día, para que

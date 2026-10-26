@@ -696,3 +696,83 @@ body {
 .agenda-franja-btn:hover {
   background-color: rgba(var(--brand-rgb), 0.06);
 }
+
+/* --- CITAS --- */
+/* Tarjeta de cita: hora | cliente | insignias y acción. Por debajo de 480 px
+   las acciones bajan a su propia fila y la dirección puede usar dos líneas. */
+.cita-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.cita-card-derecha {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+.cita-card-ubicacion {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cita-tel {
+  text-decoration: none;
+}
+.cita-tel:hover,
+.cita-tel:focus-visible {
+  text-decoration: underline;
+}
+.cita-btn-cancelar:hover:not(:disabled) {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+}
+
+@media (max-width: 480px) {
+  .cita-card {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.6rem 0.85rem;
+  }
+  .cita-card-derecha {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border-color);
+  }
+  .cita-card-ubicacion {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
+/* Solicitudes de apertura: las acciones se acomodan y en el celular ocupan todo el ancho. */
+.solicitud-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.solicitud-panel-fila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+@media (max-width: 480px) {
+  .solicitud-acciones {
+    width: 100%;
+  }
+  .solicitud-acciones > button,
+  .solicitud-panel-fila > * {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    justify-content: center;
+  }
+}
