@@ -48,7 +48,7 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
   const isLogsAction = resolvedParams.action === 'logs';
 
   // Obtener lista de asesores si es administrador (se usa para creación y filtros)
-  let asesores: any[] = [];
+  let asesores: { id: string; nombre_completo: string; activo?: boolean }[] = [];
   if (isAdmin) {
     const { data } = await supabase
       .from('usuarios')
@@ -69,11 +69,11 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
       .eq('inmobiliaria_id', profile.inmobiliaria_id)
       .not('unidad', 'is', null);
     unidadesExistentes = Array.from(
-      new Set((data || []).map((r: any) => (r.unidad || '').trim()).filter(Boolean))
+      new Set((data || []).map((r: { unidad: string | null }) => (r.unidad || '').trim()).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, 'es'));
   }
 
-  // 1. Renderizar Vista de Registro / Captación de Inmueble a través de n8n
+  // 1. Renderizar Vista de Registro / Captación de Inmueble (se envía al flujo de n8n)
   if (isCaptarAction) {
     return (
       <div style={styles.container} className="animate-fade-in">
@@ -82,9 +82,9 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
             <ArrowLeft size={16} />
             Volver al catálogo
           </Link>
-          <h1 style={styles.title}>Registrar Nuevo Inmueble</h1>
+          <h1 style={styles.title}>Registrar inmueble</h1>
           <p style={styles.subtitle}>
-            Completa la ficha técnica para registrar la propiedad e iniciar el flujo automatizado en n8n.
+            Completa la ficha y sube las fotos para registrar la propiedad.
           </p>
         </header>
 
@@ -116,9 +116,9 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
             <ArrowLeft size={16} />
             Volver al catálogo
           </Link>
-          <h1 style={styles.title}>Auditoría de Captaciones</h1>
+          <h1 style={styles.title}>Historial de registros</h1>
           <p style={styles.subtitle}>
-            Supervisa los disparos del webhook, pesos de imágenes y estados de integración.
+            Cada inmueble registrado desde la plataforma: cuándo se envió, cuántas fotos llevaba y si llegó bien.
           </p>
         </header>
 
@@ -237,15 +237,21 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
 
   const visiblePages = getVisiblePages(page, totalPages);
 
+  // Para el estado vacío: ¿hay algo filtrando? (el orden no cuenta)
+  const busqueda = (resolvedParams.q || '').trim();
+  const hayFiltros = Boolean(
+    busqueda || resolvedParams.tipo || resolvedParams.transaccion || resolvedParams.estado || resolvedParams.asesor
+  );
+
   return (
     <div style={styles.container} className="animate-fade-in">
       <header className="responsive-header">
         <div>
-          <h1 style={styles.title}>Catálogo de Inmuebles</h1>
+          <h1 style={styles.title}>Inmuebles</h1>
           <p style={styles.subtitle}>
             {isAdmin 
-              ? 'Controla y supervisa todos los inmuebles de tu inmobiliaria y sus respectivos asesores asignados.'
-              : 'Administra y lleva el control de tus propiedades e inventarios asociados.'}
+              ? 'Todos los inmuebles de la inmobiliaria y el asesor de cada uno.'
+              : 'Tus inmuebles: fotos, estado e inventarios.'}
           </p>
         </div>
         <div className="responsive-header-buttons">
@@ -256,14 +262,14 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
             </Link>
           )}
           {isAdmin && (
-            <Link href="/inmuebles?action=logs" className="btn btn-secondary" style={styles.syncNavBtn} title="Ver historial de disparos del Webhook">
+            <Link href="/inmuebles?action=logs" className="btn btn-secondary" style={styles.syncNavBtn}>
               <History size={16} />
-              Historial Webhook
+              Historial de registros
             </Link>
           )}
           <Link href="/inmuebles?action=captar" className="btn btn-primary" style={styles.addBtn}>
             <Plus size={18} />
-            Registrar Inmueble
+            Registrar inmueble
           </Link>
         </div>
       </header>
@@ -299,10 +305,26 @@ export default async function InmueblesPage({ searchParams }: InmueblesPageProps
         {!inmuebles || inmuebles.length === 0 ? (
           <div style={styles.emptyState} className="glass-card">
             <Building2 size={48} color="var(--text-muted)" />
-            <p style={{ marginTop: '1rem', fontWeight: 600 }}>No se encontraron inmuebles registrados.</p>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Intenta cambiar los filtros o registra una nueva propiedad presionando el botón superior.
-            </p>
+            {hayFiltros ? (
+              <>
+                <p style={{ marginTop: '1rem', fontWeight: 600 }}>
+                  {busqueda ? <>Nada coincide con «{busqueda}»</> : 'Ningún inmueble coincide con estos filtros'}
+                </p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Prueba con otra palabra o quita algún filtro.
+                </p>
+                <Link href="/inmuebles" className="btn btn-secondary" style={{ ...styles.syncNavBtn, marginTop: '0.75rem' }}>
+                  Limpiar filtros
+                </Link>
+              </>
+            ) : (
+              <>
+                <p style={{ marginTop: '1rem', fontWeight: 600 }}>Aún no hay inmuebles</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Registra el primero con «Registrar inmueble».
+                </p>
+              </>
+            )}
           </div>
         ) : (
           inmuebles.map((inm) => (
@@ -465,7 +487,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyState: {
     gridColumn: '1 / -1',
-    padding: '5rem 2rem',
+    padding: '3.5rem 2rem',
     textAlign: 'center',
     color: 'var(--text-secondary)',
     display: 'flex',

@@ -18,6 +18,7 @@ import UnidadEditor from './UnidadEditor';
 import OfertarControl from './OfertarControl';
 import EmpalmeControl from './EmpalmeControl';
 import PhotosGallery from './PhotosGallery';
+import { estadoChip } from './estado';
 
 interface Asesor {
   id: string;
@@ -25,8 +26,34 @@ interface Asesor {
   activo?: boolean;
 }
 
+// Fila de inmuebles con los joins usuarios / usuarios_override (lo que usa la tarjeta)
+interface FilaInmueble {
+  id: string;
+  titulo: string;
+  direccion: string;
+  precio: number;
+  precio_oferta: number | null;
+  tipo_transaccion: string;
+  tipo_inmueble: string | null;
+  estado: string;
+  estado_erp: string | null;
+  estado_override: string | null;
+  arrendasoft_id: number | null;
+  asesor_id_override: string | null;
+  unidad: string | null;
+  barrio: string | null;
+  ciudad: string | null;
+  habitaciones: number | null;
+  banos: number | null;
+  imagenes: unknown;
+  empalme_contacto_nombre: string | null;
+  empalme_contacto_telefono: string | null;
+  usuarios: { nombre_completo: string } | null;
+  usuarios_override: { nombre_completo: string } | null;
+}
+
 interface InmuebleCardProps {
-  inmueble: any; // fila de inmuebles con joins usuarios / usuarios_override
+  inmueble: FilaInmueble;
   asesores: Asesor[];
   unidadesExistentes: string[];
   isAdmin: boolean;
@@ -42,7 +69,9 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
   // Sanitizar imágenes (mismo criterio que PhotosGallery)
   let fotos: string[] = [];
   if (Array.isArray(inm.imagenes)) {
-    fotos = inm.imagenes.map((img: any) => (typeof img === 'string' ? img : img?.imagen)).filter(Boolean);
+    fotos = inm.imagenes
+      .map((img: unknown) => (typeof img === 'string' ? img : (img as { imagen?: string } | null)?.imagen))
+      .filter((f): f is string => Boolean(f));
   }
   const tieneFoto = fotos.length > 0 && !rotas.has(fotoIdx);
 
@@ -68,18 +97,12 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
   const puntos = () => {
     const MAX = 6;
     if (fotos.length <= MAX) return fotos.map((_, i) => i);
-    let inicio = Math.max(0, Math.min(fotoIdx - 2, fotos.length - MAX));
+    const inicio = Math.max(0, Math.min(fotoIdx - 2, fotos.length - MAX));
     return Array.from({ length: MAX }, (_, k) => inicio + k);
   };
 
   // Chip de estado sobre la foto (colores sólidos, legibles sobre cualquier imagen)
-  const estadoChip = () => {
-    if (inm.estado === 'disponible') return { txt: 'Disponible', bg: '#dcfce7', color: '#166534' };
-    if (inm.estado === 'arrendado') return { txt: 'Arrendado', bg: '#e2e8f0', color: '#334155' };
-    if (inm.estado === 'empalme') return { txt: 'En empalme', bg: '#e0e7ff', color: '#4338ca' };
-    return { txt: inm.estado, bg: '#e2e8f0', color: '#334155' };
-  };
-  const chip = estadoChip();
+  const chip = estadoChip(inm.estado);
 
   // Línea de contexto: unidad · barrio, ciudad · tipo · hab · baños
   const metaPartes: string[] = [];

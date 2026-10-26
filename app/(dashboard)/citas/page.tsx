@@ -1,7 +1,10 @@
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import type { ComponentProps } from 'react';
 import CitasView from './CitasView';
+
+type Props = ComponentProps<typeof CitasView>;
 
 export default async function CitasPage() {
   const user = await getCurrentUser();
@@ -17,9 +20,20 @@ export default async function CitasPage() {
 
   // Fecha de hoy en la zona horaria de Colombia, independiente de la TZ del servidor
   // (en Vercel el servidor corre en UTC y rodaría al día siguiente por la noche).
-  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+  const ahoraDate = new Date();
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(ahoraDate);
+  // Hora actual de Colombia ('HH:MM'): «Marcar realizada» solo sale en visitas que ya empezaron.
+  const horaAhora = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(ahoraDate);
 
-  // Citas agendadas de hoy en adelante.
+  // El asesor también ve las visitas de los últimos 7 días que siguen 'agendada':
+  // son las que quedaron sin marcar como realizadas (salen arriba, en «Sin marcar»).
+  const [y, m, d] = hoy.split('-').map(Number);
+  const haceSieteDias = new Date(Date.UTC(y, m - 1, d - 7)).toISOString().slice(0, 10);
+  const desde = isAdmin ? hoy : haceSieteDias;
+
+  // Citas agendadas de hoy en adelante (el asesor, desde hace 7 días).
   // RLS: el asesor solo recibe las citas de sus franjas; el admin, todas las de su inmobiliaria.
   const { data: citas } = await supabase
     .from('citas')
@@ -44,14 +58,14 @@ export default async function CitasPage() {
       franjas_horarias ( asesor_id, usuarios!franjas_horarias_asesor_id_fkey ( id, nombre_completo ) )
     `)
     .eq('estado', 'agendada')
-    .gte('fecha', hoy)
+    .gte('fecha', desde)
     .order('fecha', { ascending: true })
     .order('hora_inicio', { ascending: true });
 
   // Para admin: lista de asesores de la inmobiliaria para los chips de filtro
-  let asesores: any[] = [];
-  let franjasDisponibles: any[] = [];
-  let solicitudes: any[] = [];
+  let asesores: Props['asesores'] = [];
+  let franjasDisponibles: Props['franjasDisponibles'] = [];
+  let solicitudes: NonNullable<Props['solicitudes']> = [];
   if (isAdmin) {
     // Solicitudes de apertura pendientes (capturadas por el agente vía RPC).
     // El join a inmuebles trae el asesor asignado para preseleccionarlo al aprobar.
@@ -66,7 +80,7 @@ export default async function CitasPage() {
       .eq('estado', 'pendiente')
       .order('fecha', { ascending: true })
       .order('hora_inicio', { ascending: true });
-    solicitudes = dataSolicitudes || [];
+    solicitudes = (dataSolicitudes || []) as unknown as typeof solicitudes;
     const { data: dataAsesores } = await supabase
       .from('usuarios')
       .select('id, nombre_completo')
@@ -89,17 +103,18 @@ export default async function CitasPage() {
       .gte('fecha', hoy)
       .order('fecha', { ascending: true })
       .order('hora_inicio', { ascending: true });
-    franjasDisponibles = dataFranjas || [];
+    franjasDisponibles = (dataFranjas || []) as unknown as typeof franjasDisponibles;
   }
 
   return (
     <CitasView
-      citas={(citas || []) as any[]}
+      citas={(citas || []) as unknown as Props['citas']}
       asesores={asesores}
       franjasDisponibles={franjasDisponibles}
       solicitudes={solicitudes}
       isAdmin={isAdmin}
       hoy={hoy}
+      ahora={`${hoy}T${horaAhora}`}
     />
   );
 }

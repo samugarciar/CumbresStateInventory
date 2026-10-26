@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarCheck, Phone, Building2, User as UserIcon, Bot, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send, AlertTriangle } from 'lucide-react';
+import { CalendarCheck, Phone, Building2, User as UserIcon, Loader2, CalendarX, Plus, CheckCheck, CheckSquare, Square, Send, AlertTriangle, Clock } from 'lucide-react';
 import { cancelarCitaAdmin, confirmarCitas, marcarCitaRealizada } from '@/app/actions/agenda';
 import ModalNuevaCita from './ModalNuevaCita';
-import SolicitudesApertura from './SolicitudesApertura';
+import SolicitudesApertura, { type Solicitud } from './SolicitudesApertura';
+import { telefonoLegible } from './telefono';
 
 interface Cita {
   id: string;
@@ -46,9 +47,10 @@ interface CitasViewProps {
   citas: Cita[];
   asesores: Asesor[];
   franjasDisponibles: FranjaDisponible[];
-  solicitudes?: any[]; // solicitudes de apertura pendientes (solo admin)
+  solicitudes?: Solicitud[]; // solicitudes de apertura pendientes (solo admin)
   isAdmin: boolean;
   hoy: string; // 'YYYY-MM-DD' en la zona horaria de Colombia
+  ahora: string; // 'YYYY-MM-DDTHH:MM' en la zona horaria de Colombia (al cargar)
 }
 
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -70,6 +72,34 @@ function etiquetaDia(fechaStr: string, hoy: string): { rel: string | null; resto
   return { rel: null, resto: base.charAt(0).toUpperCase() + base.slice(1) };
 }
 
+// «hoy lunes 26», «ayer domingo 25» o «el sábado 24 de octubre», para preguntar
+// por una visita sin que haya duda de cuál es.
+function cuandoFue(fechaStr: string, hoy: string): string {
+  const [y, m, d] = fechaStr.split('-').map(Number);
+  const dia = DIAS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  if (fechaStr === hoy) return `de hoy ${dia} ${d}`;
+  if (fechaStr === sumarDias(hoy, -1)) return `de ayer ${dia} ${d}`;
+  return `del ${dia} ${d} de ${MESES[m - 1]}`;
+}
+
+// Fecha corta para las visitas de «Sin marcar», que mezclan varios días.
+function fechaCorta(fechaStr: string): string {
+  const [y, m, d] = fechaStr.split('-').map(Number);
+  const dia = DIAS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()].slice(0, 3);
+  return `${dia} ${d} ${MESES[m - 1].slice(0, 3)}`;
+}
+
+// Hora actual de Colombia como 'YYYY-MM-DDTHH:MM' (se compara como texto).
+function ahoraColombia(): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date()).map(x => [x.type, x.value])
+  );
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 // Texto de ubicación de una cita. Si es a nivel unidad → "Mi Mundo · 3 aptos";
 // si es a un apto puntual → unidad · dirección (o dirección/título como fallback).
 function textoUbicacion(c: Cita): string {
@@ -85,7 +115,7 @@ function textoUbicacion(c: Cita): string {
     : (c.inmuebles.direccion || c.inmuebles.titulo);
 }
 
-export default function CitasView({ citas, asesores, franjasDisponibles, solicitudes = [], isAdmin, hoy }: CitasViewProps) {
+export default function CitasView({ citas, asesores, franjasDisponibles, solicitudes = [], isAdmin, hoy, ahora: ahoraInicial }: CitasViewProps) {
   const router = useRouter();
   const [filtroAsesor, setFiltroAsesor] = useState<string>('todos');
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
@@ -95,6 +125,13 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
   const [seleccionando, setSeleccionando] = useState(false);
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
   const [confirmando, setConfirmando] = useState(false);
+  // Hora de Colombia; arranca con la del servidor y se pone al día cada minuto,
+  // para que «Marcar realizada» aparezca cuando empieza la visita.
+  const [ahora, setAhora] = useState(ahoraInicial);
+  useEffect(() => {
+    const id = setInterval(() => setAhora(ahoraColombia()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Filtro por asesor (solo admin)
   const citasFiltradas = useMemo(() => {
@@ -102,15 +139,22 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
     return citas.filter(c => c.franjas_horarias?.asesor_id === filtroAsesor);
   }, [citas, isAdmin, filtroAsesor]);
 
+  // Visitas de días anteriores que siguen 'agendada' (solo le llegan al asesor):
+  // van arriba, en «Sin marcar», para que no se pierdan.
+  const sinMarcar = useMemo(() => citasFiltradas.filter(c => c.fecha < hoy), [citasFiltradas, hoy]);
+  const proximas = useMemo(() => citasFiltradas.filter(c => c.fecha >= hoy), [citasFiltradas, hoy]);
+
   // Agrupadas por fecha (ya vienen ordenadas por fecha y hora desde el servidor)
   const grupos = useMemo(() => {
     const map = new Map<string, Cita[]>();
-    for (const c of citasFiltradas) {
+    for (const c of proximas) {
       if (!map.has(c.fecha)) map.set(c.fecha, []);
       map.get(c.fecha)!.push(c);
     }
     return Array.from(map.entries());
-  }, [citasFiltradas]);
+  }, [proximas]);
+
+  const yaEmpezo = (c: Cita) => `${c.fecha}T${c.hora_inicio.substring(0, 5)}` <= ahora;
 
   const cancelar = async (cita: Cita) => {
     if (!confirm(`¿Cancelar la cita de ${cita.cliente_nombre} (${cita.hora_inicio.substring(0, 5)})?`)) return;
@@ -126,7 +170,8 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
 
   // Solo asesores: marca una de sus visitas como realizada (sale de la lista).
   const marcarRealizada = async (cita: Cita) => {
-    if (!confirm(`¿Marcar como realizada la visita de ${cita.cliente_nombre} (${cita.hora_inicio.substring(0, 5)})?`)) return;
+    const hora = cita.hora_inicio.substring(0, 5);
+    if (!confirm(`¿La visita ${cuandoFue(cita.fecha, hoy)} a las ${hora} con ${cita.cliente_nombre} ya se hizo?`)) return;
     setRealizandoId(cita.id);
     const result = await marcarCitaRealizada(cita.id);
     setRealizandoId(null);
@@ -183,7 +228,147 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
     }
   };
 
-  const totalCitas = citasFiltradas.length;
+  const totalCitas = proximas.length;
+
+  // Una tarjeta de cita. En «Sin marcar» lleva además la fecha, porque mezcla días.
+  const tarjeta = (c: Cita, { conFecha = false }: { conFecha?: boolean } = {}) => {
+    const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo;
+    const estaSeleccionada = seleccionadas.has(c.id);
+    // El último intento falló y no hubo una confirmación después.
+    // En una visita de un día anterior («Sin marcar») ya no hay nada que confirmar:
+    // el aviso «Confírmala a mano» solo confundiría.
+    const noConfirmada = c.fecha >= hoy && Boolean(
+      c.confirmacion_fallida_at &&
+        (!c.confirmada_at || c.confirmacion_fallida_at > c.confirmada_at)
+    );
+    const tel = telefonoLegible(c.cliente_telefono);
+    const ubicacion = (c.alcance === 'unidad' || c.inmuebles) ? textoUbicacion(c) : '';
+    const hayInsignias = noConfirmada || Boolean(c.confirmada_at) || (isAdmin && Boolean(asesorNombre));
+    return (
+      <div
+        key={c.id}
+        className="glass-card cita-card"
+        style={{
+          ...styles.citaCard,
+          ...(seleccionando ? { cursor: 'pointer' } : {}),
+          ...(seleccionando && estaSeleccionada ? styles.citaCardSel : {}),
+        }}
+        onClick={seleccionando ? () => toggleCita(c.id) : undefined}
+      >
+        {seleccionando && (
+          <div style={styles.checkboxWrap}>
+            {estaSeleccionada
+              ? <CheckSquare size={20} color="var(--primary)" />
+              : <Square size={20} color="var(--text-muted)" />}
+          </div>
+        )}
+        {/* Hora */}
+        <div style={styles.horaBlock}>
+          {conFecha && <span style={styles.fechaMini}>{fechaCorta(c.fecha)}</span>}
+          <span style={styles.horaInicio}>{c.hora_inicio.substring(0, 5)}</span>
+          <span style={styles.horaFin}>{c.hora_fin.substring(0, 5)}</span>
+        </div>
+
+        {/* Cliente, teléfono, inmueble y avisos */}
+        <div style={styles.centro}>
+          <div style={styles.cliente}>{c.cliente_nombre}</div>
+          {tel.href ? (
+            <a
+              href={tel.href}
+              className="cita-tel"
+              style={styles.telefono}
+              onClick={e => e.stopPropagation()}
+              aria-label={`Llamar a ${c.cliente_nombre}: ${tel.texto}`}
+            >
+              <Phone size={13} style={{ flexShrink: 0 }} />
+              {tel.texto}
+            </a>
+          ) : tel.texto ? (
+            <div style={styles.detalleLinea}>
+              <Phone size={13} style={{ flexShrink: 0 }} />
+              <span>{tel.texto}</span>
+            </div>
+          ) : null}
+          {ubicacion && (
+            <div style={styles.detalleLinea}>
+              <Building2 size={13} style={{ flexShrink: 0 }} />
+              <span className="cita-card-ubicacion">{ubicacion}</span>
+              {c.alcance === 'unidad' && (
+                <span style={styles.unidadBadge}>Unidad</span>
+              )}
+            </div>
+          )}
+          {noConfirmada && (
+            <div style={styles.motivoNoConfirmada}>
+              No se pudo confirmar: {c.confirmacion_error ?? 'motivo desconocido'}. Confírmala a mano.
+            </div>
+          )}
+          {c.origen === 'n8n' && (
+            <div style={styles.origenTxt}>Agendada por el bot</div>
+          )}
+        </div>
+
+        {/* Insignias en una fila + acción */}
+        <div className="cita-card-derecha">
+          {hayInsignias && (
+            <div style={styles.insignias}>
+              {noConfirmada ? (
+                <span style={styles.noConfirmadaBadge}>
+                  <AlertTriangle size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
+                  No confirmada
+                </span>
+              ) : c.confirmada_at && (
+                <span
+                  style={styles.confirmadaBadge}
+                  title={`Confirmada en Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
+                >
+                  <CheckCheck size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
+                  Confirmada
+                </span>
+              )}
+              {isAdmin && asesorNombre && (
+                <span style={styles.asesorBadge}>
+                  <UserIcon size={12} style={{ marginRight: 3, verticalAlign: '-1px' }} />
+                  {asesorNombre.split(' ')[0]}
+                </span>
+              )}
+            </div>
+          )}
+          {isAdmin && !seleccionando && (
+            <button
+              type="button"
+              onClick={() => cancelar(c)}
+              disabled={cancelandoId === c.id}
+              className="cita-btn-cancelar"
+              style={styles.cancelarBtn}
+            >
+              {cancelandoId === c.id
+                ? <Loader2 size={13} className="animate-spin" />
+                : 'Cancelar'}
+            </button>
+          )}
+          {!isAdmin && (yaEmpezo(c) ? (
+            <button
+              type="button"
+              onClick={() => marcarRealizada(c)}
+              disabled={realizandoId === c.id}
+              className="btn btn-primary"
+              style={styles.realizadaBtn}
+            >
+              {realizandoId === c.id
+                ? <Loader2 size={13} className="animate-spin" />
+                : <><CalendarCheck size={14} />Marcar realizada</>}
+            </button>
+          ) : (
+            <span style={styles.despuesTxt}>
+              <Clock size={13} />
+              Después de la visita
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{ maxWidth: '100%' }}>
@@ -197,36 +382,31 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
           <p style={styles.pageSubtitle}>
             {isAdmin
               ? 'Visitas agendadas de todos los asesores, de hoy en adelante'
-              : 'Tus visitas agendadas, de hoy en adelante'}
+              : 'Tus visitas agendadas, de hoy en adelante. Cuando termines una, márcala como realizada.'}
           </p>
         </div>
-        <div className="responsive-header-buttons">
-          {isAdmin && seleccionando && (
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
-              Marca las citas que quieres confirmar
-            </span>
-          )}
-          {isAdmin && !seleccionando && (
-            <>
-              {totalCitas > 0 && (
-                <button className="btn btn-secondary" onClick={() => setSeleccionando(true)}>
-                  <CheckCheck size={18} />
-                  Confirmar citas
+        {isAdmin && (
+          <div className="responsive-header-buttons">
+            {seleccionando ? (
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
+                Marca las citas que quieres confirmar
+              </span>
+            ) : (
+              <>
+                {totalCitas > 0 && (
+                  <button className="btn btn-secondary" onClick={() => setSeleccionando(true)}>
+                    <CheckCheck size={18} />
+                    Confirmar citas
+                  </button>
+                )}
+                <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+                  <Plus size={18} />
+                  Nueva cita
                 </button>
-              )}
-              <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
-                <Plus size={18} />
-                Nueva cita
-              </button>
-            </>
-          )}
-          {!isAdmin && (
-            <span className="badge badge-info" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}>
-              <CalendarCheck size={14} style={{ marginRight: 4 }} />
-              Marca cada visita como realizada al terminarla
-            </span>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Solicitudes de apertura pendientes (solo admin) */}
@@ -237,9 +417,10 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
       {/* Filtro por asesor (solo admin) */}
       {isAdmin && asesores.length > 0 && (
         <div style={styles.controlsBar} className="glass-card">
-          <div style={styles.filtroAsesor}>
+          <div style={styles.filtroAsesor} role="group" aria-label="Filtrar por asesor">
             <button
               onClick={() => setFiltroAsesor('todos')}
+              aria-pressed={filtroAsesor === 'todos'}
               style={{
                 ...styles.filtroBtn,
                 backgroundColor: filtroAsesor === 'todos' ? 'var(--primary)' : 'transparent',
@@ -252,6 +433,7 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
               <button
                 key={a.id}
                 onClick={() => setFiltroAsesor(a.id)}
+                aria-pressed={filtroAsesor === a.id}
                 style={{
                   ...styles.filtroBtn,
                   backgroundColor: filtroAsesor === a.id ? 'var(--primary)' : 'transparent',
@@ -268,11 +450,25 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
         </div>
       )}
 
+      {/* Sin marcar: visitas de días anteriores que siguen pendientes (asesor) */}
+      {sinMarcar.length > 0 && (
+        <section style={{ marginBottom: '1.75rem' }} aria-label="Visitas sin marcar">
+          <div style={styles.diaHeader}>
+            <span style={styles.sinMarcarTitulo}>Sin marcar</span>
+            <span style={styles.diaCount}>{sinMarcar.length}</span>
+          </div>
+          <p style={styles.sinMarcarAyuda}>
+            Visitas de días anteriores que siguen pendientes. Si ya se hicieron, márcalas.
+          </p>
+          {sinMarcar.map(c => tarjeta(c, { conFecha: true }))}
+        </section>
+      )}
+
       {/* Lista de citas agrupada por día */}
       {totalCitas === 0 ? (
         <div className="glass-card" style={styles.emptyState}>
           <CalendarX size={42} color="var(--text-muted)" style={{ margin: '0 auto 0.75rem' }} />
-          <p style={{ fontWeight: '600', color: 'var(--text-secondary)', margin: 0 }}>
+          <p style={{ fontWeight: 600, color: 'var(--text-secondary)', margin: 0 }}>
             {isAdmin ? 'No hay citas próximas' : 'No tienes citas próximas'}
           </p>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
@@ -283,128 +479,14 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
         grupos.map(([fecha, citasDia]) => {
           const { rel, resto } = etiquetaDia(fecha, hoy);
           return (
-            <div key={fecha} style={{ marginBottom: '1.5rem' }}>
+            <section key={fecha} style={{ marginBottom: '1.5rem' }}>
               <div style={styles.diaHeader}>
                 {rel && <span style={styles.diaRel}>{rel}</span>}
                 <span style={styles.diaResto}>{resto}</span>
                 <span style={styles.diaCount}>{citasDia.length}</span>
               </div>
-
-              {citasDia.map(c => {
-                const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo;
-                const estaSeleccionada = seleccionadas.has(c.id);
-                // El último intento falló y no hubo una confirmación después.
-                const noConfirmada = Boolean(
-                  c.confirmacion_fallida_at &&
-                    (!c.confirmada_at || c.confirmacion_fallida_at > c.confirmada_at)
-                );
-                return (
-                  <div
-                    key={c.id}
-                    className="glass-card"
-                    style={{
-                      ...styles.citaCard,
-                      ...(seleccionando ? { cursor: 'pointer' } : {}),
-                      ...(seleccionando && estaSeleccionada ? styles.citaCardSel : {}),
-                    }}
-                    onClick={seleccionando ? () => toggleCita(c.id) : undefined}
-                  >
-                    {seleccionando && (
-                      <div style={styles.checkboxWrap}>
-                        {estaSeleccionada
-                          ? <CheckSquare size={20} color="var(--primary)" />
-                          : <Square size={20} color="var(--text-muted)" />}
-                      </div>
-                    )}
-                    {/* Hora */}
-                    <div style={styles.horaBlock}>
-                      <span style={styles.horaInicio}>{c.hora_inicio.substring(0, 5)}</span>
-                      <span style={styles.horaFin}>{c.hora_fin.substring(0, 5)}</span>
-                    </div>
-
-                    {/* Cliente + inmueble */}
-                    <div style={styles.centro}>
-                      <div style={styles.cliente}>{c.cliente_nombre}</div>
-                      <div style={styles.detalleLinea}>
-                        <Phone size={13} style={{ flexShrink: 0 }} />
-                        <span>{c.cliente_telefono}</span>
-                      </div>
-                      {(c.alcance === 'unidad' || c.inmuebles) && (
-                        <div style={styles.detalleLinea}>
-                          <Building2 size={13} style={{ flexShrink: 0 }} />
-                          <span style={styles.inmuebleTxt}>{textoUbicacion(c)}</span>
-                          {c.alcance === 'unidad' && (
-                            <span style={styles.unidadBadge}>Unidad</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Badges + acción */}
-                    <div style={styles.derecha}>
-                      {noConfirmada ? (
-                        <span
-                          style={styles.noConfirmadaBadge}
-                          title={`No se pudo confirmar: ${c.confirmacion_error ?? 'motivo desconocido'}. Confírmala a mano.`}
-                        >
-                          <AlertTriangle size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
-                          No confirmada
-                        </span>
-                      ) : c.confirmada_at && (
-                        <span
-                          style={styles.confirmadaBadge}
-                          title={`Confirmada en Kommo el ${new Date(c.confirmada_at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
-                        >
-                          <CheckCheck size={12} style={{ marginRight: 3, verticalAlign: '-2px' }} />
-                          Confirmada
-                        </span>
-                      )}
-                      {isAdmin && asesorNombre && (
-                        <span style={styles.asesorBadge}>
-                          <UserIcon size={12} style={{ marginRight: 3, verticalAlign: '-1px' }} />
-                          {asesorNombre.split(' ')[0]}
-                        </span>
-                      )}
-                      {c.origen === 'n8n' ? (
-                        <span className="badge badge-info" style={styles.origenBadge}>
-                          <Bot size={12} style={{ marginRight: 3, verticalAlign: '-1px' }} />
-                          Agente
-                        </span>
-                      ) : (
-                        <span style={styles.manualBadge}>Manual</span>
-                      )}
-                      {isAdmin && !seleccionando && (
-                        <button
-                          type="button"
-                          onClick={() => cancelar(c)}
-                          disabled={cancelandoId === c.id}
-                          className="btn btn-danger"
-                          style={styles.cancelarBtn}
-                        >
-                          {cancelandoId === c.id
-                            ? <Loader2 size={13} className="animate-spin" />
-                            : 'Cancelar'}
-                        </button>
-                      )}
-                      {!isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => marcarRealizada(c)}
-                          disabled={realizandoId === c.id}
-                          className="btn btn-primary"
-                          style={styles.cancelarBtn}
-                          title="Marcar esta visita como realizada satisfactoriamente"
-                        >
-                          {realizandoId === c.id
-                            ? <Loader2 size={13} className="animate-spin" />
-                            : <><CalendarCheck size={13} style={{ marginRight: 4, verticalAlign: '-2px' }} />Marcar realizada</>}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              {citasDia.map(c => tarjeta(c))}
+            </section>
           );
         })
       )}
@@ -448,7 +530,7 @@ export default function CitasView({ citas, asesores, franjasDisponibles, solicit
 const styles: Record<string, React.CSSProperties> = {
   pageTitle: {
     fontSize: '1.65rem',
-    fontWeight: '800',
+    fontWeight: 800,
     color: 'var(--text-primary)',
     display: 'flex',
     alignItems: 'center',
@@ -477,8 +559,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   filtroBtn: {
     padding: '0.35rem 0.75rem',
-    fontSize: '0.78rem',
-    fontWeight: '600',
+    fontSize: '0.8rem',
+    fontWeight: 600,
     borderRadius: '20px',
     border: '1px solid var(--border-color)',
     cursor: 'pointer',
@@ -487,7 +569,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   contador: {
     fontSize: '0.8rem',
-    fontWeight: '600',
+    fontWeight: 600,
     color: 'var(--text-muted)',
   },
   emptyState: {
@@ -502,28 +584,35 @@ const styles: Record<string, React.CSSProperties> = {
     paddingLeft: '0.15rem',
   },
   diaRel: {
-    fontSize: '0.82rem',
-    fontWeight: '700',
+    fontSize: '0.85rem',
+    fontWeight: 700,
     color: 'var(--primary)',
   },
   diaResto: {
-    fontSize: '0.82rem',
-    fontWeight: '600',
+    fontSize: '0.85rem',
+    fontWeight: 600,
     color: 'var(--text-secondary)',
   },
   diaCount: {
-    fontSize: '0.72rem',
-    fontWeight: '600',
+    fontSize: '0.75rem',
+    fontWeight: 600,
     color: 'var(--text-muted)',
-    backgroundColor: 'var(--bg-secondary)',
+    backgroundColor: 'var(--bg-surface-elevated)',
     border: '1px solid var(--border-color)',
     borderRadius: '10px',
     padding: '0.05rem 0.5rem',
   },
+  sinMarcarTitulo: {
+    fontSize: '0.85rem',
+    fontWeight: 700,
+    color: 'var(--warning)',
+  },
+  sinMarcarAyuda: {
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
+    margin: '-0.35rem 0 0.65rem 0.15rem',
+  },
   citaCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
     padding: '0.85rem 1rem',
     marginBottom: '0.6rem',
     borderRadius: 'var(--border-radius-md)',
@@ -556,7 +645,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   barraTexto: {
     fontSize: '0.85rem',
-    fontWeight: '600',
+    fontWeight: 600,
     color: 'var(--text-primary)',
   },
   horaBlock: {
@@ -566,9 +655,15 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: '48px',
     flexShrink: 0,
   },
+  fechaMini: {
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: 'var(--warning)',
+    whiteSpace: 'nowrap' as const,
+  },
   horaInicio: {
     fontSize: '0.95rem',
-    fontWeight: '700',
+    fontWeight: 700,
     color: 'var(--primary)',
     lineHeight: 1.1,
   },
@@ -585,56 +680,56 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cliente: {
     fontSize: '0.95rem',
-    fontWeight: '600',
+    fontWeight: 600,
     color: 'var(--text-primary)',
+  },
+  telefono: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    alignSelf: 'flex-start',
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    color: 'var(--primary)',
+    padding: '0.1rem 0',
   },
   detalleLinea: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.35rem',
-    fontSize: '0.78rem',
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
+    minWidth: 0,
+  },
+  motivoNoConfirmada: {
+    fontSize: '0.75rem',
+    fontWeight: 600,
+    color: 'var(--danger)',
+    marginTop: '0.1rem',
+  },
+  origenTxt: {
+    fontSize: '0.75rem',
     color: 'var(--text-muted)',
   },
-  inmuebleTxt: {
-    overflow: 'hidden' as const,
-    textOverflow: 'ellipsis' as const,
-    whiteSpace: 'nowrap' as const,
-  },
-  derecha: {
+  insignias: {
     display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'flex-end',
-    gap: '0.35rem',
-    flexShrink: 0,
+    flexWrap: 'wrap' as const,
+    gap: '0.3rem',
+    justifyContent: 'flex-end',
   },
   asesorBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '600',
+    fontSize: '0.75rem',
+    fontWeight: 600,
     color: 'var(--text-secondary)',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '12px',
-    padding: '0.1rem 0.55rem',
-    whiteSpace: 'nowrap' as const,
-  },
-  origenBadge: {
-    fontSize: '0.7rem',
-    padding: '0.1rem 0.55rem',
-    whiteSpace: 'nowrap' as const,
-  },
-  manualBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '600',
-    color: 'var(--text-muted)',
-    backgroundColor: 'var(--bg-secondary)',
+    backgroundColor: 'var(--bg-surface-elevated)',
     border: '1px solid var(--border-color)',
     borderRadius: '12px',
     padding: '0.1rem 0.55rem',
     whiteSpace: 'nowrap' as const,
   },
   unidadBadge: {
-    fontSize: '0.62rem',
-    fontWeight: '700',
+    fontSize: '0.7rem',
+    fontWeight: 700,
     color: 'var(--primary)',
     backgroundColor: 'rgba(0, 171, 216, 0.1)',
     borderRadius: '8px',
@@ -644,8 +739,8 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase' as const,
   },
   confirmadaBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '700',
+    fontSize: '0.75rem',
+    fontWeight: 700,
     color: 'var(--success)',
     backgroundColor: 'rgba(34, 197, 94, 0.1)',
     border: '1px solid rgba(34, 197, 94, 0.35)',
@@ -654,20 +749,43 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
   noConfirmadaBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '700',
+    fontSize: '0.75rem',
+    fontWeight: 700,
     color: 'var(--danger)',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     border: '1px solid rgba(239, 68, 68, 0.35)',
     borderRadius: '12px',
     padding: '0.1rem 0.55rem',
     whiteSpace: 'nowrap' as const,
-    cursor: 'help',
   },
+  // Secundario: texto rojo, sin relleno.
   cancelarBtn: {
-    padding: '0.25rem 0.6rem',
-    fontSize: '0.72rem',
-    minWidth: '70px',
+    background: 'none',
+    border: '1px solid rgba(185, 28, 28, 0.28)',
+    color: 'var(--danger)',
+    borderRadius: '8px',
+    padding: '0.35rem 0.8rem',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    minWidth: '84px',
+    minHeight: '32px',
+    display: 'inline-flex',
+    alignItems: 'center',
     justifyContent: 'center',
+  },
+  realizadaBtn: {
+    padding: '0.4rem 0.8rem',
+    fontSize: '0.8rem',
+    gap: '0.35rem',
+    minHeight: '34px',
+  },
+  despuesTxt: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
+    whiteSpace: 'nowrap' as const,
   },
 };

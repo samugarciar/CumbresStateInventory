@@ -112,7 +112,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
   });
 
   function initializeSectionItems(itemsArray: string[]) {
-    const obj: Record<string, any> = {};
+    const obj: Record<string, { estado: "B" | "R" | "M" | null; obs: string }> = {};
     itemsArray.forEach(item => {
       obj[item] = { estado: null, obs: '' };
     });
@@ -374,7 +374,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
               <input 
                 type="text" 
                 placeholder="Buscar por código Arrendasoft, título o dirección..." 
-                className="form-control"
+                className="form-input"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.95rem' }}
@@ -755,7 +755,7 @@ export default function FormRegisterInventario({ inmuebles, defaultInmuebleId }:
             onClick={() => marcarTodosComoBueno(seccionKey)}
             style={styles.quickSelectBtn}
           >
-            <span className="desktop-only">Marcar todo "Bueno (B)"</span>
+            <span className="desktop-only">Marcar todo «Bueno (B)»</span>
             <span className="mobile-only">Marcar todo como Bueno (B)</span>
           </button>
         </div>

@@ -107,7 +107,7 @@ export default function StateSelector({ inmuebleId, currentEstado }: StateSelect
             
             <p style={styles.modalText}>
               ¿Estás seguro de que deseas marcar este inmueble como <strong>Inactivo</strong>?<br /><br />
-              Esta acción se sincronizará con <strong>Arrendasoft ERP</strong> y **ocultará la propiedad de forma inmediata** de los catálogos y búsquedas activas.
+              Esta acción se sincronizará con <strong>Arrendasoft ERP</strong> y <strong>ocultará la propiedad de inmediato</strong> de los catálogos y las búsquedas.
             </p>
 
             <div style={styles.modalButtons}>
