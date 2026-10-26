@@ -7,13 +7,13 @@ import {
   ClipboardList, 
   Users, 
   Plus, 
-  TrendingUp,
   ArrowRight,
   ShieldCheck,
   MapPin,
   Tag
 } from 'lucide-react';
 import AdminApprovalWidget from './AdminApprovalWidget';
+import { estadoChip } from '../inmuebles/estado';
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -196,52 +196,49 @@ export default async function DashboardPage() {
             Bienvenido al panel de control de <strong>{inmobiliaria?.nombre}</strong>.
           </p>
         </div>
-        <div style={styles.dateBadge}>
-          <TrendingUp size={16} color="var(--primary)" />
-          <span>Productividad Activa</span>
-        </div>
       </header>
 
       {/* Grid de KPIs */}
-      <section style={styles.statsGrid}>
-        <div className="glass-card" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(0, 171, 216, 0.1)' }}>
+      {/* Cifras: en el celular van en una sola fila compacta (ver .inicio-cifras) */}
+      <section className="inicio-cifras">
+        <div className="glass-card inicio-cifra">
+          <div className="inicio-cifra-icono" style={{ ...styles.iconContainer, backgroundColor: 'rgba(0, 171, 216, 0.1)' }}>
             <Building2 size={24} color="var(--primary)" />
           </div>
-          <div style={styles.statInfo}>
-            <span style={styles.statLabel}>Inmuebles Totales</span>
-            <span style={styles.statValue}>{totalInmuebles}</span>
+          <div className="inicio-cifra-info">
+            <span className="inicio-cifra-etiqueta">Inmuebles</span>
+            <span className="inicio-cifra-valor">{totalInmuebles}</span>
           </div>
         </div>
 
-        <div className="glass-card" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
-            <Building2 size={24} color="var(--info)" />
+        <div className="glass-card inicio-cifra">
+          <div className="inicio-cifra-icono" style={{ ...styles.iconContainer, backgroundColor: 'rgba(22, 163, 74, 0.1)' }}>
+            <Building2 size={24} color="var(--success)" />
           </div>
-          <div style={styles.statInfo}>
-            <span style={styles.statLabel}>Disponibles</span>
-            <span style={styles.statValue}>{disponiblesInmuebles}</span>
+          <div className="inicio-cifra-info">
+            <span className="inicio-cifra-etiqueta">Disponibles</span>
+            <span className="inicio-cifra-valor">{disponiblesInmuebles}</span>
           </div>
         </div>
 
-        <div className="glass-card" style={styles.statCard}>
-          <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+        <div className="glass-card inicio-cifra">
+          <div className="inicio-cifra-icono" style={{ ...styles.iconContainer, backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
             <ClipboardList size={24} color="var(--secondary)" />
           </div>
-          <div style={styles.statInfo}>
-            <span style={styles.statLabel}>Inventarios Firmados</span>
-            <span style={styles.statValue}>{totalInventarios}</span>
+          <div className="inicio-cifra-info">
+            <span className="inicio-cifra-etiqueta">Inventarios firmados</span>
+            <span className="inicio-cifra-valor">{totalInventarios}</span>
           </div>
         </div>
 
         {isAdmin && (
-          <div className="glass-card" style={styles.statCard}>
-            <div style={{ ...styles.iconContainer, backgroundColor: 'rgba(245, 158, 11, 0.1)' }}>
+          <div className="glass-card inicio-cifra">
+            <div className="inicio-cifra-icono" style={{ ...styles.iconContainer, backgroundColor: 'rgba(245, 158, 11, 0.1)' }}>
               <Users size={24} color="var(--warning)" />
             </div>
-            <div style={styles.statInfo}>
-              <span style={styles.statLabel}>Asesores Comerciales</span>
-              <span style={styles.statValue}>{totalAsesores}</span>
+            <div className="inicio-cifra-info">
+              <span className="inicio-cifra-etiqueta">Asesores</span>
+              <span className="inicio-cifra-valor">{totalAsesores}</span>
             </div>
           </div>
         )}
@@ -255,14 +252,14 @@ export default async function DashboardPage() {
       <div className="dashboard-content-grid">
         {/* Columna Izquierda: Accesos Rápidos */}
         <section style={styles.columnLeft}>
-          <h2 style={styles.sectionTitle}>Accesos Rápidos</h2>
+          <h2 style={styles.sectionTitle}>Accesos rápidos</h2>
           <div style={styles.actionsGrid}>
             <Link href="/inmuebles?action=captar" style={styles.actionCard} className="glass-card">
               <div style={styles.actionHeader}>
                 <Building2 size={20} color="var(--primary)" />
                 <Plus size={16} color="var(--primary)" />
               </div>
-              <h3 style={styles.actionTitle}>Registrar Inmueble</h3>
+              <h3 style={styles.actionTitle}>Registrar inmueble</h3>
               <p style={styles.actionDesc}>Publica una nueva propiedad en la base de datos de la empresa.</p>
             </Link>
 
@@ -271,7 +268,7 @@ export default async function DashboardPage() {
                 <ClipboardList size={20} color="var(--secondary)" />
                 <Plus size={16} color="var(--secondary)" />
               </div>
-              <h3 style={styles.actionTitle}>Hacer Inventario</h3>
+              <h3 style={styles.actionTitle}>Hacer inventario</h3>
               <p style={styles.actionDesc}>Crea un nuevo formato de entrega para un inmueble asignado.</p>
             </Link>
 
@@ -281,7 +278,7 @@ export default async function DashboardPage() {
                   <Users size={20} color="var(--warning)" />
                   <Plus size={16} color="var(--warning)" />
                 </div>
-                <h3 style={styles.actionTitle}>Agregar Asesor</h3>
+                <h3 style={styles.actionTitle}>Agregar asesor</h3>
                 <p style={styles.actionDesc}>Registra a un nuevo asesor comercial dentro de tu inmobiliaria.</p>
               </Link>
             )}
@@ -291,7 +288,7 @@ export default async function DashboardPage() {
         {/* Columna Derecha: Inmuebles Recientes */}
         <section style={styles.columnRight}>
           <div style={styles.sectionHeaderFlex}>
-            <h2 style={styles.sectionTitle}>Inmuebles Recientes</h2>
+            <h2 style={styles.sectionTitle}>Inmuebles recientes</h2>
             <Link href="/inmuebles" style={styles.viewAllLink} className="enlace-accion">
               Ver todos <ArrowRight size={14} />
             </Link>
@@ -337,14 +334,15 @@ export default async function DashboardPage() {
                     )}
                   </div>
                   <div>
-                    <span 
-                      className={`badge badge-${
-                        inm.estado === 'disponible' ? 'success' : 
-                        inm.estado === 'reservado' ? 'warning' : 'danger'
-                      }`}
-                    >
-                      {inm.estado}
-                    </span>
+                    {(() => {
+                      // Mismos colores que la tarjeta del catálogo (antes «arrendado» salía en rojo)
+                      const chip = estadoChip(inm.estado);
+                      return (
+                        <span style={{ ...styles.estadoChip, backgroundColor: chip.bg, color: chip.color }}>
+                          {chip.txt}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               ))
@@ -355,7 +353,7 @@ export default async function DashboardPage() {
           {!isAdmin && captacionesPendientes.length > 0 && (
             <div style={{ marginTop: '2.5rem' }} className="animate-fade-in">
               <h2 style={{ ...styles.sectionTitle, marginBottom: '1.25rem' }}>
-                Mis Captaciones en Proceso
+                Mis captaciones en proceso
               </h2>
               <div style={styles.recentList}>
                 {captacionesPendientes.map((capt) => (
@@ -415,29 +413,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '1rem',
     color: 'var(--text-secondary)',
   },
-  dateBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    backgroundColor: 'rgba(0, 171, 216, 0.08)',
-    border: '1px solid rgba(0, 171, 216, 0.2)',
-    padding: '0.5rem 1rem',
-    borderRadius: '50px',
-    fontSize: '0.85rem',
-    fontWeight: '600',
-    color: 'var(--primary)',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: '1.5rem',
-  },
-  statCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1.25rem',
-    padding: '1.5rem',
-  },
   iconContainer: {
     width: '48px',
     height: '48px',
@@ -446,20 +421,14 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.15rem',
-  },
-  statLabel: {
-    fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
-    fontWeight: '500',
-  },
-  statValue: {
-    fontSize: '1.75rem',
-    fontWeight: '800',
-    color: 'var(--text-primary)',
+  estadoChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '0.2rem 0.65rem',
+    borderRadius: '50px',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
   },
   contentGrid: {
     display: 'grid',

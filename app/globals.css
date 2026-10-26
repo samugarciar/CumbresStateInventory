@@ -846,3 +846,59 @@ a:focus-visible {
   color: var(--text-primary) !important;
   background-color: var(--bg-surface-elevated) !important;
 }
+
+/* --- INICIO: cifras --- */
+.inicio-cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+.inicio-cifra {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 1.25rem 1.4rem !important;
+}
+.inicio-cifra-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.inicio-cifra-etiqueta {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.inicio-cifra-valor {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+/* En el celular: una sola fila compacta, la cifra arriba y la etiqueta abajo. */
+@media (max-width: 767px) {
+  .inicio-cifras {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+  .inicio-cifra {
+    padding: 0.7rem 0.75rem !important;
+  }
+  .inicio-cifra-icono {
+    display: none !important;
+  }
+  .inicio-cifra-info {
+    flex-direction: column-reverse;
+    gap: 0.1rem;
+  }
+  .inicio-cifra-valor {
+    font-size: 1.35rem;
+  }
+  .inicio-cifra-etiqueta {
+    font-size: 0.75rem;
+    line-height: 1.2;
+  }
+}

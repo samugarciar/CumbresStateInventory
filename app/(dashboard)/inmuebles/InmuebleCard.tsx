@@ -18,6 +18,7 @@ import UnidadEditor from './UnidadEditor';
 import OfertarControl from './OfertarControl';
 import EmpalmeControl from './EmpalmeControl';
 import PhotosGallery from './PhotosGallery';
+import { estadoChip } from './estado';
 
 interface Asesor {
   id: string;
@@ -73,13 +74,7 @@ export default function InmuebleCard({ inmueble: inm, asesores, unidadesExistent
   };
 
   // Chip de estado sobre la foto (colores sólidos, legibles sobre cualquier imagen)
-  const estadoChip = () => {
-    if (inm.estado === 'disponible') return { txt: 'Disponible', bg: '#dcfce7', color: '#166534' };
-    if (inm.estado === 'arrendado') return { txt: 'Arrendado', bg: '#e2e8f0', color: '#334155' };
-    if (inm.estado === 'empalme') return { txt: 'En empalme', bg: '#e0e7ff', color: '#4338ca' };
-    return { txt: inm.estado, bg: '#e2e8f0', color: '#334155' };
-  };
-  const chip = estadoChip();
+  const chip = estadoChip(inm.estado);
 
   // Línea de contexto: unidad · barrio, ciudad · tipo · hab · baños
   const metaPartes: string[] = [];
