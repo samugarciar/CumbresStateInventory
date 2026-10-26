@@ -428,6 +428,7 @@ export default function AgendaView({
                 return (
                   <div
                     key={diaIdx}
+                    data-celda={key}
                     style={{
                       ...styles.celda,
                       borderBottom: slot.endsWith(':00') ? '1px solid var(--border-color)' : '1px solid rgba(226,232,240,0.4)',
@@ -524,18 +525,24 @@ export default function AgendaView({
         })()}
       </div>
 
-      {/* Modal */}
-      <ModalFranja
-        isOpen={modalOpen}
-        onClose={cerrarModal}
-        asesores={asesores}
-        inmuebles={inmuebles}
-        citasFranja={editData ? citasPorFranja[editData.id] || [] : []}
-        editData={editData}
-        defaultFecha={defaultFecha}
-        defaultHora={defaultHora}
-        defaultAsesorId={filtroAsesor !== 'todos' ? filtroAsesor : undefined}
-      />
+      {/* Modal: se monta solo abierto y con una key por franja (o por celda).
+          ModalFranja guarda los valores en useState, que solo lee sus props al
+          montarse: si quedaba montado, al abrir otra franja seguía mostrando —y
+          guardando— los datos de la primera. */}
+      {modalOpen && (
+        <ModalFranja
+          key={editData ? editData.id : `${defaultFecha}-${defaultHora}`}
+          isOpen
+          onClose={cerrarModal}
+          asesores={asesores}
+          inmuebles={inmuebles}
+          citasFranja={editData ? citasPorFranja[editData.id] || [] : []}
+          editData={editData}
+          defaultFecha={defaultFecha}
+          defaultHora={defaultHora}
+          defaultAsesorId={filtroAsesor !== 'todos' ? filtroAsesor : undefined}
+        />
+      )}
     </div>
   );
 }

@@ -192,221 +192,233 @@ export default function ModalFranja({
 
   return (
     <div style={styles.overlay} className="animate-fade-in">
-      <div style={styles.modal} className="glass-card">
-        {/* Header */}
+      <div
+        style={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-franja-titulo"
+      >
+        {/* Cabecera fija */}
         <div style={styles.header}>
-          <h3 style={styles.title}>
+          <h3 id="modal-franja-titulo" style={styles.title}>
             <Clock size={20} color="var(--primary)" />
-            {isEditing ? 'Editar Franja Horaria' : 'Nueva Franja Horaria'}
+            {isEditing ? 'Editar franja' : 'Nueva franja'}
           </h3>
-          <button onClick={onClose} style={styles.closeBtn}>
+          <button type="button" onClick={onClose} style={styles.closeBtn} aria-label="Cerrar">
             <X size={18} />
           </button>
         </div>
 
-        {error && (
-          <div className="badge badge-danger" style={styles.errorBanner}>
-            {error}
-          </div>
-        )}
-
-        {/* Resumen de la franja (solo al editar una existente) */}
-        {isEditing && (
-          <div style={styles.infoResumen}>
-            <div style={styles.infoFila}>
-              <Building2 size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
-              <span style={styles.infoTexto}>{ubicacionInmueble || '—'}</span>
-            </div>
-            <div style={styles.infoFila}>
-              <Users size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
-              <span style={styles.infoTexto}>{asesorSeleccionado?.nombre_completo || '—'}</span>
-            </div>
-            <div style={styles.infoFila}>
-              <Clock size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
-              <span style={styles.infoTexto}>{fechaLegible} · {horaInicio} – {horaFin}</span>
-            </div>
-          </div>
-        )}
-
+        {/* El formulario ocupa el resto: cuerpo con scroll y pie siempre visible */}
         <form onSubmit={handleSubmit} style={styles.form}>
-          {/* Inmueble */}
-          <div className="form-group">
-            <label className="form-label">
-              <Building2 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-              Inmueble
-            </label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Buscar inmueble..."
-              value={busquedaInmueble}
-              onChange={e => setBusquedaInmueble(e.target.value)}
-              style={{ marginBottom: '0.35rem' }}
-            />
-            <select
-              className="form-select"
-              value={inmuebleId}
-              onChange={e => setInmuebleId(e.target.value)}
-              required
-              size={Math.min(inmueblesFiltrados.length + 1, 5)}
-              style={{ minHeight: '2.5rem' }}
-            >
-              <option value="">Seleccionar inmueble</option>
-              {inmueblesFiltrados.map(i => (
-                <option key={i.id} value={i.id}>
-                  {i.titulo} — {i.direccion}
-                </option>
-              ))}
-            </select>
-            {inmueblesCubiertos > 1 && (
-              <div style={styles.coberturaHint}>
-                <Users size={13} style={{ flexShrink: 0 }} />
-                Este horario cubrirá los {inmueblesCubiertos} inmuebles de la misma{' '}
-                {inmuebleSeleccionado?.unidad?.trim() ? `unidad (${inmuebleSeleccionado.unidad.trim()})` : 'dirección'}.
+          <div style={styles.body}>
+            {error && (
+              <div className="badge badge-danger" style={styles.errorBanner} role="alert">
+                {error}
+              </div>
+            )}
+
+            {/* Resumen de la franja (solo al editar una existente) */}
+            {isEditing && (
+              <div style={styles.infoResumen}>
+                <div style={styles.infoFila}>
+                  <Building2 size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+                  <span style={styles.infoTexto}>{ubicacionInmueble || '—'}</span>
+                </div>
+                <div style={styles.infoFila}>
+                  <Users size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+                  <span style={styles.infoTexto}>{asesorSeleccionado?.nombre_completo || '—'}</span>
+                </div>
+                <div style={styles.infoFila}>
+                  <Clock size={14} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+                  <span style={styles.infoTexto}>{fechaLegible} · {horaInicio} – {horaFin}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Inmueble */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="franja-inmueble">
+                <Building2 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                Inmueble
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Buscar inmueble..."
+                aria-label="Buscar inmueble"
+                value={busquedaInmueble}
+                onChange={e => setBusquedaInmueble(e.target.value)}
+                style={{ marginBottom: '0.35rem' }}
+              />
+              <select
+                id="franja-inmueble"
+                className="form-select"
+                value={inmuebleId}
+                onChange={e => setInmuebleId(e.target.value)}
+                required
+                size={Math.min(inmueblesFiltrados.length + 1, 5)}
+                style={{ minHeight: '2.5rem' }}
+              >
+                <option value="">Seleccionar inmueble</option>
+                {inmueblesFiltrados.map(i => (
+                  <option key={i.id} value={i.id}>
+                    {i.titulo} — {i.direccion}
+                  </option>
+                ))}
+              </select>
+              {inmueblesCubiertos > 1 && (
+                <div style={styles.coberturaHint}>
+                  <Users size={13} style={{ flexShrink: 0 }} />
+                  Este horario cubrirá los {inmueblesCubiertos} inmuebles de la misma{' '}
+                  {inmuebleSeleccionado?.unidad?.trim() ? `unidad (${inmuebleSeleccionado.unidad.trim()})` : 'dirección'}.
+                </div>
+              )}
+            </div>
+
+            {/* Asesor */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="franja-asesor">Asesor asignado</label>
+              <select
+                id="franja-asesor"
+                className="form-select"
+                value={asesorId}
+                onChange={e => setAsesorId(e.target.value)}
+                required
+              >
+                <option value="">Seleccionar asesor</option>
+                {asesores.map(a => (
+                  <option key={a.id} value={a.id}>{a.nombre_completo}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Fecha */}
+            <div className="form-group">
+              <label className="form-label" htmlFor="franja-fecha">Fecha</label>
+              <input
+                id="franja-fecha"
+                type="date"
+                className="form-input"
+                value={fecha}
+                onChange={e => setFecha(e.target.value)}
+                required
+              />
+            </div>
+
+            {/* Horas */}
+            <div style={styles.horasRow}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label" htmlFor="franja-hora-inicio">Hora de inicio</label>
+                <select
+                  id="franja-hora-inicio"
+                  className="form-select"
+                  value={horaInicio}
+                  onChange={e => handleHoraInicioChange(e.target.value)}
+                  required
+                >
+                  {HORAS.filter(h => h < '18:00').map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label" htmlFor="franja-hora-fin">Hora de fin</label>
+                <select
+                  id="franja-hora-fin"
+                  className="form-select"
+                  value={horaFin}
+                  onChange={e => setHoraFin(e.target.value)}
+                  required
+                >
+                  {HORAS.filter(h => h > horaInicio).map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Color */}
+            <div className="form-group">
+              <span className="form-label">Color</span>
+              <div style={styles.coloresRow}>
+                {COLORES.map(c => (
+                  <button
+                    key={c.valor}
+                    type="button"
+                    title={c.nombre}
+                    aria-label={`Color ${c.nombre}`}
+                    aria-pressed={color === c.valor}
+                    onClick={() => setColor(c.valor)}
+                    style={{
+                      ...styles.colorBtn,
+                      backgroundColor: c.valor,
+                      boxShadow: color === c.valor ? `0 0 0 3px ${c.valor}40, 0 0 0 5px white` : 'none',
+                      transform: color === c.valor ? 'scale(1.2)' : 'scale(1)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Citas agendadas en esta franja */}
+            {isEditing && citasFranja.length > 0 && (
+              <div className="form-group">
+                <span className="form-label">
+                  <PhoneCall size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                  Citas agendadas ({citasFranja.length})
+                </span>
+                {citasFranja.map(c => (
+                  <div key={c.id} style={styles.citaRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={styles.citaHora}>
+                        {c.hora_inicio.substring(0, 5)} – {c.hora_fin.substring(0, 5)}
+                        {c.origen === 'n8n' && (
+                          <span style={styles.citaOrigen}>agendada por el bot</span>
+                        )}
+                      </div>
+                      <div style={styles.citaCliente}>
+                        {c.cliente_nombre} · {c.cliente_telefono}
+                        {c.alcance === 'unidad'
+                          ? ` · ${(c.unidad || c.inmuebles?.unidad || 'Unidad')} · ${c.aptos_snapshot?.length ?? 0} apto${(c.aptos_snapshot?.length ?? 0) !== 1 ? 's' : ''}`
+                          : (c.inmuebles
+                              ? ` · ${c.inmuebles.unidad?.trim() || c.inmuebles.direccion || c.inmuebles.titulo}`
+                              : '')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      style={styles.cancelarCitaBtn}
+                      disabled={cancelandoCitaId === c.id}
+                      onClick={() => handleCancelarCita(c.id)}
+                    >
+                      {cancelandoCitaId === c.id ? <Loader2 size={13} className="animate-spin" /> : 'Cancelar cita'}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Asesor */}
-          <div className="form-group">
-            <label className="form-label">Asesor Asignado</label>
-            <select
-              className="form-select"
-              value={asesorId}
-              onChange={e => setAsesorId(e.target.value)}
-              required
-            >
-              <option value="">Seleccionar asesor</option>
-              {asesores.map(a => (
-                <option key={a.id} value={a.id}>{a.nombre_completo}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Fecha */}
-          <div className="form-group">
-            <label className="form-label">Fecha</label>
-            <input
-              type="date"
-              className="form-input"
-              value={fecha}
-              onChange={e => setFecha(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* Horas */}
-          <div style={styles.horasRow}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Hora Inicio</label>
-              <select
-                className="form-select"
-                value={horaInicio}
-                onChange={e => handleHoraInicioChange(e.target.value)}
-                required
-              >
-                {HORAS.filter(h => h < '18:00').map(h => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Hora Fin</label>
-              <select
-                className="form-select"
-                value={horaFin}
-                onChange={e => setHoraFin(e.target.value)}
-                required
-              >
-                {HORAS.filter(h => h > horaInicio).map(h => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Color */}
-          <div className="form-group">
-            <label className="form-label">Color</label>
-            <div style={styles.coloresRow}>
-              {COLORES.map(c => (
-                <button
-                  key={c.valor}
-                  type="button"
-                  title={c.nombre}
-                  onClick={() => setColor(c.valor)}
-                  style={{
-                    ...styles.colorBtn,
-                    backgroundColor: c.valor,
-                    boxShadow: color === c.valor ? `0 0 0 3px ${c.valor}40, 0 0 0 5px white` : 'none',
-                    transform: color === c.valor ? 'scale(1.2)' : 'scale(1)',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Citas agendadas en esta franja */}
-          {isEditing && citasFranja.length > 0 && (
-            <div className="form-group">
-              <label className="form-label">
-                <PhoneCall size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                Citas agendadas ({citasFranja.length})
-              </label>
-              {citasFranja.map(c => (
-                <div key={c.id} style={styles.citaRow}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={styles.citaHora}>
-                      {c.hora_inicio.substring(0, 5)} – {c.hora_fin.substring(0, 5)}
-                      {c.origen === 'n8n' && (
-                        <span className="badge badge-info" style={{ fontSize: '0.62rem', padding: '0.05rem 0.4rem', marginLeft: '0.4rem' }}>
-                          Agente
-                        </span>
-                      )}
-                    </div>
-                    <div style={styles.citaCliente}>
-                      {c.cliente_nombre} · {c.cliente_telefono}
-                      {c.alcance === 'unidad'
-                        ? ` · ${(c.unidad || c.inmuebles?.unidad || 'Unidad')} · ${c.aptos_snapshot?.length ?? 0} apto${(c.aptos_snapshot?.length ?? 0) !== 1 ? 's' : ''}`
-                        : (c.inmuebles
-                            ? ` · ${c.inmuebles.unidad?.trim() || c.inmuebles.direccion || c.inmuebles.titulo}`
-                            : '')}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', flexShrink: 0 }}
-                    disabled={cancelandoCitaId === c.id}
-                    onClick={() => handleCancelarCita(c.id)}
-                  >
-                    {cancelandoCitaId === c.id ? <Loader2 size={13} className="animate-spin" /> : 'Cancelar'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Actions */}
+          {/* Pie fijo: siempre a la vista, aunque el cuerpo tenga scroll */}
           <div style={styles.actions}>
             {isEditing && (
               <button
                 type="button"
                 onClick={handleDelete}
-                className="btn btn-danger"
+                style={styles.eliminarBtn}
                 disabled={loading}
-                style={{ marginRight: 'auto' }}
               >
-                <Trash2 size={16} />
+                <Trash2 size={15} />
                 Eliminar
               </button>
             )}
-            <button type="button" onClick={onClose} className="btn btn-secondary" disabled={loading}>
+            <button type="button" onClick={onClose} className="btn btn-secondary" disabled={loading} style={styles.pieBtn}>
               Cancelar
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-primary" disabled={loading} style={styles.pieBtn}>
               {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-              {isEditing ? 'Guardar Cambios' : 'Programar Franja'}
+              {isEditing ? 'Guardar cambios' : 'Programar franja'}
             </button>
           </div>
         </form>
@@ -427,19 +439,33 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 9999,
     padding: '1rem',
   },
+  // El modal no hace scroll: lo hace el cuerpo. Así el pie (Guardar/Cancelar)
+  // queda siempre a la vista, aunque la pantalla sea baja.
   modal: {
     width: '100%',
     maxWidth: '520px',
     maxHeight: '90vh',
-    overflowY: 'auto',
-    padding: '1.5rem',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    overflow: 'hidden' as const,
+    backgroundColor: 'var(--bg-surface)',
+    border: '1px solid var(--border-color)',
     borderRadius: 'var(--border-radius-lg)',
+    boxShadow: '0 20px 50px rgba(15, 23, 42, 0.25)',
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '1.25rem',
+    padding: '1.1rem 1.5rem 0.9rem',
+    borderBottom: '1px solid var(--border-color)',
+    flexShrink: 0,
+  },
+  body: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto' as const,
+    padding: '1.1rem 1.5rem 0.25rem',
   },
   title: {
     fontSize: '1.15rem',
@@ -465,6 +491,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '1rem',
     textAlign: 'center' as const,
     width: '100%',
+    justifyContent: 'center',
   },
   infoResumen: {
     display: 'flex',
@@ -493,6 +520,8 @@ const styles: Record<string, React.CSSProperties> = {
   form: {
     display: 'flex',
     flexDirection: 'column' as const,
+    flex: 1,
+    minHeight: 0,
   },
   horasRow: {
     display: 'flex',
@@ -513,11 +542,50 @@ const styles: Record<string, React.CSSProperties> = {
   },
   actions: {
     display: 'flex',
+    flexWrap: 'wrap' as const,
     gap: '0.5rem',
     justifyContent: 'flex-end',
-    marginTop: '0.75rem',
-    paddingTop: '0.75rem',
+    alignItems: 'center',
+    padding: '0.85rem 1.5rem',
     borderTop: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-surface)',
+    flexShrink: 0,
+  },
+  pieBtn: {
+    padding: '0.6rem 1.1rem',
+    fontSize: '0.9rem',
+  },
+  // Destructivo pero secundario: texto rojo sin relleno, a la izquierda del pie.
+  eliminarBtn: {
+    marginRight: 'auto',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    background: 'none',
+    border: 'none',
+    color: 'var(--danger)',
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '0.5rem 0.25rem',
+  },
+  cancelarCitaBtn: {
+    background: 'none',
+    border: '1px solid rgba(185, 28, 28, 0.3)',
+    color: 'var(--danger)',
+    borderRadius: '8px',
+    fontSize: '0.75rem',
+    fontWeight: 600,
+    padding: '0.3rem 0.6rem',
+    cursor: 'pointer',
+    flexShrink: 0,
+    minHeight: '28px',
+  },
+  citaOrigen: {
+    fontSize: '0.75rem',
+    fontWeight: 500,
+    color: 'var(--text-muted)',
+    marginLeft: '0.4rem',
   },
   coberturaHint: {
     display: 'flex',
@@ -548,7 +616,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   citaCliente: {
-    fontSize: '0.74rem',
+    fontSize: '0.78rem',
     color: 'var(--text-muted)',
     overflow: 'hidden' as const,
     textOverflow: 'ellipsis' as const,
