@@ -1,26 +1,25 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
-import { completarTarea, completarTareasMultiples } from '@/app/actions/tareas';
+import React, { useState, useTransition, useEffect } from 'react';
+import Link from 'next/link';
+import { completarTareasMultiples } from '@/app/actions/tareas';
 import { createClient } from '@/lib/supabase/client';
 import BiometricSignatureWizard from '@/app/components/biometrics/BiometricSignatureWizard';
-import { 
-  CheckSquare, 
-  Square, 
-  ChevronDown, 
-  ChevronUp, 
-  AlertCircle, 
-  CheckCircle2, 
-  ListTodo, 
-  Calendar, 
-  Tag,
-  RefreshCw,
-  Layers,
-  FileText,
+import {
+  CheckSquare,
+  Square,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  CheckCircle2,
+  Calendar,
   Loader2,
   Check,
   PenTool,
-  Lock
+  Lock,
+  ArrowRight,
+  User as UserIcon,
+  Clock,
 } from 'lucide-react';
 
 interface Task {
@@ -40,17 +39,61 @@ interface Task {
 
 interface TareasViewProps {
   initialTasks: Task[];
+  // Nombre de cada usuario de la inmobiliaria, para decir de quién es la tarea
+  asesores?: Record<string, string>;
+  // Código (arrendasoft_id) de los inmuebles de las tareas, para el enlace «Ir»
+  codigosInmuebles?: Record<string, string>;
+  // Hora del servidor (ms): el «hace 2 h» del primer render coincide con el del navegador
+  ahora: number;
 }
 
-export default function TareasView({ initialTasks }: TareasViewProps) {
+// Tareas que la app completa sola (o con la firma): no se marcan a mano.
+const AUTOMATICAS = new Set([
+  'Firmar inventario',
+  'Asociar contrato al inventario',
+  'Asociar contrato',
+  'Aceptar asociacion inventario',
+]);
+
+function haceCuanto(iso: string, ahora: number): string {
+  const min = Math.max(0, Math.round((ahora - Date.parse(iso)) / 60000));
+  if (min < 1) return 'hace un momento';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  if (d === 1) return 'ayer';
+  if (d < 7) return `hace ${d} días`;
+  return new Date(iso).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short' });
+}
+
+// A dónde lleva «Ir», según de dónde salió la tarea.
+function enlaceIr(t: Task, codigos: Record<string, string>): string | null {
+  const origen = t.evento_origen || '';
+  if (origen === 'solicitud_apertura' || origen.startsWith('cita')) return '/citas';
+  if (origen.startsWith('inmueble_') || origen.startsWith('empalme') || t.entidad_tipo === 'inmueble') {
+    const codigo = t.entidad_id ? codigos[t.entidad_id] : undefined;
+    return codigo ? `/inmuebles?q=${encodeURIComponent(codigo)}` : '/inmuebles';
+  }
+  if (origen.startsWith('inventario') || origen === 'asociacion_contrato' || t.entidad_tipo === 'inventario') return '/inventarios';
+  if (origen === 'captacion_creada') return '/inmuebles?action=logs';
+  if (origen === 'sync_diario_inmuebles') return '/inmuebles/sync';
+  return null;
+}
+
+export default function TareasView({ initialTasks, asesores = {}, codigosInmuebles = {}, ahora: ahoraInicial }: TareasViewProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [filter, setFilter] = useState<'todos' | 'pendiente' | 'completada'>('pendiente');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
-  const [isPending, startTransition] = useTransition();
-  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
   const [isBulkCompleting, setIsBulkCompleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [ahora, setAhora] = useState(ahoraInicial);
+  useEffect(() => {
+    const id = setInterval(() => setAhora(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Estados del Wizard de Firma Biométrica In-App
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -71,16 +114,17 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
         .select('items, usuarios(nombre_completo)')
         .eq('id', inventarioId)
         .single();
-      
+
       if (error) {
         console.error('Error al recuperar detalles del inventario:', error.message);
         alert('No se pudo recuperar la información del inventario.');
       } else if (data) {
-        const itemsObj = (data.items as any) || {};
+        const itemsObj = (data.items as { datos_generales?: { inquilino?: { nombre?: string } }; firmas?: { arrendatario?: { cc?: string } } } | null) || {};
         const inquilinoName = itemsObj.datos_generales?.inquilino?.nombre || '';
         const inquilinoCC = itemsObj.firmas?.arrendatario?.cc || '';
-        const asesorName = (data.usuarios as any)?.nombre_completo || '';
-        
+        const usuario = data.usuarios as { nombre_completo?: string } | { nombre_completo?: string }[] | null;
+        const asesorName = (Array.isArray(usuario) ? usuario[0] : usuario)?.nombre_completo || '';
+
         setSelectedSigningData({
           inventarioId,
           asesorName,
@@ -102,10 +146,10 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
     setErrorMessage(null);
 
     const taskIds = Array.from(selectedTasks);
-    
+
     // Optimistic Update
     const previousTasks = [...tasks];
-    setTasks(prev => 
+    setTasks(prev =>
       prev.map(t => taskIds.includes(t.id) ? { ...t, estado: 'completada' } : t)
     );
     setSelectedTasks(new Set()); // Clear selection
@@ -120,171 +164,93 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
     });
   };
 
-  // 1. Alternar estado del acordeón para una entidad
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => ({
       ...prev,
-      [groupId]: !prev[groupId]
+      [groupId]: !(prev[groupId] ?? true)
     }));
   };
 
-  // 2. Agrupar tareas polimórficas por entidad_id
-  const getGroupedTasks = () => {
-    const groups: Record<string, {
-      entidadId: string;
-      entidadTipo: 'captacion' | 'inventario' | 'inmueble' | 'general';
-      eventoTitulo: string;
-      eventoOrigen: string | null;
-      tasks: Task[];
-    }> = {};
-
+  // Agrupar tareas por la entidad de la que salieron
+  const grouped = (() => {
+    const groups: Record<string, { entidadId: string; eventoTitulo: string; tasks: Task[] }> = {};
     tasks.forEach(task => {
-      // Filtrar según el estado seleccionado
-      if (filter !== 'todos' && task.estado !== filter) {
-        return;
-      }
-
-      const entidadId = task.entidad_id || 'general';
-      const entidadTipo = task.entidad_tipo;
-      const eventoTitulo = task.evento_titulo;
-      const eventoOrigen = task.evento_origen;
-
+      if (filter !== 'todos' && task.estado !== filter) return;
+      // Sin entidad, se agrupan por origen: así no se mezclan, p. ej., la sincronización
+      // diaria con una captación (y «Ir» lleva al mismo sitio para todo el grupo).
+      const entidadId = task.entidad_id || `sin-entidad:${task.evento_origen ?? ''}`;
       if (!groups[entidadId]) {
-        groups[entidadId] = {
-          entidadId,
-          entidadTipo,
-          eventoTitulo,
-          eventoOrigen,
-          tasks: []
-        };
+        groups[entidadId] = { entidadId, eventoTitulo: task.evento_titulo, tasks: [] };
       }
-
       groups[entidadId].tasks.push(task);
     });
-
     return Object.values(groups);
-  };
+  })();
 
-  // 3. Manejar selección de la tarea (checkbox)
-  const handleToggleTaskSelection = (taskId: string, currentStatus: 'pendiente' | 'completada') => {
-    // Si ya está completada, no hacer nada
-    if (currentStatus === 'completada') return;
-
-    const task = tasks.find(t => t.id === taskId);
-    if (task && (
-      task.titulo === 'Firmar inventario' || 
-      task.titulo === 'Asociar contrato al inventario' || 
-      task.titulo === 'Asociar contrato' || 
-      task.titulo === 'Aceptar asociacion inventario'
-    )) {
-      return; // Bloquear interacción manual para tareas automatizadas del sistema
-    }
-
+  // Seleccionar / deseleccionar una tarea (las automáticas no se marcan a mano)
+  const handleToggleTaskSelection = (task: Task) => {
+    if (task.estado === 'completada' || AUTOMATICAS.has(task.titulo)) return;
     setSelectedTasks(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(taskId)) {
-        newSet.delete(taskId);
-      } else {
-        newSet.add(taskId);
-      }
+      if (newSet.has(task.id)) newSet.delete(task.id);
+      else newSet.add(task.id);
       return newSet;
     });
   };
 
-
-
-  const grouped = getGroupedTasks();
+  const filtros: { valor: typeof filter; texto: string }[] = [
+    { valor: 'pendiente', texto: 'Pendientes' },
+    { valor: 'completada', texto: 'Completadas' },
+    { valor: 'todos', texto: 'Todas' },
+  ];
 
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Header */}
       <header style={styles.header}>
         <div>
-          <h1 style={styles.title}>Tareas Administrativas</h1>
-          <p style={styles.subtitle}>
-            Supervisa y completa las tareas operativas generadas dinámicamente a partir de eventos del sistema.
-          </p>
+          <h1 style={styles.title}>Tareas</h1>
+          <p style={styles.subtitle}>Lo que hay que revisar hoy</p>
         </div>
       </header>
 
       {/* Alerta de Error */}
       {errorMessage && (
-        <div style={styles.errorAlert} className="glass-card">
+        <div style={styles.errorAlert} className="glass-card" role="alert">
           <AlertCircle size={18} color="var(--danger)" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Panel de Filtros */}
-      <div className="glass-card" style={styles.filtersCard}>
-        <div style={styles.filterTitleRow}>
-          <ListTodo size={18} color="var(--primary)" />
-          <span style={styles.filterTitle}>Filtrar Tareas por Estado</span>
-        </div>
-        <div style={styles.filterButtons}>
+      {/* Filtro por estado */}
+      <div style={styles.filterButtons} role="group" aria-label="Mostrar tareas">
+        {filtros.map(f => (
           <button
-            onClick={() => setFilter('pendiente')}
+            key={f.valor}
+            onClick={() => setFilter(f.valor)}
+            aria-pressed={filter === f.valor}
             style={{
               ...styles.filterBtn,
-              ...(filter === 'pendiente' ? styles.filterBtnActive : {})
+              ...(filter === f.valor ? styles.filterBtnActive : {})
             }}
           >
-            Pendientes
+            {f.texto}
           </button>
-          <button
-            onClick={() => setFilter('completada')}
-            style={{
-              ...styles.filterBtn,
-              ...(filter === 'completada' ? styles.filterBtnActive : {})
-            }}
-          >
-            Completadas
-          </button>
-          <button
-            onClick={() => setFilter('todos')}
-            style={{
-              ...styles.filterBtn,
-              ...(filter === 'todos' ? styles.filterBtnActive : {})
-            }}
-          >
-            Todas
-          </button>
-        </div>
-        
-        {/* Botón de Acción Masiva */}
-        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            className="btn"
-            onClick={handleBulkComplete}
-            disabled={selectedTasks.size === 0 || isBulkCompleting}
-            style={{
-              padding: '0.6rem 1.2rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              backgroundColor: selectedTasks.size > 0 ? 'var(--primary)' : 'var(--bg-secondary)',
-              color: selectedTasks.size > 0 ? '#fff' : 'var(--text-muted)',
-              border: selectedTasks.size > 0 ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-              fontWeight: 600,
-              cursor: selectedTasks.size > 0 && !isBulkCompleting ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s',
-              borderRadius: '8px'
-            }}
-          >
-            {isBulkCompleting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-            Completar Tareas ({selectedTasks.size})
-          </button>
-        </div>
+        ))}
       </div>
 
-      {/* Listado de Grupos Acordeón */}
+      {/* Grupos */}
       <div style={styles.groupsContainer}>
         {grouped.length === 0 ? (
           <div style={styles.emptyState} className="glass-card animate-fade-in">
-            <CheckCircle2 size={48} color="var(--primary)" style={{ opacity: 0.8 }} />
-            <h3 style={{ marginTop: '1rem', fontWeight: 600 }}>¡Todo al día!</h3>
+            <CheckCircle2 size={44} color="var(--primary)" style={{ opacity: 0.8 }} />
+            <h3 style={{ marginTop: '1rem', fontWeight: 600 }}>
+              {filter === 'pendiente' ? 'Todo al día' : 'No hay tareas aquí'}
+            </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              No se encontraron tareas en estado <strong>"{filter === 'pendiente' ? 'Pendientes' : filter === 'completada' ? 'Completadas' : 'Todas'}"</strong>.
+              {filter === 'pendiente'
+                ? 'No queda nada pendiente por revisar.'
+                : filter === 'completada' ? 'Todavía no se ha completado ninguna tarea.' : 'No hay tareas.'}
             </p>
           </div>
         ) : (
@@ -294,180 +260,129 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
             const totalTasks = group.tasks.length;
             const completedTasks = totalTasks - pendingTasks;
             const isFullyCompleted = pendingTasks === 0;
+            const masReciente = group.tasks.reduce((max, t) => (t.created_at > max ? t.created_at : max), group.tasks[0].created_at);
+            const duenos = Array.from(new Set(group.tasks.map(t => t.usuario_id).filter(Boolean))) as string[];
+            const asesor = duenos.length === 1 ? asesores[duenos[0]] : undefined;
+            const ir = enlaceIr(group.tasks[0], codigosInmuebles);
+            const idCuerpo = `tareas-grupo-${group.entidadId}`;
 
             return (
-              <div 
-                key={group.entidadId} 
-                className="glass-card animate-fade-in" 
+              <div
+                key={group.entidadId}
+                className="glass-card animate-fade-in"
                 style={{
                   ...styles.groupCard,
                   borderColor: isFullyCompleted ? 'rgba(34, 197, 94, 0.15)' : 'var(--border-color)'
                 }}
               >
-                {/* Cabecera del Acordeón (Interactivo) */}
-                <div 
-                  onClick={() => toggleGroup(group.entidadId)} 
-                  style={styles.groupHeader}
-                >
-                  <div style={styles.groupTitleCol}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <h3 style={styles.groupTitle}>{group.eventoTitulo}</h3>
-                      
-                      {/* Badges polimórficos de origen */}
-                      {group.entidadTipo === 'captacion' && (
-                        <span className="badge" style={{ ...styles.entityTypeBadge, backgroundColor: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', color: 'var(--warning)' }}>
-                          Captación
-                        </span>
-                      )}
-                      {group.entidadTipo === 'inventario' && (
-                        <span className="badge" style={{ ...styles.entityTypeBadge, backgroundColor: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.2)', color: 'var(--secondary)' }}>
-                          Inventario
-                        </span>
-                      )}
-                      {group.entidadTipo === 'inmueble' && (
-                        <span className="badge" style={{ ...styles.entityTypeBadge, backgroundColor: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', color: 'var(--info)' }}>
-                          Inmueble
-                        </span>
-                      )}
-                      {group.entidadTipo === 'general' && (
-                        <span className="badge" style={{ ...styles.entityTypeBadge, backgroundColor: 'rgba(100, 116, 139, 0.08)', border: '1px solid rgba(100, 116, 139, 0.2)', color: 'var(--text-muted)' }}>
-                          General
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={styles.groupMetaList}>
-                      {group.eventoOrigen && (
+                {/* Cabecera: el título despliega/pliega; «Ir» lleva a donde se resuelve */}
+                <div style={styles.groupHeader}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.entidadId)}
+                    aria-expanded={isExpanded}
+                    aria-controls={idCuerpo}
+                    className="tareas-grupo-btn"
+                    style={styles.groupToggle}
+                  >
+                    <span style={styles.groupTitleCol}>
+                      <span style={styles.groupTitle}>{group.eventoTitulo}</span>
+                      <span style={styles.groupMetaList}>
                         <span style={styles.groupMetaItem}>
-                          <Layers size={12} color="var(--primary)" />
-                          Origen: <strong>{group.eventoOrigen}</strong>
+                          <Clock size={12} />
+                          {haceCuanto(masReciente, ahora)}
                         </span>
-                      )}
-                      <span style={styles.groupMetaItem}>
-                        <FileText size={12} color="var(--primary)" />
-                        Tareas en este grupo: <strong>{totalTasks}</strong>
+                        {asesor && (
+                          <span style={styles.groupMetaItem}>
+                            <UserIcon size={12} />
+                            {asesor}
+                          </span>
+                        )}
+                        <span style={{ ...styles.groupMetaItem, color: isFullyCompleted ? 'var(--success)' : 'var(--text-secondary)' }}>
+                          {completedTasks}/{totalTasks} hechas
+                        </span>
                       </span>
-                    </div>
-                  </div>
-
-                  <div style={styles.groupActionsCol}>
-                    {/* Badge de Progreso */}
-                    <span 
-                      className={`badge ${isFullyCompleted ? 'badge-success' : 'badge-info'}`}
-                      style={{ 
-                        fontSize: '0.78rem', 
-                        fontWeight: '700', 
-                        padding: '0.25rem 0.65rem',
-                        backgroundColor: isFullyCompleted ? 'rgba(34, 197, 94, 0.08)' : 'rgba(0, 171, 216, 0.08)',
-                        color: isFullyCompleted ? 'var(--success)' : 'var(--primary)',
-                        border: isFullyCompleted ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid rgba(0, 171, 216, 0.2)'
-                      }}
-                    >
-                      {completedTasks}/{totalTasks} completadas
                     </span>
-
-                    {/* Flecha de Rotación */}
-                    <button style={styles.collapseToggleBtn}>
-                      {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                    </button>
-                  </div>
+                    {isExpanded ? <ChevronUp size={18} color="var(--text-muted)" /> : <ChevronDown size={18} color="var(--text-muted)" />}
+                  </button>
+                  {ir && (
+                    <Link href={ir} className="btn btn-secondary" style={styles.irBtn}>
+                      Ir <ArrowRight size={14} />
+                    </Link>
+                  )}
                 </div>
 
-                {/* Cuerpo del Acordeón */}
+                {/* Cuerpo */}
                 {isExpanded && (
-                  <div style={styles.groupBody}>
+                  <div style={styles.groupBody} id={idCuerpo}>
                     <div style={styles.taskList}>
                       {group.tasks.map(task => {
                         const isTaskCompleted = task.estado === 'completada';
-                        const isUpdating = updatingTaskId === task.id;
+                        const automatica = AUTOMATICAS.has(task.titulo) && !isTaskCompleted;
+                        const seleccionada = selectedTasks.has(task.id);
+
+                        const texto = (
+                          <span style={{
+                            ...styles.taskText,
+                            textDecoration: isTaskCompleted ? 'line-through' : 'none',
+                            color: isTaskCompleted ? 'var(--text-muted)' : 'var(--text-primary)',
+                            fontWeight: isTaskCompleted ? 500 : 600
+                          }}>
+                            {task.titulo}
+                            {task.titulo === 'Firmar inventario' && !isTaskCompleted && (
+                              <span style={styles.signatureBadge}>Firma en persona</span>
+                            )}
+                            {automatica && task.titulo !== 'Firmar inventario' && (
+                              <span style={{ ...styles.signatureBadge, ...styles.automaticaBadge }}>Se completa sola</span>
+                            )}
+                          </span>
+                        );
 
                         return (
-                          <div 
-                            key={task.id} 
+                          <div
+                            key={task.id}
                             style={{
                               ...styles.taskItem,
-                              backgroundColor: isTaskCompleted ? 'rgba(248, 250, 252, 0.6)' : '#ffffff',
-                              borderColor: isTaskCompleted ? 'rgba(226, 232, 240, 0.5)' : 'var(--border-color)',
+                              backgroundColor: isTaskCompleted ? 'rgba(248, 250, 252, 0.6)' : seleccionada ? 'rgba(0, 171, 216, 0.05)' : '#ffffff',
+                              borderColor: seleccionada ? 'var(--primary)' : isTaskCompleted ? 'rgba(226, 232, 240, 0.5)' : 'var(--border-color)',
                             }}
                           >
-                            <div 
-                              style={{
-                                ...styles.taskLabel,
-                                cursor: (task.titulo === 'Firmar inventario' || task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted ? 'default' : 'pointer'
-                              }}
-                              onClick={(task.titulo === 'Firmar inventario' || task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted ? undefined : () => handleToggleTaskSelection(task.id, task.estado)}
-                            >
-                              {(task.titulo === 'Firmar inventario' || task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted ? (
-                                <div style={{ marginRight: '0.5rem', color: task.titulo === 'Firmar inventario' ? '#7c3aed' : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                            {automatica ? (
+                              <div style={styles.taskLabel}>
+                                <span style={{ color: task.titulo === 'Firmar inventario' ? '#7c3aed' : 'var(--text-muted)', display: 'flex' }} aria-hidden="true">
                                   {task.titulo === 'Firmar inventario' ? <PenTool size={20} /> : <Lock size={20} />}
-                                </div>
-                              ) : (
-                                <div
-                                  style={{
-                                    ...styles.checkboxBtn,
-                                    color: isTaskCompleted || selectedTasks.has(task.id) ? 'var(--primary)' : 'var(--text-muted)',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    marginRight: '0.5rem',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  {isUpdating ? (
-                                    <RefreshCw size={20} className="animate-spin" color="var(--primary)" />
-                                  ) : isTaskCompleted || selectedTasks.has(task.id) ? (
-                                    <CheckSquare size={20} color="var(--primary)" />
-                                  ) : (
-                                    <Square size={20} />
-                                  )}
-                                </div>
-                              )}
-                              
-                              <span style={{
-                                ...styles.taskText,
-                                textDecoration: isTaskCompleted ? 'line-through' : 'none',
-                                color: isTaskCompleted ? 'var(--text-muted)' : 'var(--text-primary)',
-                                fontWeight: isTaskCompleted ? '500' : '600'
-                              }}>
-                                {task.titulo}
-                                {task.titulo === 'Firmar inventario' && !isTaskCompleted && (
-                                  <span style={styles.signatureBadge}>
-                                    Firma Digital
-                                  </span>
-                                )}
-                                {(task.titulo === 'Asociar contrato al inventario' || task.titulo === 'Asociar contrato' || task.titulo === 'Aceptar asociacion inventario') && !isTaskCompleted && (
-                                  <span style={{
-                                    ...styles.signatureBadge,
-                                    backgroundColor: 'rgba(0, 171, 216, 0.1)',
-                                    color: 'var(--primary)',
-                                    borderColor: 'rgba(0, 171, 216, 0.2)'
-                                  }}>
-                                    Automática
-                                  </span>
-                                )}
-                              </span>
-                            </div>
+                                </span>
+                                {texto}
+                              </div>
+                            ) : isTaskCompleted ? (
+                              <div style={styles.taskLabel}>
+                                <CheckSquare size={20} color="var(--primary)" aria-hidden="true" />
+                                {texto}
+                              </div>
+                            ) : (
+                              // Botón con rol de casilla: se usa con el ratón, el dedo o el teclado
+                              <button
+                                type="button"
+                                role="checkbox"
+                                aria-checked={seleccionada}
+                                onClick={() => handleToggleTaskSelection(task)}
+                                className="tareas-item-btn"
+                                style={{ ...styles.taskLabel, ...styles.taskLabelBtn }}
+                              >
+                                {seleccionada
+                                  ? <CheckSquare size={20} color="var(--primary)" aria-hidden="true" />
+                                  : <Square size={20} color="var(--text-muted)" aria-hidden="true" />}
+                                {texto}
+                              </button>
+                            )}
 
                             {/* Botón para iniciar firma Biométrica In-App */}
                             {task.titulo === 'Firmar inventario' && !isTaskCompleted && task.entidad_id && (
                               <button
                                 onClick={() => startBiometricSigning(task.entidad_id!)}
                                 disabled={loadingInvId === task.entidad_id}
-                                className="btn animate-scale-up"
-                                style={{
-                                  padding: '0.45rem 0.85rem',
-                                  fontSize: '0.8rem',
-                                  background: 'linear-gradient(135deg, #7c3aed 0%, var(--primary) 100%)',
-                                  color: '#ffffff',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  fontWeight: '700',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s',
-                                  boxShadow: '0 4px 6px -1px rgba(139, 92, 246, 0.25)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem',
-                                }}
+                                className="btn btn-primary"
+                                style={styles.firmaBtn}
                               >
                                 {loadingInvId === task.entidad_id ? (
                                   <>
@@ -477,16 +392,16 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
                                 ) : (
                                   <>
                                     <PenTool size={13} />
-                                    Iniciar Firma en Persona
+                                    Firmar en persona
                                   </>
                                 )}
                               </button>
                             )}
 
-                            {isTaskCompleted && (
+                            {isTaskCompleted && task.completada_at && (
                               <span style={styles.completadaMeta}>
                                 <Calendar size={12} style={{ marginRight: '0.25rem' }} />
-                                Completada el {new Date(task.completada_at || '').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}
+                                Completada el {new Date(task.completada_at).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short' })}
                               </span>
                             )}
                           </div>
@@ -500,6 +415,38 @@ export default function TareasView({ initialTasks }: TareasViewProps) {
           })
         )}
       </div>
+
+      {/* Barra de acción: solo aparece cuando hay algo seleccionado */}
+      {selectedTasks.size > 0 && (
+        <>
+          <div style={{ height: '76px' }} />
+          <div style={styles.barraSeleccion} role="region" aria-label="Tareas seleccionadas">
+            <span style={styles.barraTexto}>
+              {selectedTasks.size} seleccionada{selectedTasks.size !== 1 ? 's' : ''}
+            </span>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                className="btn btn-secondary"
+                style={styles.barraBtn}
+                onClick={() => setSelectedTasks(new Set())}
+                disabled={isBulkCompleting}
+              >
+                Quitar selección
+              </button>
+              <button
+                className="btn btn-primary"
+                style={styles.barraBtn}
+                onClick={handleBulkComplete}
+                disabled={isBulkCompleting}
+              >
+                {isBulkCompleting ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                Completar seleccionadas
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Wizard de Firma Biométrica */}
       {isWizardOpen && selectedSigningData && (
         <BiometricSignatureWizard
@@ -522,7 +469,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '2rem',
+    gap: '1.5rem',
   },
   header: {
     display: 'flex',
@@ -532,7 +479,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: {
     fontSize: '2rem',
-    fontWeight: '800',
+    fontWeight: 800,
     color: 'var(--text-primary)',
     letterSpacing: '-0.02em',
     marginBottom: '0.25rem',
@@ -550,37 +497,19 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(239, 68, 68, 0.15)',
     color: 'var(--danger)',
     fontSize: '0.9rem',
-    fontWeight: '600',
+    fontWeight: 600,
     borderRadius: '12px',
-  },
-  filtersCard: {
-    padding: '1.25rem 1.5rem',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
-  },
-  filterTitleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  filterTitle: {
-    fontSize: '0.9rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
   },
   filterButtons: {
     display: 'flex',
-    gap: '0.65rem',
+    gap: '0.4rem',
     flexWrap: 'wrap',
   },
   filterBtn: {
-    padding: '0.55rem 1.25rem',
+    padding: '0.45rem 1rem',
     fontSize: '0.85rem',
-    fontWeight: '700',
-    borderRadius: '8px',
+    fontWeight: 600,
+    borderRadius: '20px',
     border: '1px solid var(--border-color)',
     backgroundColor: '#ffffff',
     color: 'var(--text-secondary)',
@@ -595,14 +524,14 @@ const styles: Record<string, React.CSSProperties> = {
   groupsContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.25rem',
+    gap: '1rem',
   },
   emptyState: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '5rem 2rem',
+    padding: '3.5rem 2rem',
     textAlign: 'center',
     color: 'var(--text-secondary)',
   },
@@ -614,78 +543,71 @@ const styles: Record<string, React.CSSProperties> = {
   },
   groupHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1.25rem 1.5rem',
-    cursor: 'pointer',
+    gap: '0.75rem',
+    padding: '0.9rem 1.25rem',
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
     borderBottom: '1px solid var(--border-color)',
-    flexWrap: 'wrap',
-    gap: '1rem',
-    userSelect: 'none',
+  },
+  groupToggle: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    textAlign: 'left',
+    cursor: 'pointer',
+    font: 'inherit',
+    color: 'inherit',
   },
   groupTitleCol: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.45rem',
+    gap: '0.3rem',
     flex: 1,
-    minWidth: '240px',
+    minWidth: 0,
   },
   groupTitle: {
-    fontSize: '1.15rem',
-    fontWeight: '700',
+    fontSize: '1.05rem',
+    fontWeight: 700,
     color: 'var(--text-primary)',
-    margin: 0,
-  },
-  entityTypeBadge: {
-    fontSize: '0.7rem',
-    fontWeight: '700',
-    padding: '0.15rem 0.5rem',
-    borderRadius: '4px',
-    textTransform: 'uppercase',
   },
   groupMetaList: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: '1rem',
+    gap: '0.35rem 0.9rem',
     alignItems: 'center',
   },
   groupMetaItem: {
-    fontSize: '0.78rem',
-    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    color: 'var(--text-muted)',
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.3rem',
   },
-  groupActionsCol: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1rem',
-  },
-  collapseToggleBtn: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-muted)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0.25rem',
+  irBtn: {
+    padding: '0.4rem 0.8rem',
+    fontSize: '0.82rem',
+    gap: '0.3rem',
+    flexShrink: 0,
   },
   groupBody: {
-    padding: '1.5rem',
+    padding: '1rem 1.25rem',
     backgroundColor: 'rgba(248, 250, 252, 0.3)',
   },
   taskList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.85rem',
+    gap: '0.6rem',
   },
   taskItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem 1.25rem',
+    padding: '0.75rem 1rem',
     borderRadius: '10px',
     border: '1px solid var(--border-color)',
     transition: 'all var(--transition-fast)',
@@ -695,86 +617,81 @@ const styles: Record<string, React.CSSProperties> = {
   taskLabel: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem',
+    gap: '0.6rem',
     margin: 0,
     flex: 1,
+    minWidth: 0,
   },
-  checkboxBtn: {
+  taskLabelBtn: {
     background: 'none',
     border: 'none',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
     padding: 0,
+    textAlign: 'left',
+    cursor: 'pointer',
+    font: 'inherit',
   },
   taskText: {
     fontSize: '0.92rem',
     userSelect: 'none',
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: '0.5rem',
   },
   completadaMeta: {
-    fontSize: '0.78rem',
+    fontSize: '0.8rem',
     color: 'var(--text-muted)',
     display: 'inline-flex',
     alignItems: 'center',
-    fontWeight: '500',
+    fontWeight: 500,
   },
-  modalOverlay: {
+  firmaBtn: {
+    padding: '0.45rem 0.85rem',
+    fontSize: '0.82rem',
+    gap: '0.35rem',
+  },
+  barraSeleccion: {
     position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    backdropFilter: 'blur(8px)',
+    left: '50%',
+    bottom: '1.25rem',
+    transform: 'translateX(-50%)',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-    padding: '1.5rem',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    width: '100%',
-    maxWidth: '850px',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    padding: '1.25rem 1.5rem',
-    borderBottom: '1px solid var(--border-color)',
-    display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(248, 250, 252, 0.8)',
-  },
-  modalCloseBtn: {
-    padding: '0.5rem 1rem',
-    fontSize: '0.85rem',
-    fontWeight: '700',
-    borderRadius: '8px',
+    flexWrap: 'wrap',
+    gap: '0.75rem 1.5rem',
+    backgroundColor: 'var(--bg-surface)',
     border: '1px solid var(--border-color)',
-    backgroundColor: '#ffffff',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
+    borderRadius: 'var(--border-radius-md)',
+    boxShadow: '0 8px 28px rgba(15, 23, 42, 0.18)',
+    padding: '0.65rem 1rem 0.65rem 1.25rem',
+    zIndex: 200,
+    width: 'min(560px, calc(100% - 2rem))',
+  },
+  barraTexto: {
+    fontSize: '0.88rem',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  barraBtn: {
+    padding: '0.5rem 0.9rem',
+    fontSize: '0.85rem',
   },
   signatureBadge: {
     fontSize: '0.75rem',
     color: '#7c3aed',
     backgroundColor: 'rgba(139, 92, 246, 0.08)',
     border: '1px solid rgba(139, 92, 246, 0.2)',
-    padding: '0.2rem 0.5rem',
+    padding: '0.15rem 0.5rem',
     borderRadius: '6px',
-    fontWeight: '700',
+    fontWeight: 700,
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.25rem',
-  }
+  },
+  automaticaBadge: {
+    backgroundColor: 'rgba(0, 171, 216, 0.08)',
+    color: 'var(--primary)',
+    borderColor: 'rgba(0, 171, 216, 0.2)',
+  },
 };

@@ -902,3 +902,11 @@ a:focus-visible {
     line-height: 1.2;
   }
 }
+
+/* --- TAREAS: foco visible en lo que se usa con teclado --- */
+.tareas-grupo-btn:focus-visible,
+.tareas-item-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
