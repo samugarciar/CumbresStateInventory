@@ -21,18 +21,21 @@ export default async function AgendaPage({
 
   // Semana a mostrar: la del parámetro ?semana=YYYY-MM-DD, o la semana actual.
   // (Sin esto, navegar de semana no volvía a consultar datos: se quedaba en la actual.)
+  // «Hoy» es el de Colombia, no el del servidor: en UTC, desde las 7 p. m.
+  // ya sería mañana (y un domingo de noche, la semana siguiente). Se calcula
+  // como en citas/page.tsx y se opera en UTC puro para que la zona del
+  // servidor no mueva el día.
   const { semana } = await searchParams;
   const semanaValida = semana && /^\d{4}-\d{2}-\d{2}$/.test(semana);
-  const hoy = semanaValida ? new Date(semana + 'T00:00:00') : new Date();
-  const diaSemana = hoy.getDay(); // 0=dom, 1=lun...
+  const hoyBogota = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+  const [anio, mes, dia] = (semanaValida ? semana : hoyBogota).split('-').map(Number);
+  const diaSemana = new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay(); // 0=dom, 1=lun...
   const diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
-  const lunes = new Date(hoy);
-  lunes.setDate(hoy.getDate() + diffLunes);
-  const sabado = new Date(lunes);
-  sabado.setDate(lunes.getDate() + 5);
+  const lunes = new Date(Date.UTC(anio, mes - 1, dia + diffLunes));
+  const sabado = new Date(Date.UTC(anio, mes - 1, dia + diffLunes + 5));
 
-  const fechaInicio = lunes.toISOString().split('T')[0];
-  const fechaFin = sabado.toISOString().split('T')[0];
+  const fechaInicio = lunes.toISOString().slice(0, 10);
+  const fechaFin = sabado.toISOString().slice(0, 10);
 
   // Obtener franjas de la semana actual con datos del inmueble y asesor
   const { data: franjas } = await supabase
