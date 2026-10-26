@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { botPuedeResponder } from '@/lib/whatsapp/bot';
 import { conversacionDe } from '@/lib/whatsapp/conversaciones';
 import { enviarTexto } from '@/lib/whatsapp/meta';
 import {
@@ -62,6 +63,12 @@ interface MensajeMeta {
   video?: MedioMeta;
   document?: MedioMeta;
   sticker?: MedioMeta;
+}
+
+/** `value.contacts[]`: el nombre que la persona puso en su perfil de WhatsApp. */
+interface ContactoMeta {
+  wa_id?: string;
+  profile?: { name?: string };
 }
 
 interface EstadoMeta {
@@ -233,9 +240,30 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
         continue;
       }
 
-      await procesarMensajesEntrantes(supabase, linea, mensajes, origen, metadata.phone_number_id!);
+      await procesarMensajesEntrantes(
+        supabase,
+        linea,
+        mensajes,
+        origen,
+        metadata.phone_number_id!,
+        nombresDePerfil((valor.contacts ?? []) as ContactoMeta[])
+      );
     }
   }
+}
+
+/**
+ * wa_id → nombre del perfil de WhatsApp. Meta lo manda junto a cada mensaje
+ * entrante; sin leerlo, todo contacto nuevo nacía «Sin nombre» en el CRM.
+ */
+function nombresDePerfil(contactos: ContactoMeta[]): Map<string, string> {
+  const nombres = new Map<string, string>();
+  for (const c of contactos) {
+    const waId = c.wa_id?.replace(/\D/g, '');
+    const nombre = c.profile?.name?.trim();
+    if (waId && nombre) nombres.set(waId, nombre.slice(0, 120));
+  }
+  return nombres;
 }
 
 interface Linea {
@@ -436,14 +464,19 @@ async function guardarMensajeEntrante(
   linea: Linea,
   m: MensajeMeta,
   numero: string,
-  /** La foto, el audio o el documento ya bajado y leído (ver medios.ts). */
-  preparado?: MedioPreparado
+  extra: {
+    /** La foto, el audio o el documento ya bajado y leído (ver medios.ts). */
+    preparado?: MedioPreparado;
+    /** El nombre del perfil de WhatsApp (value.contacts[].profile.name). */
+    nombre?: string | null;
+  } = {}
 ): Promise<{
   conversacionId: string;
   telefono: string;
   contenido: string;
   esTexto: boolean;
 } | null> {
+  const { preparado, nombre } = extra;
   const inmobiliariaId = linea.inmobiliaria_id;
   const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
 
@@ -458,44 +491,44 @@ async function guardarMensajeEntrante(
       ? m.text!.body
       : `[el cliente mandó ${m.type}, que todavía no sabemos leer]`;
 
-  const { data: existente } = await supabase
+  // Crear u obtener con conversacionDe(), que resuelve el choque 23505: dos
+  // mensajes de un número nuevo que llegan a la vez querían crear cada uno
+  // su conversación, y el segundo se perdía.
+  const conversacionId = await conversacionDe(supabase, inmobiliariaId, telefono);
+  if (!conversacionId) return null;
+
+  const { data: conversacion } = await supabase
     .from('agente_comercial_conversaciones')
-    .select('id, referral_source_id')
-    .eq('inmobiliaria_id', inmobiliariaId)
-    .eq('telefono', telefono)
+    .select('referral_source_id, cliente_nombre')
+    .eq('id', conversacionId)
     .maybeSingle();
 
-  let conversacionId = existente?.id as string | undefined;
+  const cambios: Record<string, unknown> = {};
 
   // EL REFERIDO LLEGA UNA SOLA VEZ, en el primer mensaje de quien vino de
   // un anuncio, y no hay forma de preguntarlo después. Si no se guarda
-  // aquí, ese lead se queda sin atribución para siempre.
-  const referido = m.referral
-    ? {
-        referral_source_id: m.referral.source_id ?? null,
-        referral_ctwa_clid: m.referral.ctwa_clid ?? null,
-        referral: m.referral,
-      }
-    : {};
+  // aquí, ese lead se queda sin atribución para siempre. Y no se pisa una
+  // atribución anterior: sería reescribir de dónde vino.
+  if (m.referral && !conversacion?.referral_source_id) {
+    cambios.referral_source_id = m.referral.source_id ?? null;
+    cambios.referral_ctwa_clid = m.referral.ctwa_clid ?? null;
+    cambios.referral = m.referral;
+  }
 
-  if (!conversacionId) {
-    const { data: nueva, error } = await supabase
+  // El nombre del perfil completa, nunca pisa: el que ya tiene lo puso
+  // alguien (Kommo, un asesor) o llegó antes.
+  if (nombre && !conversacion?.cliente_nombre?.trim()) {
+    cambios.cliente_nombre = nombre;
+  }
+
+  // ANTES de guardar el mensaje: la proyección al CRM crea el contacto con
+  // el nombre de la conversación al insertar el mensaje.
+  if (Object.keys(cambios).length > 0) {
+    const { error } = await supabase
       .from('agente_comercial_conversaciones')
-      .insert({ inmobiliaria_id: inmobiliariaId, telefono, ...referido })
-      .select('id')
-      .single();
-    if (error || !nueva?.id) {
-      console.error('[WhatsApp] No se pudo crear la conversación:', error);
-      return null;
-    }
-    conversacionId = nueva.id;
-  } else if (m.referral && !existente?.referral_source_id) {
-    // Conversación vieja que vuelve por un anuncio: se anota sin pisar
-    // una atribución anterior, que sería reescribir de dónde vino.
-    await supabase
-      .from('agente_comercial_conversaciones')
-      .update(referido)
+      .update(cambios)
       .eq('id', conversacionId);
+    if (error) console.error('[WhatsApp] No se pudo completar la conversación:', error.message);
   }
 
   if (!conversacionId) return null;
@@ -537,11 +570,12 @@ async function procesarMensajesEntrantes(
   linea: Linea,
   mensajes: MensajeMeta[],
   origen: string,
-  numero: string
+  numero: string,
+  nombres: Map<string, string> = new Map()
 ) {
   const pendientesAgente = new Map<
     string,
-    { conversacionId: string; waMessageId: string; contenido: string }
+    { conversacionId: string; waMessageId: string; contenido: string; nombre: string | null }
   >();
 
   for (const m of mensajes) {
@@ -562,7 +596,8 @@ async function procesarMensajesEntrantes(
           medio.tipo,
           medio.meta
         );
-        const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, preparado);
+        const nombre = nombres.get(m.from.replace(/\D/g, '')) ?? null;
+        const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, { preparado, nombre });
         if (guardado?.esTexto && linea.bot_atiende) {
           activarAgenteEnSegundoPlano(
             supabase,
@@ -572,14 +607,16 @@ async function procesarMensajesEntrantes(
             guardado.conversacionId,
             m.id,
             guardado.contenido,
-            origen
+            origen,
+            nombre
           );
         }
       });
       continue;
     }
 
-    const guardado = await guardarMensajeEntrante(supabase, linea, m, numero);
+    const nombre = nombres.get(m.from.replace(/\D/g, '')) ?? null;
+    const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, { nombre });
     if (!guardado) continue;
 
     if (guardado.esTexto && linea.bot_atiende) {
@@ -588,6 +625,7 @@ async function procesarMensajesEntrantes(
         conversacionId: guardado.conversacionId,
         waMessageId: m.id,
         contenido: guardado.contenido,
+        nombre,
       });
     }
   }
@@ -601,7 +639,8 @@ async function procesarMensajesEntrantes(
       item.conversacionId,
       item.waMessageId,
       item.contenido,
-      origen
+      origen,
+      item.nombre
     );
   }
 }
@@ -612,7 +651,16 @@ async function procesarMensajesEntrantes(
  * Si dos mensajes del mismo contacto llegan en peticiones webhooks casi simultáneas,
  * el candado atómico en agente_comercial_conversaciones impide dos ejecuciones
  * paralelas de LangGraph para la misma conversación.
+ *
+ * RÁFAGAS. El segundo mensaje ya no se descarta tras 6 s: espera el candado
+ * hasta ~30 s (maxDuration es 300), y cuando el primero termina corre con el
+ * historial completo —el primer mensaje y lo que el bot le contestó—. Si en
+ * 30 s no se libera, se rinde y lo deja en el log: el mensaje quedó guardado
+ * y en el CRM, solo que sin respuesta del bot.
  */
+const ESPERA_CANDADO_MS = 2_000;
+const INTENTOS_CANDADO = 15; // ~30 s
+
 function activarAgenteEnSegundoPlano(
   supabase: Supabase,
   linea: Linea,
@@ -621,26 +669,20 @@ function activarAgenteEnSegundoPlano(
   conversacionId: string,
   waMessageId: string,
   contenido: string,
-  origen: string
+  origen: string,
+  nombre: string | null = null
 ) {
   const inmobiliariaId = linea.inmobiliaria_id;
 
   after(async () => {
     try {
-      const { data: puede } = await supabase
-        .schema('crm')
-        .rpc('bot_puede_responder', {
-          p_inmobiliaria_id: inmobiliariaId,
-          p_telefono: telefono,
-        });
-
-      // Falla hacia "sí responde": si el CRM no contesta, el cliente
-      // recibe respuesta igual.
-      if (puede === false) return;
+      // Con la línea: el freno de la 324 no aplica a lo que entra por aquí.
+      if (!(await botPuedeResponder(supabase, inmobiliariaId, telefono, numero))) return;
 
       // ── Candado anti-carrera en el camino directo ─────────────────
       let bloqueoAdquirido = false;
-      for (let intento = 0; intento < 3; intento++) {
+      const inicio = Date.now();
+      for (let intento = 0; intento < INTENTOS_CANDADO; intento++) {
         const { data: adquirido, error: errorBloqueo } = await supabase.rpc(
           'adquirir_bloqueo_agente',
           {
@@ -657,16 +699,27 @@ function activarAgenteEnSegundoPlano(
 
         if (adquirido) {
           bloqueoAdquirido = true;
+          if (intento > 0) {
+            console.log(
+              `[WhatsApp] ${telefono}: candado conseguido tras esperar ${Math.round((Date.now() - inicio) / 1000)} s; ` +
+                'este mensaje se procesa con el historial completo.'
+            );
+          }
           break;
         }
 
-        // Si otra petición está corriendo el agente para este contacto, esperamos 2 segundos
-        await new Promise((resolver) => setTimeout(resolver, 2000));
+        if (intento === 0) {
+          console.log(
+            `[WhatsApp] ${telefono}: el agente ya está contestando otro mensaje; este espera el candado (hasta ~30 s).`
+          );
+        }
+        // Otra petición está corriendo el agente para este contacto: se espera.
+        await new Promise((resolver) => setTimeout(resolver, ESPERA_CANDADO_MS));
       }
 
       if (!bloqueoAdquirido) {
         console.warn(
-          `[WhatsApp] Concurrencia evitada: ya existe una ejecución activa del agente para ${telefono}.`
+          `[WhatsApp] ${telefono}: el agente siguió ocupado más de 30 s; este mensaje queda guardado sin respuesta del bot.`
         );
         return;
       }
@@ -684,6 +737,9 @@ function activarAgenteEnSegundoPlano(
             inmobiliaria_id: inmobiliariaId,
             wa_message_id: waMessageId,
             wa_phone_number_id: numero,
+            // El nombre del perfil de WhatsApp. La ruta del agente no lo usa
+            // para pisar uno que ya tenga la conversación.
+            ...(nombre ? { cliente_nombre: nombre } : {}),
           }),
         });
 
@@ -692,7 +748,7 @@ function activarAgenteEnSegundoPlano(
           console.error('[WhatsApp] El agente no devolvió respuesta:', r.status);
           return;
         }
-        await entregarRespuesta(supabase, numero, telefono, respuesta);
+        await entregarRespuesta(supabase, numero, telefono, respuesta, inmobiliariaId);
       } finally {
         try {
           await supabase.rpc('liberar_bloqueo_agente', { p_conversacion_id: conversacionId });
@@ -708,6 +764,10 @@ function activarAgenteEnSegundoPlano(
 
 /**
  * Lo que el agente decidió decirle al cliente, entregado por Meta.
+ *
+ * Antes de cada parte se vuelve a preguntar si el bot puede hablar: si un
+ * asesor le escribió al cliente mientras el agente pensaba, lo que falta
+ * no sale.
  *
  * Por n8n, la respuesta volvía a n8n y n8n la mandaba por Kommo. Por el
  * canal propio no hay nadie más en medio: sin esto, el agente pensaba,
@@ -731,12 +791,20 @@ async function entregarRespuesta(
   supabase: Supabase,
   numero: string,
   telefono: string,
-  respuesta: RespuestaAgente | null
+  respuesta: RespuestaAgente | null,
+  inmobiliariaId: string
 ) {
   const credencial = await credencialDeLinea(supabase, numero);
   for (const clave of PARTES) {
     const texto = respuesta?.response?.[clave]?.trim();
     if (!texto) continue;
+
+    // Mientras el agente pensaba (o entre una parte y otra) alguien del
+    // equipo pudo escribirle: el bot no le habla encima.
+    if (!(await botPuedeResponder(supabase, inmobiliariaId, telefono, numero))) {
+      console.log(`[WhatsApp] ${telefono}: el bot se calló mientras contestaba; no se manda el resto.`);
+      return;
+    }
 
     const r = await enviarTexto(telefono, texto, credencial ?? undefined);
     if (credencial) await anotarResultadoCredencial(supabase, numero, r);

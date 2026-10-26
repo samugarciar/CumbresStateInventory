@@ -4,6 +4,7 @@ import { construirHistorial } from '@/lib/agente-comercial/historial';
 import { cargarPromptSistema, contextoVariable } from '@/lib/agente-comercial/prompt';
 import { correrAgenteComercial, extraerCitaAgendada } from '@/lib/agente-comercial/graph';
 import { calcularCostoUSD } from '@/lib/agente-comercial/costos';
+import { botPuedeResponder } from '@/lib/whatsapp/bot';
 
 // n8n sigue activando este agente (recibe el mensaje de Kommo, llama acá,
 // escribe la respuesta de vuelta a Kommo) — solo el razonamiento se mudó
@@ -159,18 +160,12 @@ export async function POST(request: Request) {
   // acotado —un asesor lo corrige— y el de dejar mudo el canal entero por
   // un error del CRM no lo está. Es la misma dirección que el patrón
   // a prueba de fallos de los triggers de proyección.
-  let botSilenciado = false;
-  try {
-    const { data: puede, error: errorBot } = await supabase
-      .schema('crm')
-      .rpc('bot_puede_responder', {
-        p_inmobiliaria_id: inmobiliariaId,
-        p_telefono: telefono,
-      });
-    if (!errorBot && puede === false) botSilenciado = true;
-  } catch (error) {
-    console.error('[AgenteComercial] No se pudo consultar el interruptor del CRM:', error);
-  }
+  //
+  // Por el canal propio llega el número por el que entró el mensaje: con él,
+  // el freno de la 324 (crm.frenos_bot) no calla al bot en la línea oficial.
+  // Por n8n no llega, y la pregunta es la de siempre.
+  const numeroLinea = cuerpo.wa_phone_number_id?.trim().replace(/\D/g, '') || undefined;
+  const botSilenciado = !(await botPuedeResponder(supabase, inmobiliariaId, telefono, numeroLinea));
 
   // El `return` del silencio NO va aquí, aunque la pregunta sí. Primero se
   // guarda lo que escribió el cliente: cortando antes del upsert, los
@@ -189,7 +184,13 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   let conversacionId: string;
-  const clienteNombre = cuerpo.cliente_nombre?.trim() || conversacionExistente?.cliente_nombre || null;
+  // Por el canal propio el nombre que llega es el del perfil de WhatsApp, y
+  // el webhook ya lo dejó en la conversación si no tenía: aquí no pisa uno
+  // que ya tenga. Por n8n manda el de Kommo, como siempre.
+  const nombreRecibido = cuerpo.cliente_nombre?.trim() || null;
+  const clienteNombre = cuerpo.wa_message_id
+    ? conversacionExistente?.cliente_nombre?.trim() || nombreRecibido
+    : nombreRecibido || conversacionExistente?.cliente_nombre || null;
   // Se lee ANTES del UPDATE de abajo, que es quien lo borra cuando el bot
   // recupera la voz.
   const silencioAvisadoAt: string | null = conversacionExistente?.silencio_avisado_at ?? null;
@@ -240,7 +241,6 @@ export async function POST(request: Request) {
   // inquilina por la administrativa y compradora por la comercial (hallazgo
   // 2). El bot lee lo de su línea y lo que llegó por Kommo, que no trae
   // número; lo de las otras líneas no es contexto suyo.
-  const numeroLinea = cuerpo.wa_phone_number_id?.trim().replace(/\D/g, '') || undefined;
   const { data: mensajesPrevios } = await supabase
     .from('agente_comercial_mensajes')
     .select('rol, contenido, created_at, wa_message_id')
@@ -373,16 +373,29 @@ export async function POST(request: Request) {
     });
   }
 
+  // El agente tarda: mientras pensaba, alguien del equipo pudo escribirle
+  // al cliente (relevo) o alguien pudo apagarlo. Se vuelve a preguntar
+  // ANTES de guardar la respuesta: si ya no puede hablar, la respuesta no
+  // se guarda —no aparece en el CRM como dicha— ni se manda (response vacío,
+  // que el webhook y n8n ya tratan como «no digas nada»). El uso y la tarea
+  // de la cita sí se anotan más abajo: los tokens se gastaron y, si agendó,
+  // la cita existe.
+  const sigueHablando = await botPuedeResponder(supabase, inmobiliariaId, telefono, numeroLinea);
+
   // El historial reconstruye turnos futuros desde acá: se guarda el borrador
   // CRUDO (con [ESCALAR] si aplica), igual que hacía la memoria de Postgres
   // de n8n (atada directo al nodo del agente, antes del formateo/limpieza).
-  await supabase.from('agente_comercial_mensajes').insert({
-    conversacion_id: conversacionId,
-    rol: 'agente',
-    contenido: resultado.output,
-    herramientas_usadas: resultado.herramientasUsadas.length > 0 ? resultado.herramientasUsadas : null,
-    wa_phone_number_id: numeroLinea ?? null,
-  });
+  if (sigueHablando) {
+    await supabase.from('agente_comercial_mensajes').insert({
+      conversacion_id: conversacionId,
+      rol: 'agente',
+      contenido: resultado.output,
+      herramientas_usadas: resultado.herramientasUsadas.length > 0 ? resultado.herramientasUsadas : null,
+      wa_phone_number_id: numeroLinea ?? null,
+    });
+  } else {
+    console.log('[AgenteComercial] El bot se calló mientras pensaba: la respuesta no se guarda ni se manda.');
+  }
 
   // Tarea de confirmación de la cita. La confirmación de citas ya existe
   // (confirmarCitas → workflow n8n → Kommo, con insignia en /citas), pero
@@ -438,6 +451,17 @@ export async function POST(request: Request) {
     }));
     const { error: errorUso } = await supabase.from('agente_comercial_uso').insert(filasUso);
     if (errorUso) console.warn('[AgenteComercial] No se pudo registrar el uso:', errorUso.message);
+  }
+
+  if (!sigueHablando) {
+    return Response.json({
+      estado: 'pausado',
+      output: '',
+      response: {},
+      etapa: resultado.etapa,
+      escalado: false,
+      conversacion_id: conversacionId,
+    });
   }
 
   return Response.json({
