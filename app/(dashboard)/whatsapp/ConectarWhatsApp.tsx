@@ -245,6 +245,9 @@ export default function ConectarWhatsApp({
     );
   }
 
+  // El número que la comercial tiene hoy, para decirlo antes de reemplazarlo.
+  const telefonoComercial = lineas.find((l) => requiereConfirmacionCorte(l.embudo))?.telefono_e164 ?? null;
+
   return (
     <div style={styles.pagina}>
       <Script
@@ -347,7 +350,9 @@ export default function ConectarWhatsApp({
 
               {requiereConfirmacionCorte(e.codigo) && (
                 <p style={styles.nota}>
-                  Esta línea atiende hoy clientes reales por Kommo. Iniciar su conexión exige confirmación explícita de corte.
+                  {conectada
+                    ? 'Esta línea atiende clientes reales y el bot comercial contesta por ella. Reconectarla exige confirmación explícita.'
+                    : 'Esta línea atiende clientes reales. Conectarla exige confirmación explícita.'}
                 </p>
               )}
 
@@ -432,22 +437,18 @@ export default function ConectarWhatsApp({
             <div style={styles.modalHeader}>
               <AlertTriangle size={24} style={{ color: '#eab308', flexShrink: 0 }} />
               <h2 id="modal-corte-titulo" style={styles.modalTitulo}>
-                ¿Iniciar corte de la línea comercial?
+                ¿Conectar la línea comercial por coexistencia?
               </h2>
             </div>
             <p style={styles.modalTexto}>
-              La línea comercial (+57 324 3516352) atiende hoy clientes reales por Kommo y n8n.
-              Al continuar, iniciarás el proceso de conexión a la Cloud API directa (coexistencia)
-              y se pedirá a Meta el historial de mensajes de los últimos meses (descartando duplicados
-              previos de Kommo).
+              La línea comercial
+              {telefonoComercial ? ` (hoy ${telefonoComercial})` : ''} atiende clientes reales y el bot
+              comercial contesta por ella. Al continuar, el número que conectes en la ventana de Meta
+              reemplaza al de la línea, y se pide a Meta el historial del celular.
             </p>
             <p style={styles.modalTextoSecundario}>
-              <strong>Asegúrate antes de continuar:</strong>
-              <br />
-              1. Haber respaldado y desconectado la cuenta de Kommo en la app de WhatsApp Business
-              (<em>Configuración &gt; Cuenta &gt; Plataforma empresarial &gt; Desconectar</em>).
-              <br />
-              2. Estar listo para apagar los flujos correspondientes de n8n al completar la conexión.
+              <strong>Asegúrate antes de continuar:</strong> el número nuevo es el que va a atender ventas.
+              Quien le escriba al número anterior deja de llegar a la plataforma y al CRM.
             </p>
             <div style={styles.modalAcciones}>
               <button
