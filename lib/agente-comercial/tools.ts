@@ -100,6 +100,19 @@ const REGLA_ANTICIPACION =
   'las visitas que empiezan a las 12:00 m. o antes se agendan con al menos 3 horas de anticipación, ' +
   'y las de la tarde con al menos 1 hora';
 
+// Una cita que agenda el agente queda REGISTRADA, no confirmada: la confirma
+// un asesor después, desde /citas, con la plantilla confirmacion_cita_visita.
+// Hubo malentendidos con clientes que dieron la visita por segura. El prompt
+// lo dice (regla 8.2), pero se repite aquí, en la respuesta de la herramienta,
+// porque es lo que el modelo tiene delante en el momento de contestar.
+const CITA_PENDIENTE_DE_ASESOR =
+  'La cita quedó REGISTRADA en la agenda, pero NO está confirmada: la confirma un asesor humano ' +
+  'después. Díselo al cliente en este mismo mensaje: el día, la hora y el inmueble, y que un asesor ' +
+  'de Cumbres le escribirá por este chat para confirmar la visita; solo queda en firme cuando ' +
+  'reciba esa confirmación. PROHIBIDO decir "confirmada", "quedó confirmada", "te esperamos", ' +
+  '"nos vemos" o cualquier frase que dé la visita por segura, y no prometas cuándo llega la ' +
+  'confirmación. Usa "quedó registrada" o "te separé el espacio".';
+
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
 // Día de la semana de una fecha 'AAAA-MM-DD'. Las RPC devuelven la fecha pero
@@ -495,10 +508,12 @@ export function crearToolsAgenteComercial(
           hora_fin: yaExiste.hora_fin,
           alcance: yaExiste.alcance,
           unidad: yaExiste.unidad,
+          confirmacion: 'pendiente_de_asesor',
           mensaje:
-            'Esta cita YA estaba agendada (mismo cliente, misma fecha y hora). No se creó una nueva. ' +
-            'Confírmasela al cliente con naturalidad, como si acabaras de agendarla; NO le digas que ' +
-            'estaba repetida ni que hubo un problema.',
+            'Esta cita YA estaba registrada (mismo cliente, misma fecha y hora). No se creó una nueva. ' +
+            'Díselo al cliente con naturalidad, como si acabaras de registrarla; NO le digas que ' +
+            'estaba repetida ni que hubo un problema. ' +
+            CITA_PENDIENTE_DE_ASESOR,
         });
       }
 
@@ -517,7 +532,13 @@ export function crearToolsAgenteComercial(
       const salida = error
         ? { success: false, error: error.message }
         : conPistaDeReintento(conDiaSemana((data ?? {}) as Record<string, unknown>), args.texto);
-      return registrar('agendar_cita', args, salida);
+      return registrar(
+        'agendar_cita',
+        args,
+        salida?.success === true
+          ? { ...salida, confirmacion: 'pendiente_de_asesor', mensaje: CITA_PENDIENTE_DE_ASESOR }
+          : salida
+      );
     },
     {
       name: 'agendar_cita',
@@ -528,7 +549,8 @@ export function crearToolsAgenteComercial(
         'Para agendar a nivel unidad (varios aptos, franjas compartidas) usa alcance="unidad" y el MISMO ' +
         'tipo_transaccion que usaste al consultar disponibilidad — sin eso falla con "no pude identificar ' +
         'una sola unidad y tipo". La hora debe ser una de las franjas devueltas por ' +
-        'verificar_horarios_disponibles, en bloques de 30 minutos. Revisa success en la respuesta.',
+        'verificar_horarios_disponibles, en bloques de 30 minutos. Revisa success en la respuesta. ' +
+        'Una cita registrada con éxito NO está confirmada: la confirma después un asesor humano.',
       schema: z.object({
         texto: z.string(),
         fecha: z.string().describe('YYYY-MM-DD'),

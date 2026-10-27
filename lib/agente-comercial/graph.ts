@@ -50,9 +50,11 @@ export interface HerramientaUsada {
   salida: unknown;
 }
 
+export type RespuestaPartes = { part_1: string; part_2?: string; part_3?: string; part_4?: string; part_5?: string };
+
 export interface ResultadoAgenteComercial {
   output: string; // borrador del agente, SIEMPRE con el prefijo [ESCALAR] cuando escalado=true
-  response: { part_1: string; part_2?: string; part_3?: string; part_4?: string; part_5?: string };
+  response: RespuestaPartes;
   etapa: Etapa;
   escalado: boolean;
   prioridad: 'urgente' | 'normal';
@@ -197,6 +199,30 @@ function detectarPreciosInventados(
     if (!fuenteDigitos.includes(d)) inventados.push(m[0].trim());
   }
   return [...new Set(inventados)];
+}
+
+// Una cita que agenda el agente queda pendiente de que un asesor la confirme
+// (regla 8.2 del prompt y CITA_PENDIENTE_DE_ASESOR en tools.ts). Hubo
+// malentendidos con clientes que dieron la visita por segura, así que no se
+// deja solo en manos del modelo: si en el turno se agendó y la respuesta no
+// menciona esa confirmación, se le agrega la frase al final.
+export const AVISO_CONFIRMACION_PENDIENTE =
+  'Un asesor de Cumbres te escribirá por este chat para confirmar la visita: queda en firme cuando recibas esa confirmación.';
+
+export function mencionaConfirmacionPendiente(texto: string): boolean {
+  return /asesor[^.?!]{0,80}confirm|confirm[^.?!]{0,60}asesor|para confirmar|pendiente de confirm|queda en firme/i.test(
+    texto
+  );
+}
+
+export function conAvisoDeConfirmacion(response: RespuestaPartes): RespuestaPartes {
+  const partes = [response.part_1, response.part_2, response.part_3, response.part_4, response.part_5];
+  if (mencionaConfirmacionPendiente(partes.filter(Boolean).join(' '))) return response;
+  const libre = partes.findIndex((p) => !p);
+  if (libre === -1) {
+    return { ...response, part_5: `${response.part_5} ${AVISO_CONFIRMACION_PENDIENTE}` };
+  }
+  return { ...response, [`part_${libre + 1}`]: AVISO_CONFIRMACION_PENDIENTE };
 }
 
 // Datos de la cita recién agendada, para el correo de aviso y la tarea de
@@ -477,15 +503,17 @@ export async function correrAgenteComercial(params: {
     };
   }
 
+  const responseFinal = citaReal ? conAvisoDeConfirmacion(response) : response;
+
   return {
     output,
-    response,
+    response: responseFinal,
     etapa,
     escalado,
     prioridad: leadCaliente && prioridad === 'normal' ? 'urgente' : prioridad,
     leadCaliente,
     contexto: armarContexto(bitacora, telefono),
-    respuesta: Object.values(response).filter(Boolean).join('\n\n'),
+    respuesta: Object.values(responseFinal).filter(Boolean).join('\n\n'),
     herramientasUsadas: bitacora,
     uso: resultado.usoTokens,
   };
