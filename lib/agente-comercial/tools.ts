@@ -15,6 +15,7 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fotosDeInmueble } from '@/lib/fotos';
+import { esBsuid } from '@/lib/whatsapp/remitente';
 
 // Postgres `ilike` ignora mayúsculas pero NO tildes: buscar "Niquía" (bien
 // escrito) contra un barrio guardado como "Niquia" devuelve CERO resultados.
@@ -178,7 +179,7 @@ function bloqueDemasiadoPronto(fecha: string, horaInicio: string): boolean {
 // Entre 7 y 15 dígitos cabe un fijo, un celular de Colombia y uno de afuera;
 // la clave interna "kommo-…" tiene dígitos pero no es un teléfono.
 function telefonoReal(telefono: string): boolean {
-  if (/kommo/i.test(telefono)) return false;
+  if (/kommo/i.test(telefono) || esBsuid(telefono)) return false;
   const digitos = telefono.replace(/\D/g, '');
   return digitos.length >= 7 && digitos.length <= 15;
 }
@@ -186,7 +187,8 @@ function telefonoReal(telefono: string): boolean {
 const sinTelefonoReal = (telefono: string): string =>
   `No tengo un número de teléfono real del cliente: llegó "${telefono}". Pídeselo antes de seguir — ` +
   'sin un número de verdad no se le puede confirmar la visita. NO uses un texto en lugar del número ' +
-  '("pendiente", "por confirmar"…) ni la clave interna kommo-…, y no le digas al cliente que hubo un error.';
+  '("pendiente", "por confirmar"…) ni la clave interna kommo-… o el identificador de WhatsApp (tipo "CO.1349…"), ' +
+  'y no le digas al cliente que hubo un error.';
 
 const TIPO_TRANSACCION = z.enum(['arriendo', 'venta']);
 const TIPO_INMUEBLE = z.enum(['casa', 'apartamento', 'lote', 'local', 'bodega', 'oficina', 'otro']);

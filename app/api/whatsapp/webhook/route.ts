@@ -3,6 +3,7 @@ import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { botPuedeResponder } from '@/lib/whatsapp/bot';
 import { conversacionDe } from '@/lib/whatsapp/conversaciones';
+import { remitenteDe } from '@/lib/whatsapp/remitente';
 import { enviarTexto } from '@/lib/whatsapp/meta';
 import {
   anotarResultadoCredencial,
@@ -53,7 +54,10 @@ interface Referral {
 
 interface MensajeMeta {
   id: string;
-  from: string;
+  /** El teléfono. Falta si la persona tiene «@» y no nos ha dado el número. */
+  from?: string;
+  /** El BSUID: siempre viene (ver lib/whatsapp/remitente.ts). */
+  from_user_id?: string;
   type: string;
   timestamp?: string;
   text?: { body: string };
@@ -68,7 +72,8 @@ interface MensajeMeta {
 /** `value.contacts[]`: el nombre que la persona puso en su perfil de WhatsApp. */
 interface ContactoMeta {
   wa_id?: string;
-  profile?: { name?: string };
+  user_id?: string;
+  profile?: { name?: string; username?: string };
 }
 
 interface EstadoMeta {
@@ -253,17 +258,27 @@ async function procesar(cuerpo: Record<string, unknown>, origen: string) {
 }
 
 /**
- * wa_id → nombre del perfil de WhatsApp. Meta lo manda junto a cada mensaje
- * entrante; sin leerlo, todo contacto nuevo nacía «Sin nombre» en el CRM.
+ * Remitente → nombre del perfil de WhatsApp. Meta lo manda junto a cada
+ * mensaje entrante; sin leerlo, todo contacto nuevo nacía «Sin nombre» en el
+ * CRM. Se guarda por teléfono y por BSUID, porque a quien tiene «@» le llega
+ * solo el BSUID; si no puso nombre, vale su «@».
  */
 function nombresDePerfil(contactos: ContactoMeta[]): Map<string, string> {
   const nombres = new Map<string, string>();
   for (const c of contactos) {
+    const usuario = c.profile?.username?.trim().replace(/^@/, '');
+    const nombre = (c.profile?.name?.trim() || (usuario ? `@${usuario}` : '')).slice(0, 120);
+    if (!nombre) continue;
     const waId = c.wa_id?.replace(/\D/g, '');
-    const nombre = c.profile?.name?.trim();
-    if (waId && nombre) nombres.set(waId, nombre.slice(0, 120));
+    if (waId) nombres.set(waId, nombre);
+    if (c.user_id?.trim()) nombres.set(c.user_id.trim(), nombre);
   }
   return nombres;
+}
+
+function nombreDe(nombres: Map<string, string>, m: MensajeMeta): string | null {
+  const telefono = m.from?.replace(/\D/g, '');
+  return (telefono ? nombres.get(telefono) : undefined) ?? (m.from_user_id ? nombres.get(m.from_user_id.trim()) : undefined) ?? null;
 }
 
 interface Linea {
@@ -478,7 +493,11 @@ async function guardarMensajeEntrante(
 } | null> {
   const { preparado, nombre } = extra;
   const inmobiliariaId = linea.inmobiliaria_id;
-  const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
+  const telefono = remitenteDe(m);
+  if (!telefono) {
+    console.error('[WhatsApp] Llegó un mensaje sin teléfono ni BSUID; se descarta:', m.id);
+    return null;
+  }
 
   // Solo texto despierta al agente. Una foto o un audio se guardan para
   // que la conversación no tenga huecos, pero llamar al bot con un
@@ -586,7 +605,8 @@ async function procesarMensajesEntrantes(
     if (medio) {
       after(async () => {
         const credencial = await credencialDeLinea(supabase, numero);
-        const telefono = m.from.startsWith('+') ? m.from : `+${m.from}`;
+        const telefono = remitenteDe(m);
+        if (!telefono) return;
         const preparado = await prepararMedio(
           supabase,
           credencial,
@@ -596,7 +616,7 @@ async function procesarMensajesEntrantes(
           medio.tipo,
           medio.meta
         );
-        const nombre = nombres.get(m.from.replace(/\D/g, '')) ?? null;
+        const nombre = nombreDe(nombres, m);
         const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, { preparado, nombre });
         if (guardado?.esTexto && linea.bot_atiende) {
           activarAgenteEnSegundoPlano(
@@ -615,7 +635,7 @@ async function procesarMensajesEntrantes(
       continue;
     }
 
-    const nombre = nombres.get(m.from.replace(/\D/g, '')) ?? null;
+    const nombre = nombreDe(nombres, m);
     const guardado = await guardarMensajeEntrante(supabase, linea, m, numero, { nombre });
     if (!guardado) continue;
 

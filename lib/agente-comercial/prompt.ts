@@ -12,6 +12,7 @@
 // automático de prompt.
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { esBsuid } from '@/lib/whatsapp/remitente';
 
 export async function cargarPromptSistema(inmobiliariaId: string): Promise<string> {
   const supabase = createAdminClient();
@@ -41,12 +42,16 @@ export async function cargarPromptSistema(inmobiliariaId: string): Promise<strin
 // no en el prompt de sistema — se replica ese mismo patrón en el route (ver
 // fraseFechaYMensaje en app/api/agentes/comercial-whatsapp/route.ts) para no
 // desviarse del comportamiento ya validado en producción.
+// Quien escribe con «@» sin darnos el número llega con su BSUID
+// («CO.1349…», ver lib/whatsapp/remitente.ts): tampoco es un teléfono.
 // Cuando el contacto de Kommo no trae teléfono, n8n manda una clave interna
 // estable ("kommo-49981231") para que la conversación y el debounce no se
 // rompan. Esa clave NO es un teléfono: si se la pasáramos como tal, el agente
 // la usaría al agendar y la cita quedaría con un número inservible.
 function esTelefonoReal(v: string): boolean {
-  return [...v].filter((ch) => ch >= '0' && ch <= '9').length >= 7 && !v.startsWith('kommo-');
+  return (
+    [...v].filter((ch) => ch >= '0' && ch <= '9').length >= 7 && !v.startsWith('kommo-') && !esBsuid(v)
+  );
 }
 
 export function contextoVariable(args: { telefono: string; clienteNombre?: string | null }): string {

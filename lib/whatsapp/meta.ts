@@ -11,9 +11,13 @@
  */
 
 import { META_APP_ID, type NumeroMeta } from './registro-integrado.ts';
+import { destinoMeta } from './remitente.ts';
 
 const VERSION = 'v21.0';
 const BASE = `https://graph.facebook.com/${VERSION}`;
+// Escribirle a un BSUID (`recipient`) existe desde julio de 2026; se usa la
+// versión del webhook (v26.0) para no depender de que la v21 lo conozca.
+const BASE_BSUID = 'https://graph.facebook.com/v26.0';
 
 export interface ResultadoEnvio {
   ok: boolean;
@@ -86,7 +90,7 @@ async function llamar(
 
   try {
     const r = await fetch(
-      `${BASE}/${phoneNumberId}/messages`,
+      `${'recipient' in cuerpo ? BASE_BSUID : BASE}/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -126,7 +130,7 @@ async function llamar(
 export function enviarTexto(telefono: string, texto: string, credencial?: CredencialLinea) {
   return llamar(
     {
-      to: telefono.replace(/^\+/, ''),
+      ...destinoMeta(telefono),
       type: 'text',
       text: { preview_url: true, body: texto },
     },
@@ -158,7 +162,7 @@ export function enviarPlantilla(
 
   return llamar(
     {
-      to: telefono.replace(/^\+/, ''),
+      ...destinoMeta(telefono),
       type: 'template',
       template: {
         name: nombrePlantilla,
