@@ -7,7 +7,7 @@ export type Asesor = { id: number; nombre: string };
 
 export const ASESORES: Asesor[] = [
   { id: 15, nombre: 'Sebastian' }, // JUAN SEBASTIAN MORALES GUERRA
-  { id: 16, nombre: 'Gisela' },    // GISELA ORTIZ OQUENDO
+  { id: 17, nombre: 'Kevin' },     // KEVIN ANDRES MEJIA ANGEL (reemplaza a Gisela, id 16, nov 2026)
   { id: 13, nombre: 'Liz' },       // LIZ DAYANA ROJAS CORTES
   { id: 14, nombre: 'Samuel' },    // SAMUEL GARCIA ROJAS
 ];
