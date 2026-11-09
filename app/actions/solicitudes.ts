@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { enviarVeredictoPorWhatsApp } from '@/lib/whatsapp/veredicto-solicitudes';
 import { MAX_MOTIVO_DENEGACION } from '@/lib/solicitudes';
+import { lugarDeVisita } from '@/lib/lugar-de-visita';
 
 interface AprobarData {
   solicitud_id: string;
@@ -35,7 +36,6 @@ interface VeredictoPayload {
   alcance: string;
   tipo_transaccion: string | null;
   unidad: string | null;
-  aptos_count: number | null;
   fecha: string;
   hora_inicio: string;
   hora_fin: string;
@@ -108,7 +108,7 @@ export async function aprobarSolicitud(data: AprobarData) {
         id, inmobiliaria_id, inmueble_id, alcance, unidad, tipo_transaccion,
         fecha, hora_inicio, hora_fin,
         cliente_nombre, cliente_telefono, cliente_email, notas, estado,
-        inmuebles ( titulo, direccion )
+        inmuebles ( titulo, direccion, unidad )
       `)
       .eq('id', data.solicitud_id)
       .single();
@@ -259,19 +259,20 @@ export async function aprobarSolicitud(data: AprobarData) {
     // Completar la tarea automática de esta solicitud en /tareas (best-effort)
     await completarTareaSolicitud(supabase, solicitud.id, user.id);
 
-    // 5) Veredicto al cliente por WhatsApp (la decisión ya está guardada)
+    // 5) Veredicto al cliente por WhatsApp (la decisión ya está guardada).
+    // Solo la unidad y la dirección sin apto (lib/lugar-de-visita).
     const inmueble = (solicitud as any).inmuebles;
+    const lugar = lugarDeVisita({ ...inmueble, unidad: solicitud.unidad || inmueble?.unidad });
     const { enviado, aviso } = await enviarVeredicto(profile.inmobiliaria_id, {
       solicitud_id: solicitud.id,
       resultado: 'aprobada',
       cliente_nombre: solicitud.cliente_nombre,
       cliente_telefono: solicitud.cliente_telefono,
-      inmueble: solicitud.alcance === 'unidad' ? (solicitud.unidad || '') : (inmueble?.titulo || ''),
-      direccion: inmueble?.direccion || '',
+      inmueble: lugar.nombre,
+      direccion: lugar.direccion,
       alcance: solicitud.alcance,
       tipo_transaccion: solicitud.tipo_transaccion,
       unidad: solicitud.unidad,
-      aptos_count: snapshot ? snapshot.length : null,
       fecha,
       hora_inicio: horaInicio.substring(0, 5),
       hora_fin: horaFin.substring(0, 5),
@@ -325,7 +326,7 @@ export async function denegarSolicitud(data: DenegarData) {
         id, inmobiliaria_id, alcance, unidad, tipo_transaccion,
         fecha, hora_inicio, hora_fin,
         cliente_nombre, cliente_telefono, estado,
-        inmuebles ( titulo, direccion )
+        inmuebles ( titulo, direccion, unidad )
       `)
       .eq('id', data.solicitud_id)
       .single();
@@ -379,17 +380,17 @@ export async function denegarSolicitud(data: DenegarData) {
     await completarTareaSolicitud(supabase, solicitud.id, user.id);
 
     const inmueble = (solicitud as any).inmuebles;
+    const lugar = lugarDeVisita({ ...inmueble, unidad: solicitud.unidad || inmueble?.unidad });
     const { enviado, aviso } = await enviarVeredicto(profile.inmobiliaria_id, {
       solicitud_id: solicitud.id,
       resultado: 'denegada',
       cliente_nombre: solicitud.cliente_nombre,
       cliente_telefono: solicitud.cliente_telefono,
-      inmueble: solicitud.alcance === 'unidad' ? (solicitud.unidad || '') : (inmueble?.titulo || ''),
-      direccion: inmueble?.direccion || '',
+      inmueble: lugar.nombre,
+      direccion: lugar.direccion,
       alcance: solicitud.alcance,
       tipo_transaccion: solicitud.tipo_transaccion,
       unidad: solicitud.unidad,
-      aptos_count: null,
       fecha: solicitud.fecha,
       hora_inicio: solicitud.hora_inicio.substring(0, 5),
       hora_fin: solicitud.hora_fin.substring(0, 5),

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fotosDeInmueble } from '@/lib/fotos';
 import { esBsuid } from '@/lib/whatsapp/remitente';
+import { lugarDeVisita, type DatosDelLugar } from '@/lib/lugar-de-visita';
 
 // Postgres `ilike` ignora mayúsculas pero NO tildes: buscar "Niquía" (bien
 // escrito) contra un barrio guardado como "Niquia" devuelve CERO resultados.
@@ -106,9 +107,15 @@ const REGLA_ANTICIPACION =
 // Hubo malentendidos con clientes que dieron la visita por segura. El prompt
 // lo dice (regla 8.2), pero se repite aquí, en la respuesta de la herramienta,
 // porque es lo que el modelo tiene delante en el momento de contestar.
+//
+// El lugar se nombra por la unidad, sin número de apto (pedido de Samuel,
+// 9 nov 2026): la agenda es por unidad y el apto del que se habló puede
+// arrendarse antes de la visita. Los disponibles los muestra el asesor.
 const CITA_PENDIENTE_DE_ASESOR =
   'La cita quedó REGISTRADA en la agenda, pero NO está confirmada: la confirma un asesor humano ' +
-  'después. Díselo al cliente en este mismo mensaje: el día, la hora y el inmueble, y que un asesor ' +
+  'después. Díselo al cliente en este mismo mensaje: el día, la hora y el lugar, que es el nombre de ' +
+  'la unidad y la dirección de `lugar` (si viene), SIN número de apto ni de torre: los apartamentos ' +
+  'disponibles se los muestra el asesor en la visita. Dile también que un asesor ' +
   'de Cumbres le escribirá por este chat para confirmar la visita; solo queda en firme cuando ' +
   'reciba esa confirmación. PROHIBIDO decir "confirmada", "quedó confirmada", "te esperamos", ' +
   '"nos vemos" o cualquier frase que dé la visita por segura, y no prometas cuándo llega la ' +
@@ -447,6 +454,20 @@ export function crearToolsAgenteComercial(
     }
   );
 
+  // Dónde es la visita, como se le dice al cliente (lib/lugar-de-visita).
+  // Si la consulta falla la cita igual quedó registrada: el agente se queda
+  // sin `lugar` y nombra la unidad con lo que ya sabe.
+  const lugarDeLaCita = async (citaId: string) => {
+    const { data } = await supabase
+      .from('citas')
+      .select('unidad, inmuebles ( titulo, direccion, unidad )')
+      .eq('id', citaId)
+      .maybeSingle();
+    if (!data) return null;
+    const inmueble = data.inmuebles as DatosDelLugar | null;
+    return lugarDeVisita({ ...inmueble, unidad: data.unidad || inmueble?.unidad });
+  };
+
   const agendarCita = tool(
     async (args) => {
       // Un horario que ya pasó no se puede agendar aunque el agente lo tuviera
@@ -510,6 +531,7 @@ export function crearToolsAgenteComercial(
           hora_fin: yaExiste.hora_fin,
           alcance: yaExiste.alcance,
           unidad: yaExiste.unidad,
+          lugar: await lugarDeLaCita(yaExiste.id),
           confirmacion: 'pendiente_de_asesor',
           mensaje:
             'Esta cita YA estaba registrada (mismo cliente, misma fecha y hora). No se creó una nueva. ' +
@@ -534,13 +556,13 @@ export function crearToolsAgenteComercial(
       const salida = error
         ? { success: false, error: error.message }
         : conPistaDeReintento(conDiaSemana((data ?? {}) as Record<string, unknown>), args.texto);
-      return registrar(
-        'agendar_cita',
-        args,
-        salida?.success === true
-          ? { ...salida, confirmacion: 'pendiente_de_asesor', mensaje: CITA_PENDIENTE_DE_ASESOR }
-          : salida
-      );
+      if (salida?.success !== true) return registrar('agendar_cita', args, salida);
+      return registrar('agendar_cita', args, {
+        ...salida,
+        lugar: salida.cita_id ? await lugarDeLaCita(String(salida.cita_id)) : null,
+        confirmacion: 'pendiente_de_asesor',
+        mensaje: CITA_PENDIENTE_DE_ASESOR,
+      });
     },
     {
       name: 'agendar_cita',

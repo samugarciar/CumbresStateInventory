@@ -15,6 +15,7 @@ import {
   telefonoE164,
   textoConfirmacion,
 } from '@/lib/whatsapp/confirmacion-citas';
+import { lugarDeVisita } from '@/lib/lugar-de-visita';
 
 interface FranjaData {
   inmueble_id: string;
@@ -470,8 +471,8 @@ export async function confirmarCitas(citaIds: string[]) {
     const { data: citas } = await supabase
       .from('citas')
       .select(`
-        id, inmobiliaria_id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono,
-        inmuebles ( titulo, direccion ),
+        id, inmobiliaria_id, fecha, hora_inicio, hora_fin, cliente_nombre, cliente_telefono, unidad,
+        inmuebles ( titulo, direccion, unidad ),
         franjas_horarias ( usuarios!franjas_horarias_asesor_id_fkey ( nombre_completo, telefono ) )
       `)
       .in('id', citaIds)
@@ -530,12 +531,15 @@ export async function confirmarCitas(citaIds: string[]) {
 
       const asesorNombre = c.franjas_horarias?.usuarios?.nombre_completo?.trim();
       const asesorTelefono = c.franjas_horarias?.usuarios?.telefono?.trim();
+      // La unidad y la dirección sin apto: en una cita a la unidad el inmueble
+      // es solo el ancla de la franja y su apto puede ya no estar disponible.
+      const lugar = lugarDeVisita({ ...c.inmuebles, unidad: c.unidad || c.inmuebles?.unidad });
       const variables = {
-        inmueble: c.inmuebles?.titulo?.trim() || 'el inmueble',
+        inmueble: lugar.nombre || 'el inmueble',
         dia: diaLegible(c.fecha),
         hora: horaLegible(c.hora_inicio ?? ''),
         // Meta no acepta variables vacías.
-        direccion: c.inmuebles?.direccion?.trim() || 'te la compartimos por este medio',
+        direccion: lugar.direccion || 'te la compartimos por este medio',
         asesor: asesorNombre
           ? asesorTelefono
             ? `${asesorNombre} (${asesorTelefono})`

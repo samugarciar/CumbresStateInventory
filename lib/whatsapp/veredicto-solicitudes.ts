@@ -31,11 +31,10 @@ export interface Veredicto {
   resultado: 'aprobada' | 'denegada';
   cliente_nombre: string | null;
   cliente_telefono: string | null;
-  /** El título del inmueble, o la unidad cuando la solicitud es por unidad. */
+  /** La unidad, o el título si el inmueble no tiene (lib/lugar-de-visita). */
   inmueble: string;
+  /** Sin el apto: la visita es a la unidad. */
   direccion: string;
-  alcance: string;
-  aptos_count: number | null;
   fecha: string;
   hora_inicio: string;
   asesor: string | null;
@@ -65,10 +64,9 @@ function primerNombre(nombre: string | null): string | null {
   return limpio.split(/\s+/)[0];
 }
 
+// Sin número de apto ni conteo de aptos: los que sigan disponibles se los
+// muestra el asesor en la visita (lib/lugar-de-visita).
 function nombreDelInmueble(v: Veredicto): string {
-  if (v.alcance === 'unidad') {
-    return v.aptos_count ? `${v.inmueble} (${v.aptos_count} aptos disponibles)` : `${v.inmueble} (unidad)`;
-  }
   return v.inmueble || 'el inmueble';
 }
 
