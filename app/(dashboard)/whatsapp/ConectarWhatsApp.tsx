@@ -134,11 +134,29 @@ export default function ConectarWhatsApp({
   // El último evento de la ventana de Meta. Llega por `postMessage`, aparte
   // de la respuesta de FB.login y sin orden garantizado entre los dos.
   const evento = useRef<EventoRegistro | null>(null);
+  // El embudo de la ventana abierta, para anotar el fin de Meta apenas
+  // llega (el listener se registra una sola vez y no ve el estado).
+  const embudoAbierto = useRef<string | null>(null);
 
   useEffect(() => {
     const escuchar = (e: MessageEvent) => {
       const leido = leerEventoRegistro(e.origin, e.data);
-      if (leido) evento.current = leido;
+      if (!leido) return;
+      evento.current = leido;
+      // Meta terminó: se anota ya, sin esperar el código, que puede no
+      // llegar nunca si la ventana no devuelve el control. Una sola vez
+      // por ventana.
+      const embudo = embudoAbierto.current;
+      if (leido.tipo === 'fin' && embudo) {
+        embudoAbierto.current = null;
+        void llamarServidor({
+          accion: 'terminado',
+          embudo,
+          waba_id: leido.wabaId,
+          phone_number_id: leido.phoneNumberId,
+          datos: { coexistencia: leido.coexistencia, business_id: leido.businessId ?? null },
+        }).catch(() => undefined);
+      }
     };
     window.addEventListener('message', escuchar);
     return () => window.removeEventListener('message', escuchar);
@@ -235,6 +253,7 @@ export default function ConectarWhatsApp({
   function conectar(embudo: string, confirmacionCorte = false, modo: ModoConexion = 'coexistencia') {
     if (!window.FB || enCurso) return;
     evento.current = null;
+    embudoAbierto.current = embudo;
     setEnCurso(embudo);
     setResultados((previos) => ({ ...previos, [embudo]: undefined }));
     // FB.login no admite una función async: se llama a una aparte.

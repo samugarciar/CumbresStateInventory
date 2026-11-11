@@ -46,7 +46,7 @@ export const maxDuration = 60;
 type Supabase = ReturnType<typeof createAdminClient>;
 
 interface Peticion {
-  accion?: 'conectar' | 'cancelar' | 'error';
+  accion?: 'conectar' | 'cancelar' | 'error' | 'terminado';
   embudo?: string;
   confirmacion_corte?: boolean;
   /**
@@ -85,7 +85,7 @@ async function anotarIntento(
   intento: {
     inmobiliariaId: string;
     embudo: string;
-    resultado: 'exito' | 'error' | 'cancelado';
+    resultado: 'exito' | 'error' | 'cancelado' | 'terminado_en_meta';
     codigo?: string | null;
     error?: Record<string, unknown> | null;
     phoneNumberId?: string | null;
@@ -156,6 +156,23 @@ export async function POST(request: Request) {
       // Un 'error' sin objeto lo rechaza la base: si la ventana no trajo
       // nada, se dice eso mismo.
       error: cuerpo.datos ?? (esError ? { message: 'La ventana de Meta falló sin detalle' } : null),
+    });
+    return respuesta(200, { ok: true });
+  }
+
+  // Meta avisó que el flujo terminó. Se anota ya, con el número y la
+  // cuenta que mandó, porque el código puede no llegar nunca: el 11 nov la
+  // ventana de un compañero terminó la coexistencia del 320 y no le
+  // devolvió el control a la página, y no quedó rastro de nada. Si después
+  // llega el código, el 'exito' (o el 'error') se anota aparte.
+  if (cuerpo?.accion === 'terminado') {
+    await anotarIntento(supabase, {
+      inmobiliariaId,
+      embudo,
+      resultado: 'terminado_en_meta',
+      error: cuerpo.datos ?? null,
+      phoneNumberId: cuerpo.phone_number_id?.trim() || null,
+      wabaId: cuerpo.waba_id?.trim() || null,
     });
     return respuesta(200, { ok: true });
   }
