@@ -29,6 +29,14 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { crearToolsAgenteComercial } from './tools';
 import { MODELO_PRINCIPAL, MODELO_VERIFICADOR } from './costos';
+import {
+  afirmaRegistro,
+  registroEnElTurno,
+  telefonosDelCliente,
+  tieneAgendaVigente,
+  AVISO_REGISTRO_SIN_RESPALDO,
+  RESPUESTA_REGISTRO_SIN_RESPALDO,
+} from './afirmaciones';
 
 // Cada iteración del agente son ~2 pasos del grafo interno (modelo + tool).
 // Menos tools que el Asesor BI (35) — el comercial tiene 7 tools simples.
@@ -339,6 +347,9 @@ const EstadoAgente = Annotation.Root({
     reducer: (actual, nuevo) => actual.concat(nuevo),
     default: () => [],
   }),
+  // El agente insistió en decir que la visita quedó registrada sin que haya
+  // nada registrado (ver afirmaciones.ts): la respuesta no sale.
+  registroSinRespaldo: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
 });
 
 type Estado = typeof EstadoAgente.State;
@@ -391,7 +402,52 @@ export async function correrAgenteComercial(params: {
     };
   }
 
+  // ¿El borrador afirma un registro que no existe? Solo se consulta la base
+  // cuando la respuesta lo afirma y ninguna herramienta lo respaldó en el
+  // turno, así que casi nunca cuesta nada. Si no se puede saber (null), pasa.
+  async function afirmaSinRespaldo(borrador: string): Promise<boolean> {
+    if (!afirmaRegistro(borrador) || registroEnElTurno(bitacora)) return false;
+    const vigente = await tieneAgendaVigente(
+      supabase,
+      inmobiliariaId,
+      telefonosDelCliente(telefono, historial, bitacora)
+    );
+    return vigente === false;
+  }
+
+  // Una oportunidad de corregir: muchas veces el error tiene arreglo (una
+  // fecha mal calculada) y el cliente sale con su visita registrada. Si el
+  // modelo insiste, la respuesta no se manda.
+  async function nodoCandadoRegistro(estado: Estado): Promise<Partial<Estado>> {
+    if (!(await afirmaSinRespaldo(estado.borrador))) return {};
+    console.warn('[AgenteComercial] Afirmó un registro que no existe; se le pide corregir.');
+
+    const correccion = new HumanMessage(AVISO_REGISTRO_SIN_RESPALDO);
+    const base = [...estado.messages, correccion];
+    try {
+      const resultado = await agentePrincipal.invoke({ messages: base }, { recursionLimit: LIMITE_RECURSION });
+      const mensajesNuevos = (resultado.messages as BaseMessage[]).slice(base.length);
+      const uso = mensajesNuevos
+        .map((m) => usoDeMensaje(MODELO_PRINCIPAL, m))
+        .filter((u): u is UsoRegistrado => u !== null);
+      const borrador = extraerTexto(mensajesNuevos[mensajesNuevos.length - 1]?.content);
+      const insiste = !borrador.trim() || (await afirmaSinRespaldo(borrador));
+      if (insiste) console.warn('[AgenteComercial] Insistió en el registro inexistente; se bloquea la respuesta.');
+      return {
+        messages: [correccion, ...mensajesNuevos],
+        borrador,
+        usoTokens: uso,
+        registroSinRespaldo: insiste,
+      };
+    } catch (error) {
+      console.error('[AgenteComercial] Falló la corrección del registro inexistente:', error);
+      return { registroSinRespaldo: true };
+    }
+  }
+
   async function nodoFormateador(estado: Estado): Promise<Partial<Estado>> {
+    // Ese borrador no se va a mandar: formatearlo es gastar una llamada.
+    if (estado.registroSinRespaldo) return {};
     // El prefijo [ESCALAR] (si está) nunca debe llegar al formateador ni al
     // cliente — se limpia acá, igual que "Limpiar Tag Escalar" en n8n. El
     // borrador CRUDO (con el prefijo intacto) se preserva en estado.borrador
@@ -429,9 +485,11 @@ export async function correrAgenteComercial(params: {
 
   const grafo = new StateGraph(EstadoAgente)
     .addNode('agente_principal', nodoAgentePrincipal)
+    .addNode('candado_registro', nodoCandadoRegistro)
     .addNode('formateador', nodoFormateador)
     .addEdge(START, 'agente_principal')
-    .addEdge('agente_principal', 'formateador')
+    .addEdge('agente_principal', 'candado_registro')
+    .addEdge('candado_registro', 'formateador')
     .addEdge('formateador', END)
     .compile();
 
@@ -471,6 +529,29 @@ export async function correrAgenteComercial(params: {
       : resultado.etapa;
 
   const leadCaliente = detectarLeadCaliente(bitacora);
+
+  // Iba a decirle al cliente que su visita quedó registrada y no hay nada
+  // registrado, ni después de pedirle que corrigiera (afirmaciones.ts). No se
+  // envía: un asesor toma el caso, porque el cliente cree tener una visita.
+  if (resultado.registroSinRespaldo) {
+    const texto = RESPUESTA_REGISTRO_SIN_RESPALDO;
+    return {
+      output: `[ESCALAR] ${texto}`,
+      response: { part_1: texto },
+      etapa,
+      escalado: true,
+      prioridad: 'urgente',
+      leadCaliente,
+      contexto:
+        armarContexto(bitacora, telefono) +
+        `\n\n⚠️ BLOQUEADO: el agente iba a decirle al cliente que su visita o su solicitud quedó ` +
+        `registrada, pero no hay ninguna cita vigente ni solicitud pendiente a su nombre. Revisa qué ` +
+        `quiere y agéndale tú.`,
+      respuesta: texto,
+      herramientasUsadas: bitacora,
+      uso: resultado.usoTokens,
+    };
+  }
 
   // Si el agente le dijo al cliente un precio que no salió de ninguna
   // herramienta ni del propio cliente, se lo inventó. No se envía: el cliente
