@@ -88,9 +88,13 @@ function ahoraBogota(): { fecha: string; minutos: number } {
 // cuadrar quién abre. Decisión de Samuel (25 oct 2026): las visitas que
 // empiezan a las 12:00 m. o antes piden 3 horas —una de las 8:00 a. m. no se
 // agenda en la madrugada, cuando nadie puede confirmarla— y las de la tarde, 1.
+// La tarde subió a 2 horas el 11 nov 2026, también por decisión de Samuel: con 1
+// hora, el bot agendaba para la misma tarde después de la ronda de confirmación
+// del mediodía, nadie se enteraba y el cliente llegaba sin asesor (9 y 10 nov,
+// Vidanta 4:30 p. m.).
 const HORA_LIMITE_MANANA_MIN = 12 * 60;
 const ANTICIPACION_MANANA_MIN = 3 * 60;
-const ANTICIPACION_TARDE_MIN = 1 * 60;
+const ANTICIPACION_TARDE_MIN = 2 * 60;
 
 function anticipacionMinima(horaInicio: string): number {
   const [h, m] = String(horaInicio).split(':').map(Number);
@@ -100,7 +104,7 @@ function anticipacionMinima(horaInicio: string): number {
 // La regla dicha en palabras, para que el agente se la explique al cliente.
 const REGLA_ANTICIPACION =
   'las visitas que empiezan a las 12:00 m. o antes se agendan con al menos 3 horas de anticipación, ' +
-  'y las de la tarde con al menos 1 hora';
+  'y las de la tarde con al menos 2 horas';
 
 // Una cita que agenda el agente queda REGISTRADA, no confirmada: la confirma
 // un asesor después, desde /citas, con la plantilla confirmacion_cita_visita.
