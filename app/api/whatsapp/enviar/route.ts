@@ -50,6 +50,15 @@ interface Peticion {
    * número es una línea de esta inmobiliaria (26 oct).
    */
   desde?: { wa_phone_number_id?: string; embudo?: string };
+  /**
+   * Quién pide el envío cuando no es una persona. Hoy solo
+   * 'reciclador': el CRM le escribe solo a una conversación muerta
+   * (crm.despachar_reciclaje, 13 nov). Ahí NO se anota relevo: el relevo
+   * calla al bot porque una persona tomó la conversación, y en el
+   * reciclador no la tomó nadie — si el lead revive y contesta, quien
+   * tiene que responderle es el bot.
+   */
+  origen?: 'reciclador';
 }
 
 export async function POST(request: Request) {
@@ -186,10 +195,11 @@ export async function POST(request: Request) {
       // queda incompleto— pero devolver error haría que el asesor lo
       // mandara otra vez, y el cliente lo recibiría dos veces.
       console.error('[WhatsApp] Mensaje entregado pero no registrado:', error);
-    } else if (numeroSalida) {
+    } else if (numeroSalida && cuerpo?.origen !== 'reciclador') {
       // Una persona del equipo escribió: el bot se calla en esa
       // conversación (relevo, decisión 24). Va DESPUÉS de guardar, como
       // pide el contrato; la base decide si aplica (solo donde el bot habla).
+      // El reciclador no es una persona: con él no hay relevo.
       const { error: errorRelevo } = await supabase.schema('crm').rpc('registrar_relevo', {
         p_wa_phone_number_id: numeroSalida,
         p_telefono: telefono,
