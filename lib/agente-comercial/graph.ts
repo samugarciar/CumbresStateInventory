@@ -244,6 +244,9 @@ export function extraerCitaAgendada(bitacora: HerramientaUsada[]): {
   asesor: string | null;
   cliente_nombre: string;
   cliente_telefono: string;
+  // La cita ya estaba (candado de idempotencia de agendar_cita): su tarea y
+  // su aviso salieron cuando se creó; repetirlos duplicaba la tarea en /tareas.
+  ya_existia: boolean;
 } | null {
   for (const h of bitacora) {
     if (h.nombre !== 'agendar_cita') continue;
@@ -251,6 +254,7 @@ export function extraerCitaAgendada(bitacora: HerramientaUsada[]): {
     if (!s || s.success !== true || !s.cita_id) continue;
     const ent = (h.entrada ?? {}) as Record<string, unknown>;
     return {
+      ya_existia: s.ya_existia === true,
       cita_id: String(s.cita_id),
       inmueble: String(s.inmueble ?? ''),
       fecha: String(s.fecha ?? ''),

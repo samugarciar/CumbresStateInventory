@@ -1,5 +1,7 @@
 import { HumanMessage, type BaseMessage } from '@langchain/core/messages';
+import { after } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { avisarVisitaDeHoy } from '@/lib/whatsapp/aviso-visita-hoy';
 import { construirHistorial } from '@/lib/agente-comercial/historial';
 import { cargarPromptSistema, contextoVariable } from '@/lib/agente-comercial/prompt';
 import { correrAgenteComercial, extraerCitaAgendada } from '@/lib/agente-comercial/graph';
@@ -424,18 +426,27 @@ export async function POST(request: Request) {
       }
     }
 
-    const cuando = `${cita.fecha} ${cita.hora_inicio}`;
-    const { error: errorTarea } = await supabase.from('tareas').insert({
-      inmobiliaria_id: inmobiliariaId,
-      usuario_id: null, // sin dueño: la ven los admins, igual que las de solicitud_apertura
-      entidad_tipo: 'general',
-      entidad_id: cita.cita_id,
-      evento_origen: 'cita_agendada',
-      evento_titulo: `Cita agendada por el agente — ${cita.inmueble}`,
-      titulo: `Confirmar cita: ${cita.cliente_nombre} · ${cuando}${cita.asesor ? ` · ${cita.asesor}` : ''}`,
-      estado: 'pendiente',
-    });
-    if (errorTarea) console.warn('[AgenteComercial] No se pudo crear la tarea de la cita:', errorTarea.message);
+    // Si la cita ya existía, su tarea y su aviso salieron cuando se creó.
+    if (!cita.ya_existia) {
+      const cuando = `${cita.fecha} ${cita.hora_inicio}`;
+      const { error: errorTarea } = await supabase.from('tareas').insert({
+        inmobiliaria_id: inmobiliariaId,
+        usuario_id: null, // sin dueño: la ven los admins, igual que las de solicitud_apertura
+        entidad_tipo: 'general',
+        entidad_id: cita.cita_id,
+        evento_origen: 'cita_agendada',
+        evento_titulo: `Cita agendada por el agente — ${cita.inmueble}`,
+        titulo: `Confirmar cita: ${cita.cliente_nombre} · ${cuando}${cita.asesor ? ` · ${cita.asesor}` : ''}`,
+        estado: 'pendiente',
+      });
+      if (errorTarea) console.warn('[AgenteComercial] No se pudo crear la tarea de la cita:', errorTarea.message);
+
+      // Si es para hoy, la tarea no basta: nadie mira /tareas a tiempo (9 y
+      // 10 nov). Va por WhatsApp al asesor y a quien confirma, después de
+      // responderle al cliente, para no demorar su respuesta.
+      const citaId = cita.cita_id;
+      after(() => avisarVisitaDeHoy(supabase, inmobiliariaId, citaId));
+    }
   }
 
   if (resultado.uso.length > 0) {
