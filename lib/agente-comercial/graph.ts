@@ -28,7 +28,13 @@ import { BaseMessage, SystemMessage, HumanMessage, AIMessage } from '@langchain/
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { crearToolsAgenteComercial } from './tools';
-import { tieneEtiquetaEscalar, sinEtiquetaEscalar, normalizarBorrador, pideDatoParaRegistrar } from './escalar';
+import {
+  tieneEtiquetaEscalar,
+  sinEtiquetaEscalar,
+  normalizarBorrador,
+  pideDatoParaRegistrar,
+  prometeAsesor,
+} from './escalar';
 import {
   MODELO_PRINCIPAL,
   MODELO_VERIFICADOR,
@@ -530,7 +536,24 @@ export async function correrAgenteComercial(params: {
     console.warn('[AgenteComercial] Escalaba mientras pedía un dato para registrar; se pospone.');
   }
   const { autoEscalar, prioridad } = evaluarEscalamiento(bitacora);
-  const escalado = (tagPresente && !escalaPidiendoDato) || autoEscalar;
+  // Le prometió al cliente que un asesor lo contacta o le confirma algo, pero
+  // no escaló: nadie del equipo se entera y el cliente espera para siempre.
+  // Noviembre 2026 con gpt-4.1: ~550 respuestas así en ~330 conversaciones
+  // (frente a 402 escaladas). Decisión de Samuel (19 nov 2026): escalan por
+  // código. Se mira el borrador y lo que de verdad recibe el cliente; si en
+  // ese turno le está pidiendo un dato para registrar la visita, se espera al
+  // registro, igual que con la etiqueta.
+  const textoCliente = Object.values(response).filter(Boolean).join('\n');
+  const escalaPorPromesa =
+    !tagPresente &&
+    !autoEscalar &&
+    !pideDatoParaRegistrar(resultado.borrador) &&
+    !pideDatoParaRegistrar(textoCliente) &&
+    (prometeAsesor(resultado.borrador) || prometeAsesor(textoCliente));
+  if (escalaPorPromesa) {
+    console.warn('[AgenteComercial] Prometió un asesor sin escalar; se escala por código.');
+  }
+  const escalado = (tagPresente && !escalaPidiendoDato) || autoEscalar || escalaPorPromesa;
 
   // n8n decide la etapa de Kommo leyendo si `output` empieza con [ESCALAR]
   // (nodo "Escalar?" y "Prepare Update Payload"). Se normaliza acá: una sola
@@ -624,7 +647,12 @@ export async function correrAgenteComercial(params: {
     escalado,
     prioridad: leadCaliente && prioridad === 'normal' ? 'urgente' : prioridad,
     leadCaliente,
-    contexto: armarContexto(bitacora, telefono),
+    contexto:
+      armarContexto(bitacora, telefono) +
+      (escalaPorPromesa
+        ? '\n\nEscalado por código: el bot le prometió al cliente que un asesor lo contacta o le ' +
+          'confirma algo. Revisa la conversación y respóndele.'
+        : ''),
     respuesta: Object.values(responseFinal).filter(Boolean).join('\n\n'),
     herramientasUsadas: bitacora,
     uso: resultado.usoTokens,

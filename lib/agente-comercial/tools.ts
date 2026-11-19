@@ -926,23 +926,73 @@ export function crearToolsAgenteComercial(
   // Empalme: inmueble ocupado que muestra el inquilino de salida. No se agenda;
   // se comparte el teléfono del inquilino (solo cuando el lead califica) y se avisa
   // al admin. El número NO viaja en buscar_inmuebles: solo se revela aquí.
+  // El historial del agente guarda solo el TEXTO de los turnos anteriores, no
+  // lo que devolvieron las herramientas: el código que trajo buscar_inmuebles
+  // en un turno ya no está en el siguiente. En pruebas del 19 nov 2026, al
+  // llegar el nombre del cliente el modelo se inventaba el código («4521», el
+  // ejemplo del prompt) o pasaba «MIRASOL», y el contacto nunca se compartía.
+  // Por eso, si el código no sirve, el empalme se busca por la unidad.
+  // Un solo literal: Supabase deduce el tipo de las filas a partir de este texto.
+  const COLUMNAS_EMPALME =
+    'id, arrendasoft_id, titulo, direccion, unidad, barrio, habitaciones, precio, precio_oferta, estado, empalme_contacto_nombre, empalme_contacto_telefono';
+  const SIN_EMPALME =
+    'No encontré un empalme con ese código ni con esa unidad. Llama buscar_inmuebles con la zona o la ' +
+    'unidad que habló el cliente: cada resultado trae su arrendasoft_id. Luego vuelve a llamar esta ' +
+    'herramienta con ese código. No le digas al cliente que hubo un error.';
+
   const compartirContactoEmpalme = tool(
     async (args) => {
       const codigo = String(args.codigo ?? '').replace(/\D/g, '');
-      if (!codigo) {
-        return registrar('compartir_contacto_empalme', args, { error: 'Falta el código del inmueble.' });
+      const unidad = String(args.unidad ?? '').trim() || String(args.codigo ?? '').replace(/[\d\s]/g, '').trim();
+
+      let inm = null;
+      if (codigo) {
+        const { data, error } = await supabase
+          .from('inmuebles')
+          .select(COLUMNAS_EMPALME)
+          .eq('inmobiliaria_id', inmobiliariaId)
+          .eq('arrendasoft_id', Number(codigo))
+          .maybeSingle();
+        if (error) return registrar('compartir_contacto_empalme', args, { error: error.message });
+        inm = data;
       }
-
-      const { data: inm, error } = await supabase
-        .from('inmuebles')
-        .select('id, titulo, direccion, unidad, estado, empalme_contacto_nombre, empalme_contacto_telefono')
-        .eq('inmobiliaria_id', inmobiliariaId)
-        .eq('arrendasoft_id', Number(codigo))
-        .maybeSingle();
-
-      if (error) return registrar('compartir_contacto_empalme', args, { error: error.message });
+      if (!inm && unidad) {
+        const t = patronFlexible(unidad.replace(/[(),]/g, ' '));
+        const { data, error } = await supabase
+          .from('inmuebles')
+          .select(COLUMNAS_EMPALME)
+          .eq('inmobiliaria_id', inmobiliariaId)
+          .eq('estado', 'empalme')
+          .or(`unidad.ilike.%${t}%,barrio.ilike.%${t}%,titulo.ilike.%${t}%`)
+          .limit(10);
+        if (error) return registrar('compartir_contacto_empalme', args, { error: error.message });
+        let encontrados = data ?? [];
+        // Varios empalmes en la misma unidad (Mirasol tiene dos): el precio
+        // que el bot le dio al cliente sí quedó en el texto del historial, así
+        // que con él se desempata sin volver a preguntar.
+        const precioMencionado = Number(String(args.precio ?? '').replace(/\D/g, ''));
+        if (encontrados.length > 1 && precioMencionado > 0) {
+          const conEsePrecio = encontrados.filter(
+            (e) => Math.abs(Number(conPrecioEfectivo(e).precio) - precioMencionado) <= precioMencionado * 0.01
+          );
+          if (conEsePrecio.length > 0) encontrados = conEsePrecio;
+        }
+        if (encontrados.length > 1) {
+          return registrar('compartir_contacto_empalme', args, {
+            varios_empalmes: encontrados.map((e) => {
+              const x = conPrecioEfectivo(e);
+              return { arrendasoft_id: x.arrendasoft_id, unidad: x.unidad, barrio: x.barrio, habitaciones: x.habitaciones, precio: x.precio };
+            }),
+            mensaje:
+              'Hay varios empalmes ahí. Si por la conversación sabes cuál quiere el cliente (precio, ' +
+              'habitaciones), vuelve a llamar esta herramienta con su arrendasoft_id; si no, pregúntale ' +
+              'cuál de ellos, con su precio.',
+          });
+        }
+        inm = encontrados[0] ?? null;
+      }
       if (!inm) {
-        return registrar('compartir_contacto_empalme', args, { error: `No encontré el inmueble con código ${codigo}.` });
+        return registrar('compartir_contacto_empalme', args, { error: SIN_EMPALME });
       }
       if (inm.estado !== 'empalme') {
         return registrar('compartir_contacto_empalme', args, {
@@ -962,7 +1012,7 @@ export function crearToolsAgenteComercial(
 
       // Aviso al admin (cola sin dueño, como las tareas de solicitud/cita agendada).
       const clienteNombre = String(args.cliente_nombre ?? '').trim();
-      const etiqueta = inm.unidad || inm.titulo || inm.direccion || `#${codigo}`;
+      const etiqueta = inm.unidad || inm.titulo || inm.direccion || `#${inm.arrendasoft_id}`;
       const { error: errorTarea } = await supabase.from('tareas').insert({
         inmobiliaria_id: inmobiliariaId,
         usuario_id: null,
@@ -970,7 +1020,7 @@ export function crearToolsAgenteComercial(
         entidad_id: inm.id,
         evento_origen: 'empalme_contacto_compartido',
         evento_titulo: `Empalme — ${etiqueta}`,
-        titulo: `Se compartió el contacto del inquilino (empalme, cód ${codigo}) con ${clienteNombre || 'un interesado'}`,
+        titulo: `Se compartió el contacto del inquilino (empalme, cód ${inm.arrendasoft_id}) con ${clienteNombre || 'un interesado'}`,
         estado: 'pendiente',
       });
       if (errorTarea) {
@@ -996,7 +1046,18 @@ export function crearToolsAgenteComercial(
         'teléfono del inquilino para que se lo compartas y avisa a un asesor. NUNCA la uses para inmuebles ' +
         'disponibles normales (esos se agendan con agendar_cita).',
       schema: z.object({
-        codigo: z.union([z.string(), z.number()]).describe('Código del inmueble (el que aparece como código / arrendasoft_id).'),
+        codigo: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe('Código del inmueble: el arrendasoft_id que trae buscar_inmuebles o buscar_inmueble_por_codigo. Nunca lo inventes.'),
+        unidad: z
+          .string()
+          .optional()
+          .describe('Si no tienes el código: el nombre de la unidad o el barrio del empalme del que hablaron (ej. "Mirasol").'),
+        precio: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe('El precio del empalme que le ofreciste al cliente (ej. 1366300): desempata si en la unidad hay varios.'),
         cliente_nombre: z.string().optional().describe('Nombre del cliente interesado, para el aviso al asesor.'),
       }),
     }

@@ -5,6 +5,7 @@ import {
   sinEtiquetaEscalar,
   normalizarBorrador,
   pideDatoParaRegistrar,
+  prometeAsesor,
 } from '../lib/agente-comercial/escalar.ts';
 
 test('la etiqueta al inicio, como pide el protocolo', () => {
@@ -84,4 +85,59 @@ test('también cuenta una pregunta que no va al final (caso real, gpt-6-luna)', 
     ),
     true
   );
+});
+
+test('«p. m.» no parte la pregunta por el dato (caso real de producción)', () => {
+  assert.equal(
+    pideDatoParaRegistrar(
+      '¡Perfecto, Marleny! Para agendar la visita mañana miércoles 18 de noviembre a las 3:00 p. m. en Mi Mundo ' +
+        '(Niquía, Bello), ¿me confirmas por favor tu nombre completo y tu número de teléfono? Así te separo el espacio.'
+    ),
+    true
+  );
+});
+
+test('pedir el dato en imperativo, o con el «para qué» en la oración siguiente, también cuenta', () => {
+  assert.equal(
+    pideDatoParaRegistrar(
+      'Para agendar tu visita mañana sábado de 11:30 a. m. a 12:00 m., por favor confírmame tu nombre completo y ' +
+        'número de teléfono. Así te separo el espacio y un asesor te contacta.'
+    ),
+    true
+  );
+  assert.equal(
+    pideDatoParaRegistrar('¿Me confirmas por favor tu número de teléfono? Lo necesito para registrar la solicitud de visita.'),
+    true
+  );
+});
+
+test('pedir el nombre para compartir el contacto del empalme también es pedir un dato', () => {
+  assert.equal(pideDatoParaRegistrar('Está en empalme. Para compartirte el contacto, me regalas tu nombre completo?'), true);
+  // Una queja que pide el nombre sigue sin contar.
+  assert.equal(pideDatoParaRegistrar('Lamento lo ocurrido. ¿Me compartes tu nombre para que un asesor te contacte?'), false);
+});
+
+test('promete un asesor: casos reales de producción que no escalaban', () => {
+  const promesas = [
+    'Prefiero confirmártelo con el asesor para no darte un dato equivocado. Un asesor te contactará pronto por este chat.',
+    'Esa información te la confirmo con el asesor para no darte un dato equivocado. ¿Te gustaría agendar una visita?',
+    'Confirmo con el asesor en qué piso están ubicados los apartamentos y si todas las habitaciones tienen clóset.',
+    'Te confirmo el piso exacto con el asesor para no darte un dato equivocado.',
+    '¡Claro! El formulario te lo comparte directamente un asesor de Cumbres por este chat.',
+    'Lamento la falta de confirmación. Voy a escalar tu caso para que un asesor te contacte lo más pronto posible.',
+    '¡Gracias! Queda registrada tu solicitud. Un asesor de Cumbres te confirmará el horario por este chat muy pronto.',
+  ];
+  for (const t of promesas) assert.equal(prometeAsesor(t), true, t);
+});
+
+test('ofrecer, preguntar o condicionar no es prometer', () => {
+  const ofertas = [
+    '¿Te gustaría que te contacte un asesor para darte esa información?',
+    'Un asesor de Cumbres te puede ayudar a conseguirlas o mostrarte alternativas.',
+    'Si necesitas la dirección exacta, un asesor te la puede confirmar por este chat.',
+    'Si no tienes ese dato, le confirmo al asesor y te aviso.',
+    'Este apartamento no es empalme, así que la visita se agenda directamente con un asesor de Cumbres.',
+    'Hola, el apartamento está disponible por $1.400.000. ¿Te sirve el viernes a las 10:00 a. m.?',
+  ];
+  for (const t of ofertas) assert.equal(prometeAsesor(t), false, t);
 });

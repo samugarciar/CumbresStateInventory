@@ -66,25 +66,94 @@ export function sinEtiquetaEscalar(texto: string): string {
   return lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Oraciones del texto visible. «a. m.» y «p. m.» se juntan antes de partir:
+// si no, «…a las 3:00 p. m. en Mi Mundo, ¿me confirmas tu nombre?» se parte en
+// dos y la pregunta pierde el «para agendar la visita» que la precede.
+function oraciones(texto: string): string[] {
+  return sinEtiquetaEscalar(texto)
+    .replace(/\b([ap])\.\s?m\./gi, '$1m')
+    .split(/(?<=[.!?\n])\s+/)
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+// Ojo: con tildes, `\b` no sirve en JavaScript («confirmará» no tiene límite de
+// palabra después de la «á»). Por eso estas expresiones usan la bandera `u` y
+// miran letras con \p{L}.
+const FIN = '(?![\\p{L}\\p{N}])';
+const INICIO = '(?<![\\p{L}\\p{N}])';
+
+const DATO = new RegExp(`${INICIO}(?:nombre|tel[eé]fono|n[uú]mero|celular|qu[eé] d[ií]a|qu[eé] hora|a qu[eé] hora)${FIN}`, 'iu');
+// «Para compartirte el contacto» es el registro del empalme (compartir_contacto_empalme).
+const PARA_REGISTRAR = /(?:regist|agend|visit|cita|separ|apertura|contacto|coordin)/i;
+const PIDE_EN_IMPERATIVO = new RegExp(
+  `${INICIO}(?:conf[ií]rmame|comp[aá]rteme|reg[aá]lame|ind[ií]came|d[ií]me|env[ií]ame|escr[ií]beme|p[aá]same)${FIN}`,
+  'iu'
+);
+
 /**
  * ¿El mensaje le pide al cliente un dato para registrar una visita (nombre,
  * teléfono, día u hora)? Si el modelo escala en ese turno, el bot se calla y
  * la respuesta del cliente queda sin atender: en las pruebas de gpt-6-luna
  * (19 nov 2026) pasó en 3 de 24 conversaciones; gpt-4.1 no lo hizo en ninguno
- * de sus 404 escalamientos de noviembre (medido con esta misma función). Se mira cada pregunta del mensaje,
- * no solo la última («…me compartes tu nombre? Ya tengo tu teléfono»).
- * Acotado a propósito: una queja o una negociación que pregunta algo no
- * entra, porque la pregunta no habla de registrar una visita.
+ * de sus 404 escalamientos de noviembre (medido con esta misma función).
+ * Cuenta la pregunta («¿me compartes tu nombre…?») y el imperativo
+ * («confírmame tu nombre…»), estén donde estén. Acotado a propósito: una
+ * queja o una negociación que pregunta algo no entra, porque esa oración no
+ * habla de registrar una visita.
  */
 export function pideDatoParaRegistrar(texto: string): boolean {
-  const preguntas = sinEtiquetaEscalar(texto)
-    .split(/(?<=[.!?\n])\s+/)
-    .filter((o) => o.trim().endsWith('?'));
-  return preguntas.some(
-    (q) =>
-      /\b(nombre|tel[eé]fono|n[uú]mero|celular|qu[eé] d[ií]a|qu[eé] hora|a qu[eé] hora)\b/i.test(q) &&
-      /(regist|agend|visit|cita|separ|apertura)/i.test(q)
+  const os = oraciones(texto);
+  // El «para qué» puede venir en la oración siguiente: «¿Me confirmas tu
+  // teléfono? Lo necesito para registrar la solicitud».
+  return os.some(
+    (o, i) =>
+      DATO.test(o) &&
+      (o.endsWith('?') || PIDE_EN_IMPERATIVO.test(o)) &&
+      (PARA_REGISTRAR.test(o) || PARA_REGISTRAR.test(os[i + 1] ?? ''))
   );
+}
+
+const VERBO_FUTURO =
+  '(?:contactar[aá]n?|escribir[aá]n?|confirmar[aá]n?|llamar[aá]n?|enviar[aá]n?|compartir[aá]n?|ayudar[aá]n?|' +
+  'responder[aá]n?|comunicar[aá]n?|dar[aá]n?|revisar[aá]n?|contacta|escribe|confirma|llama|env[ií]a|comparte|ayuda|' +
+  'responde|va a (?:contactar|escribir|confirmar|llamar|enviar|compartir|ayudar|responder|revisar))';
+const ASESOR = `(?:el|un|una|la|nuestro|nuestra)\\s+asesora?${FIN}`;
+
+const PROMESAS: RegExp[] = [
+  // «un asesor (de Cumbres) te contactará / te lo confirma / le va a escribir»
+  new RegExp(`${INICIO}asesora?s?${FIN}[^.?!\\n]{0,40}?${INICIO}(?:te|le|les)\\s+(?:(?:lo|la|los|las)\\s+)?${VERBO_FUTURO}${FIN}`, 'iu'),
+  // «te lo comparte directamente un asesor», «te la confirma el asesor»
+  new RegExp(`${INICIO}(?:te|le)\\s+(?:(?:lo|la|los|las)\\s+)?${VERBO_FUTURO}\\s+(?:directamente\\s+|pronto\\s+)?${ASESOR}`, 'iu'),
+  // «(te lo) confirmo / consulto / valido … con el asesor», «le confirmo al asesor»
+  new RegExp(`${INICIO}(?:confirmo|consulto|valido|verifico|pregunto|reviso)${FIN}[^.?!\\n]{0,60}?${INICIO}(?:con|al|a\\s+(?:un|una|la|nuestro))\\s+(?:(?:el|un|una|la|nuestro)\\s+)?asesora?${FIN}`, 'iu'),
+  // «prefiero confirmártelo con el asesor»
+  new RegExp(`${INICIO}prefiero\\s+(?:confirm|valid|verific|consult)\\p{L}*\\s+con\\s+${ASESOR}`, 'iu'),
+  // «le paso tu consulta al asesor», «voy a escalar tu caso»
+  new RegExp(`${INICIO}(?:le|les)\\s+(?:paso|traslado|comparto|dejo)\\s+(?:tu|su)\\s+(?:consulta|caso|solicitud|inquietud|pregunta)${FIN}`, 'iu'),
+  new RegExp(`${INICIO}(?:voy a|vamos a)\\s+escalar${FIN}`, 'iu'),
+];
+
+// Una oferta, una pregunta o un condicional no es una promesa.
+const OFERTA = new RegExp(
+  `[¿?]|^si${FIN}|${INICIO}si\\s+(?:quieres|deseas|necesitas|prefieres|gustas|te\\s+interesa)${FIN}|` +
+    `${INICIO}(?:puede|pueden|podr[ií]a|podr[ií]an|puedo)${FIN}|${INICIO}te\\s+gustar[ií]a${FIN}|` +
+    `${INICIO}(?:quieres|deseas|prefieres)\\s+que${FIN}`,
+  'iu'
+);
+
+/**
+ * ¿El mensaje le PROMETE al cliente que un asesor lo va a contactar o le va a
+ * confirmar algo? Si el bot lo promete y no escala, nadie del equipo se entera
+ * y el cliente espera para siempre. Medido en noviembre de 2026 con gpt-4.1:
+ * cientos de respuestas así sin [ESCALAR] (ver graph.ts). Decisión de Samuel
+ * (19 nov 2026): esas respuestas escalan por código.
+ * No cuentan las ofertas ni las preguntas («¿quieres que un asesor te
+ * contacte?», «un asesor puede ayudarte») ni los condicionales («si no
+ * tienes ese dato, le confirmo al asesor»).
+ */
+export function prometeAsesor(texto: string): boolean {
+  return oraciones(texto).some((o) => !OFERTA.test(o) && PROMESAS.some((r) => r.test(o)));
 }
 
 /**
