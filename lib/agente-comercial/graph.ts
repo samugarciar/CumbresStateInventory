@@ -28,7 +28,14 @@ import { BaseMessage, SystemMessage, HumanMessage, AIMessage } from '@langchain/
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { crearToolsAgenteComercial } from './tools';
-import { MODELO_PRINCIPAL, MODELO_VERIFICADOR } from './costos';
+import { tieneEtiquetaEscalar, sinEtiquetaEscalar, normalizarBorrador, pideDatoParaRegistrar } from './escalar';
+import {
+  MODELO_PRINCIPAL,
+  MODELO_VERIFICADOR,
+  RAZONAMIENTO_PRINCIPAL,
+  RAZONAMIENTO_VERIFICADOR,
+  opcionesDeModelo,
+} from './costos';
 import {
   afirmaRegistro,
   registroEnElTurno,
@@ -370,23 +377,32 @@ export async function correrAgenteComercial(params: {
   const bitacora: HerramientaUsada[] = [];
   const tools = crearToolsAgenteComercial(supabase, inmobiliariaId, bitacora);
 
-  // El límite real de la cuenta es 30.000 tokens POR MINUTO en gpt-4.1 y cada
-  // llamada gasta ~9.900 (el 87% es el prompt del sistema), así que un turno
-  // con 2 herramientas consume el minuto entero por sí solo. Los 429 que ven
-  // los clientes ("Rate limit reached... try again in 2.9s / 16.4s") son eso.
-  // Con 6 reintentos y backoff exponencial se cubren esperas de ~30s, muy por
-  // debajo del maxDuration de 300s del endpoint: la conversación tarda un poco
-  // más pero el cliente recibe su respuesta en vez de un mensaje de disculpa.
-  // Esto es una MITIGACIÓN, no la solución: el arreglo real es subir el tier
-  // de la cuenta en OpenAI.
-  const modeloPrincipal = new ChatOpenAI({ model: MODELO_PRINCIPAL, temperature: 0, maxRetries: 6 });
+  // Reintentos: en julio la cuenta tenía 30.000 tokens POR MINUTO en gpt-4.1 y
+  // un turno con 2 herramientas se comía el minuto (429 "Rate limit reached").
+  // El tier ya subió (nov 2026: 30M/min en gpt-4.1, 180M/min en gpt-6-luna),
+  // pero los 6 reintentos con backoff se quedan: cubren esperas de ~30 s, muy
+  // por debajo del maxDuration de 300 s, y un 429 suelto no le llega al cliente.
+  //
+  // promptCacheKey: todas las conversaciones comparten el mismo prompt de
+  // sistema (~10.800 tokens); con una clave común OpenAI las enruta a la
+  // misma cache y sube la parte que se cobra con descuento.
+  const modeloPrincipal = new ChatOpenAI({
+    model: MODELO_PRINCIPAL,
+    ...opcionesDeModelo(MODELO_PRINCIPAL, RAZONAMIENTO_PRINCIPAL),
+    promptCacheKey: `agente-comercial-${inmobiliariaId}`,
+    maxRetries: 6,
+  });
   const agentePrincipal = createReactAgent({
     llm: modeloPrincipal,
     tools,
     prompt: new SystemMessage(promptSistema),
   });
 
-  const modeloFormateador = new ChatOpenAI({ model: MODELO_VERIFICADOR, temperature: 0, maxRetries: 3 });
+  const modeloFormateador = new ChatOpenAI({
+    model: MODELO_VERIFICADOR,
+    ...opcionesDeModelo(MODELO_VERIFICADOR, RAZONAMIENTO_VERIFICADOR),
+    maxRetries: 3,
+  });
   const formateadorConSchema = modeloFormateador.withStructuredOutput(EsquemaFormateo, { includeRaw: true });
 
   async function nodoAgentePrincipal(estado: Estado): Promise<Partial<Estado>> {
@@ -452,11 +468,11 @@ export async function correrAgenteComercial(params: {
   async function nodoFormateador(estado: Estado): Promise<Partial<Estado>> {
     // Ese borrador no se va a mandar: formatearlo es gastar una llamada.
     if (estado.registroSinRespaldo) return {};
-    // El prefijo [ESCALAR] (si está) nunca debe llegar al formateador ni al
-    // cliente — se limpia acá, igual que "Limpiar Tag Escalar" en n8n. El
-    // borrador CRUDO (con el prefijo intacto) se preserva en estado.borrador
-    // para que el caller pueda exponerlo tal cual a n8n.
-    const textoLimpio = estado.borrador.replace(/^\s*\[ESCALAR\]\s*/i, '').trim();
+    // La etiqueta [ESCALAR] nunca debe llegar al formateador ni al cliente —
+    // esté donde esté, y sin la copia del párrafo que deja el modelo cuando
+    // la duplica (ver escalar.ts). El borrador crudo se preserva en
+    // estado.borrador; el caller lo normaliza para n8n.
+    const textoLimpio = sinEtiquetaEscalar(estado.borrador);
 
     try {
       const resultado = await formateadorConSchema.invoke([
@@ -465,13 +481,15 @@ export async function correrAgenteComercial(params: {
       ]);
       const uso = usoDeMensaje(MODELO_VERIFICADOR, resultado.raw);
       const r = resultado.parsed.response;
+      // Segunda red: si el formateador repuso la etiqueta, tampoco sale.
+      const limpia = (p: string | null | undefined) => (p ? sinEtiquetaEscalar(p) || undefined : undefined);
       return {
         respuestaFormateada: {
-          part_1: r.part_1,
-          part_2: r.part_2 ?? undefined,
-          part_3: r.part_3 ?? undefined,
-          part_4: r.part_4 ?? undefined,
-          part_5: r.part_5 ?? undefined,
+          part_1: limpia(r.part_1) ?? textoLimpio,
+          part_2: limpia(r.part_2),
+          part_3: limpia(r.part_3),
+          part_4: limpia(r.part_4),
+          part_5: limpia(r.part_5),
         },
         etapa: resultado.parsed.etapa,
         usoTokens: uso ? [uso] : [],
@@ -499,17 +517,26 @@ export async function correrAgenteComercial(params: {
 
   const resultado = await grafo.invoke({ messages: historial });
 
-  const response = resultado.respuestaFormateada ?? { part_1: resultado.borrador };
+  const response = resultado.respuestaFormateada ?? { part_1: sinEtiquetaEscalar(resultado.borrador) };
 
-  const tagPresente = /^\s*\[ESCALAR\]/i.test(resultado.borrador);
+  // En cualquier parte del borrador, no solo al inicio (ver escalar.ts).
+  const tagPresente = tieneEtiquetaEscalar(resultado.borrador);
+  // Escalar mientras se le pide al cliente un dato para registrar la visita
+  // calla al bot justo antes de que el cliente responda: se pospone hasta el
+  // turno en que se registra (ahí escala solo, por evaluarEscalamiento).
+  const escalaPidiendoDato =
+    tagPresente && !registroEnElTurno(bitacora) && pideDatoParaRegistrar(resultado.borrador);
+  if (escalaPidiendoDato) {
+    console.warn('[AgenteComercial] Escalaba mientras pedía un dato para registrar; se pospone.');
+  }
   const { autoEscalar, prioridad } = evaluarEscalamiento(bitacora);
-  const escalado = tagPresente || autoEscalar;
+  const escalado = (tagPresente && !escalaPidiendoDato) || autoEscalar;
 
   // n8n decide la etapa de Kommo leyendo si `output` empieza con [ESCALAR]
-  // (nodo "Escalar?" y "Prepare Update Payload"). Se normaliza acá para que
-  // el escalamiento derivado por código llegue igual que el del modelo.
-  // `response` (lo que ve el cliente) nunca lleva la etiqueta.
-  const output = escalado && !tagPresente ? `[ESCALAR] ${resultado.borrador}` : resultado.borrador;
+  // (nodo "Escalar?" y "Prepare Update Payload"). Se normaliza acá: una sola
+  // etiqueta, al inicio, tanto si la puso el modelo (donde sea) como si el
+  // escalamiento lo derivó el código. `response` nunca la lleva.
+  const output = normalizarBorrador(resultado.borrador, escalado);
 
   // Una solicitud de apertura pendiente NO es una cita agendada: dejar que el
   // clasificador la mande a "CITA AGENDADA" movería el lead a una etapa falsa

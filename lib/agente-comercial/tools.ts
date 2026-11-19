@@ -270,10 +270,13 @@ export function crearToolsAgenteComercial(
   const consultaInmuebles = (args: Record<string, unknown>, omitirTipo = false) => {
     let query = supabase
       .from('inmuebles')
-      .select('id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,precio_oferta,direccion,ciudad,barrio,habitaciones,banos,unidad,estado')
+      .select('id,arrendasoft_id,titulo,descripcion,tipo_inmueble,tipo_transaccion,precio,precio_oferta,direccion,ciudad,barrio,habitaciones,banos,unidad,estado')
       .eq('inmobiliaria_id', inmobiliariaId)
       // Incluye empalmes (ocupados que muestra el inquilino): el agente los distingue
       // por estado='empalme' y NO los agenda — comparte el contacto vía compartir_contacto_empalme.
+      // `arrendasoft_id` es el código que esa herramienta pide: sin él, el agente
+      // lo inventaba (en pruebas del 19 nov usó «4521», el ejemplo del prompt) y
+      // el contacto nunca se compartía.
       .in('estado', ['disponible', 'empalme']);
 
     if (args.ciudad) query = query.ilike('ciudad', `%${patronFlexible(String(args.ciudad))}%`);
@@ -334,6 +337,8 @@ export function crearToolsAgenteComercial(
         'tipo de inmueble, tipo de transacción). Úsala para explorar el inventario cuando el cliente aún ' +
         'no señala un inmueble puntual. Varios resultados de la misma unidad/edificio son aptos distintos ' +
         'de la misma unidad — agrúpalos al presentarlos, no los listes como opciones sueltas. ' +
+        'Cada resultado trae `arrendasoft_id`: es el código del inmueble que piden compartir_contacto_empalme ' +
+        'y buscar_inmueble_por_codigo. ' +
         'Si no hay nada del tipo pedido pero sí de otro tipo en la misma zona, la respuesta trae ' +
         '`sin_resultados_del_tipo_pedido` y una lista `alternativas`: presenta esas alternativas como ' +
         'opción concreta en el mismo mensaje (ej. "casas en arriendo en Niquía no tengo, pero sí 8 ' +

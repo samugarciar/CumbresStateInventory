@@ -3,6 +3,7 @@ import { MODELO_BI } from '@/lib/bi/costos';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { MODELO_CALIFICAR, MODELO_REDACTAR } from '@/lib/agente-captaciones/config';
+import { MODELO_PRINCIPAL, MODELO_VERIFICADOR } from '@/lib/agente-comercial/costos';
 import { redirect } from 'next/navigation';
 import AgentesClient from './AgentesClient';
 import type { Metadata } from 'next';
@@ -163,7 +164,7 @@ export default async function AgentesPage() {
   const filasComercialHoy = filasComercial.filter((r) => r.created_at >= inicioHoy);
   const modelosComercial = Array.from(new Set(filasComercial.map((r) => r.modelo))).sort();
   const comercial = {
-    modelos: modelosComercial.length > 0 ? modelosComercial.join(' + ') : 'gpt-4.1 + gpt-4o',
+    modelos: modelosComercial.length > 0 ? modelosComercial.join(' + ') : `${MODELO_PRINCIPAL} + ${MODELO_VERIFICADOR}`,
     gastoMesUsd: sumaComercial((r) => Number(r.costo_usd || 0)),
     gastoHoyUsd: filasComercialHoy.reduce((acc, r) => acc + Number(r.costo_usd || 0), 0),
     peticionesMes: filasComercial.length,
